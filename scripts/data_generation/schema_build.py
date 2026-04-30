@@ -18,6 +18,7 @@ Options:
 import argparse
 import json
 import os
+from pathlib import Path
 import re
 import sqlite3
 from typing import Any, Dict, List, Optional
@@ -39,8 +40,56 @@ def examples_to_str(examples: list) -> list:
 
 
 def read_json(file_path: str):
-    with open(file_path, "r", encoding="utf-8") as f:
+    path = Path(file_path)
+    with path.open("r", encoding="utf-8") as f:
+        if path.suffix.lower() == ".jsonl":
+            return [json.loads(line) for line in f if line.strip()]
         return json.load(f)
+
+
+def format_stat_value(value: Any) -> str:
+    if value is None:
+        return "NULL"
+    if isinstance(value, float):
+        return str(round(value, 4))
+    return str(value)
+
+
+def truncate_values(values: List[Any], max_items: int = 3, max_length: int = 50) -> List[str]:
+    rendered = [format_stat_value(value) for value in values if value is not None]
+    if max_items > 0:
+        rendered = rendered[:max_items]
+    return [value for value in rendered if len(value) <= max_length]
+
+
+def resolve_default_paths(base_dir: Optional[str], split: str) -> Dict[str, str]:
+    base_path = Path(base_dir) if base_dir else Path(__file__).resolve().parents[2]
+    split_data_dir = base_path / "data" / f"bird_{split}_data" / "raw"
+    split_db_dir = base_path / "databases" / f"{split}_databases"
+
+    if split == "train":
+        input_name = "train-6601-few-shot.jsonl"
+        meanings_name = "train_column_meaning.json"
+    else:
+        input_name = "dev_20251106-few-shot.json"
+        meanings_name = "column_meaning.json"
+
+    if split_data_dir.exists() and split_db_dir.exists():
+        input_path = split_data_dir / input_name
+        meanings_path = split_data_dir / meanings_name
+        db_dir = split_db_dir
+    else:
+        input_path = base_path / ("train-6601-few-shot.jsonl" if split == "train" else "few_shot_bird_dev.json")
+        meanings_path = base_path / meanings_name
+        db_dir = base_path / f"{split}_databases"
+
+    output_path = input_path.with_name(f"{input_path.stem}-schema.jsonl")
+    return {
+        "input_file": str(input_path),
+        "meanings_file": str(meanings_path),
+        "database_dir": str(db_dir),
+        "output_file": str(output_path),
+    }
 
 
 # ================================================================
@@ -54,13 +103,14 @@ class MSchema:
         self.tables: Dict[str, Any] = {}
         self.foreign_keys: List = []
 
-    def add_table(self, name: str, fields: dict = {}, comment: str = None):
-        self.tables[name] = {"fields": fields.copy(), "examples": [], "comment": comment}
+    def add_table(self, name: str, fields: Optional[dict] = None, comment: str = None, **kwargs):
+        field_map = {} if fields is None else fields.copy()
+        self.tables[name] = {"fields": field_map, "examples": [], "comment": comment, **kwargs}
 
     def add_field(
             self, table_name: str, field_name: str, field_type: str = "",
             primary_key: bool = False, nullable: bool = True, default: Any = None,
-            autoincrement: bool = False, comment: str = "", examples: list = [], **kwargs):
+            autoincrement: bool = False, comment: str = "", examples: Optional[list] = None, **kwargs):
         self.tables[table_name]["fields"][field_name] = {
             "type": field_type,
             "primary_key": primary_key,
@@ -68,7 +118,7 @@ class MSchema:
             "default": default if default is None else str(default),
             "autoincrement": autoincrement,
             "comment": comment,
-            "examples": examples.copy(),
+            "examples": [] if examples is None else examples.copy(),
             **kwargs,
         }
 
@@ -99,10 +149,18 @@ class MSchema:
 
         table_comment = table_info.get("comment", "")
         prefix = f"{self.schema}.{table_name}" if (self.schema and len(self.schema) > 0) else table_name
+        table_line = f"# Table: {prefix}"
         if table_comment and table_comment != "None" and len(table_comment) > 0:
-            output.append(f"# Table: {prefix}, {table_comment}")
-        else:
-            output.append(f"# Table: {prefix}")
+            table_line += f", {table_comment}"
+
+        summary_parts = []
+        if table_info.get("row_count") is not None:
+            summary_parts.append(f"Rows: {table_info['row_count']}")
+        if table_info.get("column_count") is not None:
+            summary_parts.append(f"Columns: {table_info['column_count']}")
+        if summary_parts:
+            table_line += " | " + ", ".join(summary_parts)
+        output.append(table_line)
 
         field_lines = []
         for field_name, field_info in table_info["fields"].items():
@@ -111,15 +169,41 @@ class MSchema:
 
             raw_type = self.get_field_type(field_info["type"], not show_type_detail)
             field_line = f"({field_name}:{raw_type.upper()})"
+            details = []
 
             # -- inline column comment ----------------------------------------
             comment = field_info.get("comment", "")
             if comment and comment.strip():
-                field_line += f", {comment.strip()}"
+                details.append(comment.strip())
 
             # -- primary key label -------------------------------------------
             if field_info.get("primary_key", False):
-                field_line += ", Primary Key"
+                details.append("Primary Key")
+
+            details.append("Nullable" if field_info.get("nullable", True) else "Not Null")
+
+            default = field_info.get("default")
+            if default is not None:
+                details.append(f"Default: {format_stat_value(default)}")
+
+            stats_parts = []
+            for label, key in (("Nulls", "null_count"), ("Non-null", "non_null_count"), ("Distinct", "distinct_count")):
+                value = field_info.get(key)
+                if value is not None:
+                    stats_parts.append(f"{label}: {value}")
+
+            if field_info.get("min_value") is not None:
+                stats_parts.append(f"Min: {format_stat_value(field_info['min_value'])}")
+            if field_info.get("avg_value") is not None:
+                stats_parts.append(f"Avg: {format_stat_value(field_info['avg_value'])}")
+            if field_info.get("max_value") is not None:
+                stats_parts.append(f"Max: {format_stat_value(field_info['max_value'])}")
+            if stats_parts:
+                details.append("Stats: " + "; ".join(stats_parts))
+
+            top_values = truncate_values(field_info.get("top_values", []), max_items=example_num)
+            if top_values:
+                details.append(f"Top values: [{', '.join(top_values)}]")
 
             # -- examples -----------------------------------------------------
             if example_num > 0 and len(field_info.get("examples", [])) > 0:
@@ -134,7 +218,10 @@ class MSchema:
                     examples = [] if max(len(s) for s in examples) > 50 else examples[:1]
 
                 if examples:
-                    field_line += f", Examples: [{', '.join(examples)}]"
+                    details.append(f"Examples: [{', '.join(examples)}]")
+
+            if details:
+                field_line += ", " + ", ".join(details)
 
             field_line += ")"
             field_lines.append(field_line)
@@ -272,9 +359,15 @@ def build_mschema_from_db(db_path: str, db_id: str,
 
     # -- columns --------------------------------------------------------
     for table in tables:
-        ms.add_table(table)
+        try:
+            cur.execute(f"SELECT COUNT(*) FROM `{table}`")
+            row_count = cur.fetchone()[0]
+        except Exception:
+            row_count = None
+
         cur.execute(f"PRAGMA table_info('{table}');")
         cols = cur.fetchall()   # (cid, name, type, notnull, dflt, pk)
+        ms.add_table(table, row_count=row_count, column_count=len(cols))
 
         for cid, col_name, col_type, notnull, dflt, pk in cols:
             col_type = col_type or "TEXT"
@@ -293,35 +386,60 @@ def build_mschema_from_db(db_path: str, db_id: str,
 
             # -- compute examples / stats ------------------------------------
             examples: list = []
+            non_null_count = None
+            null_count = None
+            distinct_count = None
+            min_value = None
+            avg_value = None
+            max_value = None
+            top_values: List[Any] = []
             if include_stats:
                 try:
                     if kind == "NUMERIC":
                         cur.execute(
-                            f"SELECT MIN(`{col_name}`), AVG(`{col_name}`), MAX(`{col_name}`) "
+                            f"SELECT COUNT(`{col_name}`), COUNT(DISTINCT `{col_name}`), "
+                            f"MIN(`{col_name}`), AVG(`{col_name}`), MAX(`{col_name}`) "
                             f"FROM `{table}` WHERE `{col_name}` IS NOT NULL;"
                         )
-                        mn, avg, mx = cur.fetchone()
-                        if mn is not None:
-                            examples = [mn, round(avg, 4) if avg is not None else avg, mx]
+                        non_null_count, distinct_count, min_value, avg_value, max_value = cur.fetchone()
+                        if row_count is not None and non_null_count is not None:
+                            null_count = row_count - non_null_count
+                        if non_null_count:
+                            examples = [min_value, round(avg_value, 4) if avg_value is not None else avg_value, max_value]
 
                     elif kind == "DATE":
                         cur.execute(
-                            f"SELECT MIN(`{col_name}`), MAX(`{col_name}`) "
+                            f"SELECT COUNT(`{col_name}`), COUNT(DISTINCT `{col_name}`), "
+                            f"MIN(`{col_name}`), MAX(`{col_name}`) "
                             f"FROM `{table}` WHERE `{col_name}` IS NOT NULL;"
                         )
-                        mn, mx = cur.fetchone()
-                        if mn is not None:
-                            examples = [mn, mx]
+                        non_null_count, distinct_count, min_value, max_value = cur.fetchone()
+                        if row_count is not None and non_null_count is not None:
+                            null_count = row_count - non_null_count
+                        if non_null_count:
+                            examples = [min_value, max_value]
 
                     else:  # TEXT
+                        cur.execute(
+                            f"SELECT COUNT(`{col_name}`), COUNT(DISTINCT `{col_name}`) "
+                            f"FROM `{table}` WHERE `{col_name}` IS NOT NULL;"
+                        )
+                        non_null_count, distinct_count = cur.fetchone()
+                        if row_count is not None and non_null_count is not None:
+                            null_count = row_count - non_null_count
                         cur.execute(
                             f"SELECT `{col_name}`, COUNT(*) AS cnt FROM `{table}` "
                             f"WHERE `{col_name}` IS NOT NULL "
                             f"GROUP BY `{col_name}` ORDER BY cnt DESC LIMIT 5;"
                         )
-                        examples = [r[0] for r in cur.fetchall()]
+                        top_values = [r[0] for r in cur.fetchall()]
+                        examples = top_values[:]
                 except Exception:
                     examples = samples[:3]
+                    if row_count is not None:
+                        non_null_count = len([sample for sample in samples if sample is not None])
+                        null_count = row_count - non_null_count
+                        distinct_count = len({str(sample) for sample in samples if sample is not None})
 
             # -- inline comment from column_meaning.json ----------------------
             comment = get_comment(meanings, db_id, table, col_name) if meanings else ""
@@ -331,11 +449,18 @@ def build_mschema_from_db(db_path: str, db_id: str,
                 field_name     = col_name,
                 field_type     = kind,
                 primary_key    = bool(pk),
-                nullable       = not bool(notnull),
+                nullable       = not (bool(notnull) or bool(pk)),
                 default        = dflt,
                 autoincrement  = False,
                 comment        = comment,
                 examples       = [str(e) for e in examples if e is not None],
+                null_count     = null_count,
+                non_null_count = non_null_count,
+                distinct_count = distinct_count,
+                min_value      = min_value,
+                avg_value      = round(avg_value, 4) if avg_value is not None else None,
+                max_value      = max_value,
+                top_values     = top_values,
             )
 
     conn.close()
@@ -438,16 +563,32 @@ def format_assistant(sql: str) -> str:
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Build JSONL fine-tuning dataset from BIRD-SQL dev split."
+        description="Build JSONL fine-tuning data from BIRD train/dev files with enriched schema statistics."
     )
     parser.add_argument(
         "--base-dir",
-        default=r"C:\Users\E968121\Downloads\BIRD_Apr27\bird_sql",
-        help="Root bird_sql directory",
+        default=None,
+        help="Repository root or legacy bird_sql directory (defaults to auto-detected repo root).",
+    )
+    parser.add_argument(
+        "--split", choices=["train", "dev"], default="train",
+        help="Dataset split to use when resolving default input, database, and meanings paths.",
+    )
+    parser.add_argument(
+        "--input-file", default=None,
+        help="Input dataset path (.json or .jsonl). Defaults to the split-specific few-shot file.",
+    )
+    parser.add_argument(
+        "--database-dir", default=None,
+        help="Directory containing split databases (for example databases/train_databases).",
+    )
+    parser.add_argument(
+        "--meanings-file", default=None,
+        help="Column meanings JSON path. Defaults to the split-specific column meanings file.",
     )
     parser.add_argument(
         "--n-examples", type=int, default=5,
-        help="Number of dev examples to process (-1 = all)",
+        help="Number of examples to process (-1 = all)",
     )
     parser.add_argument(
         "--example-num", type=int, default=3,
@@ -475,22 +616,22 @@ def main():
     args = parse_args()
 
     # -- resolve paths ---------------------------------------------------
-    BASE_DIR       = args.base_dir
-    FEW_SHOT_FILE  = os.path.join(BASE_DIR, "few_shot_bird_dev.json")
-    DB_DIR         = os.path.join(BASE_DIR, "dev_databases")
-    MEANINGS_FILE  = os.path.join(BASE_DIR, "column_meaning.json")
-    OUTPUT_JSONL   = args.output or os.path.join(BASE_DIR, "output_schema.jsonl")
+    default_paths = resolve_default_paths(args.base_dir, args.split)
+    INPUT_FILE    = args.input_file or default_paths["input_file"]
+    DB_DIR        = args.database_dir or default_paths["database_dir"]
+    MEANINGS_FILE = args.meanings_file or default_paths["meanings_file"]
+    OUTPUT_JSONL  = args.output or default_paths["output_file"]
 
     # -- load data -------------------------------------------------------
-    print("Loading few_shot_bird_dev.json ...")
-    data    = read_json(FEW_SHOT_FILE)
+    print(f"Loading dataset from {INPUT_FILE} ...")
+    data    = read_json(INPUT_FILE)
     records = data if args.n_examples == -1 else data[:args.n_examples]
     print(f"  → {len(records)} examples selected")
 
     # -- load column meanings (optional) --------------------------------
     meanings: Dict[str, str] = {}
     if not args.no_comments and os.path.exists(MEANINGS_FILE):
-        print("Loading column_meaning.json ...")
+        print(f"Loading column meanings from {MEANINGS_FILE} ...")
         meanings = load_column_meanings(MEANINGS_FILE)
         print(f"  → {len(meanings)} column definitions loaded")
     elif args.no_comments:
