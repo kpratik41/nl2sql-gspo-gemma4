@@ -2,6 +2,7 @@ import re
 from typing import List
 
 from nl2sql_gspo.sql_utils import (
+    extract_completion_text,
     extract_sql,
     execute_sql,
     is_safe_readonly_sql,
@@ -33,6 +34,7 @@ def make_nl2sql_rewards(database_dir: str):
         rewards = []
 
         for completion in completions:
+            completion_text = extract_completion_text(completion)
             sql = extract_sql(completion)
 
             if not sql:
@@ -42,15 +44,12 @@ def make_nl2sql_rewards(database_dir: str):
             score = 0.0
 
             if is_safe_readonly_sql(sql):
-                score += 0.5
-
-            if sql.rstrip().endswith(";"):
                 score += 0.2
 
             if re.search(r"\bSELECT\b|\bWITH\b", sql, re.IGNORECASE):
                 score += 0.2
 
-            if not re.search(r"```|Explanation:|Here is", sql, re.IGNORECASE):
+            if not re.search(r"```|Explanation:|Here is|The query|This query", completion_text, re.IGNORECASE):
                 score += 0.1
 
             rewards.append(min(score, 1.0))

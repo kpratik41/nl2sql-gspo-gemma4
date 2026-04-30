@@ -31,6 +31,8 @@ nl2sql-gspo-gemma4/
 ├── scripts/
 │   ├── launch_vllm.sh
 │   ├── launch_train.sh
+│   ├── launch_inference.sh
+│   ├── run_inference_bird.py
 │   ├── smoke_test_rewards.py
 │   ├── inspect_jsonl.py
 │   └── data_generation/
@@ -182,6 +184,9 @@ vllm_server_base_url="http://127.0.0.1:8000"
 
 The training script also accepts an optional `--resume_from_checkpoint` argument for explicit checkpoint resume.
 
+The current launcher recipe trains from `outputs/train-6601-schema-filtered.jsonl` and evaluates on `outputs/dev-20251106-schema.jsonl`.
+It currently uses `num_generations=16`, `max_prompt_length=16384`, and `max_completion_length=4096` with vLLM server mode.
+
 Do not switch to colocated vLLM unless explicitly requested. Server mode is preferred for this project because it separates rollout memory from training memory.
 
 Model Loading Rules
@@ -208,6 +213,17 @@ result_reward
 schema_linking_reward
 ngram_reward
 evidence_utilization_reward
+
+The current training recipe reweights these rewards to prioritize exact execution correctness:
+
+- format: `0.25`
+- execution: `1.0`
+- result: `2.5`
+- schema_linking: `0.5`
+- ngram: `0.5`
+- evidence_utilization: `0.25`
+
+The training script also supports configurable monitoring backends via `--report_to` and writes TensorBoard logs to `--logging_dir` when `tensorboard` is included.
 
 Tests
 
@@ -239,6 +255,21 @@ If changing data format handling, update only data.py.
 If changing model loading/freezing, update only model_utils.py.
 
 If changing reward logic, update only rewards.py, sql_utils.py, or schema_utils.py.
+
+Inference and Evaluation
+
+Standalone dev-set inference should run outside the training loop. In the current single-node recipe, training uses GPUs `0-5` and the vLLM server uses GPUs `6-7`, so there are no spare GPUs for local checkpoint inference while training is active. The intended workflow is to run inference after training finishes on the same 8-GPU node, unless a second node is available.
+
+The repository now includes:
+
+- `scripts/run_inference_bird.py`: generates SQL from a trained checkpoint on schema-augmented dev data and evaluates it locally.
+- `scripts/launch_inference.sh`: launcher for post-training or separate-node inference.
+
+The local BIRD execution-accuracy scorer should follow the official dev-set semantics from `AlibabaResearch/DAMO-ConvAI/bird/llm/src/evaluation.py`:
+
+- execute predicted SQL and gold SQL on the target SQLite database
+- compare results using `set(predicted_rows) == set(gold_rows)`
+- report simple/moderate/challenging/total accuracy using the `difficulty` field from the dev JSON
 
 If changing distributed training settings, update:
 scripts/launch_train.sh

@@ -2,20 +2,45 @@ import argparse
 import os
 
 
+DEFAULT_REWARD_WEIGHTS = [0.25, 1.0, 2.5, 0.5, 0.5, 0.25]
+
+
+def parse_csv_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def parse_reward_weights(value: str | None) -> list[float]:
+    if not value:
+        return list(DEFAULT_REWARD_WEIGHTS)
+
+    weights = [float(item.strip()) for item in value.split(",") if item.strip()]
+
+    if len(weights) != len(DEFAULT_REWARD_WEIGHTS):
+        raise argparse.ArgumentTypeError(
+            f"Expected {len(DEFAULT_REWARD_WEIGHTS)} comma-separated reward weights, got {len(weights)}"
+        )
+
+    return weights
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--model_name_or_path", type=str, required=True)
     parser.add_argument("--train_file", type=str, required=True)
+    parser.add_argument("--eval_file", type=str, default=None)
     parser.add_argument("--database_dir", type=str, required=True)
     parser.add_argument("--output_dir", type=str, required=True)
 
     parser.add_argument("--vllm_server_base_url", type=str, default="http://127.0.0.1:8000")
 
-    parser.add_argument("--max_prompt_length", type=int, default=8192)
-    parser.add_argument("--max_completion_length", type=int, default=1024)
+    parser.add_argument("--max_prompt_length", type=int, default=16384)
+    parser.add_argument("--max_completion_length", type=int, default=4096)
 
-    parser.add_argument("--num_generations", type=int, default=8)
+    parser.add_argument("--num_generations", type=int, default=16)
     parser.add_argument("--per_device_train_batch_size", type=int, default=1)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=8)
 
@@ -24,11 +49,28 @@ def parse_args(argv=None):
     parser.add_argument("--max_steps", type=int, default=-1)
     parser.add_argument("--warmup_ratio", type=float, default=0.03)
     parser.add_argument("--resume_from_checkpoint", type=str, default=None)
+    parser.add_argument(
+        "--reward_weights",
+        type=parse_reward_weights,
+        default=list(DEFAULT_REWARD_WEIGHTS),
+        help="Comma-separated weights for format, execution, result, schema_linking, ngram, evidence rewards.",
+    )
+
+    default_report_to = "wandb" if os.environ.get("WANDB_PROJECT") else "none"
+    parser.add_argument(
+        "--report_to",
+        type=str,
+        default=default_report_to,
+        help="Comma-separated reporting backends such as wandb,tensorboard or none.",
+    )
+    parser.add_argument("--run_name", type=str, default=None)
+    parser.add_argument("--logging_dir", type=str, default=None)
 
     parser.add_argument("--deepspeed", type=str, default="configs/ds_zero3_bf16.json")
 
     parser.add_argument("--logging_steps", type=int, default=5)
     parser.add_argument("--save_steps", type=int, default=100)
+    parser.add_argument("--eval_steps", type=int, default=100)
 
     parser.add_argument("--beta", type=float, default=0.0)
     parser.add_argument("--epsilon", type=float, default=0.2)
@@ -48,6 +90,12 @@ def main():
 
     args = parse_args()
 
+    report_to = parse_csv_list(args.report_to)
+    if not report_to:
+        report_to = ["none"]
+
+    logging_dir = args.logging_dir or os.path.join(args.output_dir, "tb")
+
     model, tokenizer = load_model_and_tokenizer(args.model_name_or_path)
 
     raw_train_dataset = load_dataset(
@@ -61,6 +109,20 @@ def main():
         remove_columns=raw_train_dataset.column_names,
         desc="Normalizing NL2SQL chat records",
     )
+
+    eval_dataset = None
+    if args.eval_file:
+        raw_eval_dataset = load_dataset(
+            "json",
+            data_files=args.eval_file,
+            split="train",
+        )
+
+        eval_dataset = raw_eval_dataset.map(
+            normalize_record,
+            remove_columns=raw_eval_dataset.column_names,
+            desc="Normalizing NL2SQL eval records",
+        )
 
     reward_functions = make_nl2sql_rewards(database_dir=args.database_dir)
 
@@ -76,6 +138,7 @@ def main():
         epsilon_high=args.epsilon_high,
         loss_type=args.loss_type,
         scale_rewards=args.scale_rewards,
+        reward_weights=args.reward_weights,
 
         # Rollout sampling
         num_generations=args.num_generations,
@@ -108,9 +171,13 @@ def main():
 
         # Logging/saving
         logging_steps=args.logging_steps,
+        logging_dir=logging_dir,
         save_steps=args.save_steps,
+        eval_strategy="steps" if eval_dataset is not None else "no",
+        eval_steps=args.eval_steps if eval_dataset is not None else None,
         save_total_limit=3,
-        report_to=["wandb"] if os.environ.get("WANDB_PROJECT") else ["none"],
+        report_to=report_to,
+        run_name=args.run_name,
         log_completions=True,
         num_completions_to_print=2,
 
@@ -121,6 +188,7 @@ def main():
         model=model,
         args=training_args,
         train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         processing_class=tokenizer,
         reward_funcs=reward_functions,
     )
