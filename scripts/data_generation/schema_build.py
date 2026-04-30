@@ -42,6 +42,8 @@ def examples_to_str(examples: list) -> list:
 def read_json(file_path: str):
     path = Path(file_path)
     with path.open("r", encoding="utf-8") as f:
+        # Train artifacts are JSONL while some dev-side sources are JSON arrays.
+        # Accept both so the caller can switch datasets without changing loader code.
         if path.suffix.lower() == ".jsonl":
             return [json.loads(line) for line in f if line.strip()]
         return json.load(f)
@@ -74,6 +76,8 @@ def resolve_default_paths(base_dir: Optional[str], split: str) -> Dict[str, str]
         input_name = "dev_20251106-few-shot.json"
         meanings_name = "column_meaning.json"
 
+    # Prefer the repository layout used by this workspace, but retain compatibility
+    # with the older standalone bird_sql directory layout this script started from.
     if split_data_dir.exists() and split_db_dir.exists():
         input_path = split_data_dir / input_name
         meanings_path = split_data_dir / meanings_name
@@ -153,6 +157,8 @@ class MSchema:
         if table_comment and table_comment != "None" and len(table_comment) > 0:
             table_line += f", {table_comment}"
 
+        # Surface table-level context up front so the model can reason about scale
+        # before it sees per-column details.
         summary_parts = []
         if table_info.get("row_count") is not None:
             summary_parts.append(f"Rows: {table_info['row_count']}")
@@ -186,6 +192,8 @@ class MSchema:
             if default is not None:
                 details.append(f"Default: {format_stat_value(default)}")
 
+            # Keep derived stats compact and consistently labeled so they read as
+            # schema metadata rather than free-form prose.
             stats_parts = []
             for label, key in (("Nulls", "null_count"), ("Non-null", "non_null_count"), ("Distinct", "distinct_count")):
                 value = field_info.get(key)
@@ -201,6 +209,8 @@ class MSchema:
             if stats_parts:
                 details.append("Stats: " + "; ".join(stats_parts))
 
+            # Frequent categorical values are often more useful than raw examples
+            # when the model needs to infer the role of a text column.
             top_values = truncate_values(field_info.get("top_values", []), max_items=example_num)
             if top_values:
                 details.append(f"Top values: [{', '.join(top_values)}]")
@@ -348,6 +358,8 @@ def build_mschema_from_db(db_path: str, db_id: str,
     cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
     tables = [row[0] for row in cur.fetchall()]
 
+    # Capture foreign keys once up front so the final schema can express join paths
+    # without re-querying SQLite during prompt construction.
     # -- foreign keys ---------------------------------------------------
     for table in tables:
         try:
@@ -384,6 +396,10 @@ def build_mschema_from_db(db_path: str, db_id: str,
 
             kind = classify_column(col_type, samples)
 
+            # Compute lightweight descriptive stats directly from SQLite so prompt
+            # quality improves without requiring a separate profiling pipeline.
+            # Numeric/date columns get extrema; text columns get frequent values.
+            # The output intentionally stays small enough to fit prompt budgets.
             # -- compute examples / stats ------------------------------------
             examples: list = []
             non_null_count = None
@@ -444,6 +460,8 @@ def build_mschema_from_db(db_path: str, db_id: str,
             # -- inline comment from column_meaning.json ----------------------
             comment = get_comment(meanings, db_id, table, col_name) if meanings else ""
 
+            # SQLite reports primary keys separately from NOT NULL. Treat PKs as
+            # non-null in the rendered schema to avoid contradictory metadata.
             ms.add_field(
                 table_name     = table,
                 field_name     = col_name,
@@ -610,6 +628,10 @@ def parse_args():
         "--no-stats", action="store_true",
         help="Disable column stats / examples in MSchema",
     )
+    parser.add_argument(
+        "--log-every", type=int, default=50,
+        help="Print progress every N records (default: 50). Use 0 to disable interval logging.",
+    )
     return parser.parse_args()
 
 def main():
@@ -644,13 +666,14 @@ def main():
 
     def get_mschema_str(db_id: str) -> str:
         if db_id in schema_cache:
-            print(f"  [CACHE HIT]  {db_id}")
             return schema_cache[db_id]
         db_path = os.path.join(DB_DIR, db_id, f"{db_id}.sqlite")
         if not os.path.exists(db_path):
             print(f"  [WARN] DB not found: {db_path}")
             schema_cache[db_id] = "Schema not available."
         else:
+            # Schema generation is expensive relative to record formatting, so cache
+            # per-db renders and reuse them across all examples hitting the same DB.
             print(f"  [CACHE MISS] Building MSchema for {db_id} ...")
             ms = build_mschema_from_db(
                 db_path      = db_path,
@@ -671,7 +694,17 @@ def main():
             gold_sql = record.get("SQL", "")
             fewshots = record.get("few_shot_examples", [])
 
-            print(f"\n[{idx+1}/{len(records)}] question_id={record.get('question_id')}  db={db_id}")
+            current_index = idx + 1
+            # Emit the first, last, and periodic progress checkpoints so long runs
+            # stay observable without flooding the terminal on large datasets.
+            should_log = (
+                current_index == 1
+                or current_index == len(records)
+                or (args.log_every > 0 and current_index % args.log_every == 0)
+            )
+
+            if should_log:
+                print(f"\n[{current_index}/{len(records)}] question_id={record.get('question_id')}  db={db_id}")
 
             db_schema = get_mschema_str(db_id)
 
@@ -692,7 +725,8 @@ def main():
             }
 
             out_f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-            print(f"  ✓ Written")
+            if should_log:
+                print("  ✓ Written")
 
     print(f"\n{'='*60}")
     print(f"Done. JSONL saved to : {OUTPUT_JSONL}")

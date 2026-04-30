@@ -129,6 +129,8 @@ Utility scripts under `scripts/data_generation/` may need to support both raw JS
 
 The `scripts/data_generation/few_shot_bm25.py` utility generates both inference and training few-shot files. For dev/inference data, each example receives top-k few-shot examples retrieved from the train file. For train data, each example receives top-k few-shot examples retrieved from the train file while excluding examples from the same `db_id`.
 
+The `scripts/data_generation/schema_build.py` utility supports both train and dev splits. It should be able to consume JSONL or JSON inputs, default to the split-specific few-shot file and column-meaning file in `data/bird_<split>_data/raw/`, read schemas from `databases/<split>_databases/`, and emit chat-format JSONL under `outputs/`. It also renders compact schema statistics such as table row/column counts and per-column null/distinct/min/max summaries.
+
 The training prompt should contain only system/user messages. The assistant message should be used as the gold SQL target for rewards, not included in the prompt.
 When normalizing raw BIRD data, preserve uppercase `SQL` fields as `gold_sql`.
 
