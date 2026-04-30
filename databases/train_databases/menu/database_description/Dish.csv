@@ -1,0 +1,16 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,,unique id number indicating the dishes,integer,
+name,,the name of the dish,text,
+description,,description of the dish ,text,(no value)
+menus_appeared,menus appeared,how many menus have this dish ,integer,
+times_appeared,times appeared,how many times this dish appears in the menu,integer,"commonsense evidence:
+if times_appeared > menus_appeard: this dish appeared in a menu more than once"
+first_appeared,first appeared,the year that this dish appears first,integer,"commonsense evidence:
+1.	the year outside of [1851, 2012], it means this data is not correct 
+2.	if this dish lasts longer (last_appeared - first_appeard), it means its history is long or historical / classical"
+last_appeared,last appeared,the year that this dish appears the last time,integer,"commonsense evidence:
+1.	the year outside of [1851, 2012], it means this data is not correct
+2.	if this dish lasts longer (last_appeared - first_appeard), it means its history is long or historical / classical"
+lowest_price,lowest price,the lowest price of the dish,real,"commonsense evidence:
+0: for free"
+highest_price,highest price,the highest price of the dish,real,

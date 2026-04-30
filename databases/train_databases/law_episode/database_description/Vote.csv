@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+episode_id,episode id,the id of the episode,text,
+stars,,a number between 1 and 10 indicating how much the viewer enjoyed the episode,integer,"commonsense evidence: The higher the number, the more the episode was enjoyed"
+votes,,"The total number of viewers that gave the specific episode the number of stars indicated in the ""stars"" column",integer,
+percent,,"The percent of viewers that gave the specific episode the number of stars indicated in the ""stars"" column",real,

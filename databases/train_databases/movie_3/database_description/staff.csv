@@ -1,0 +1,13 @@
+original_column_name,column_name,column_description,data_format,value_description
+staff_id,staff id,unique id number identifying the staff,integer ,
+first_name,first name,First name of the actor,text,
+last_name,last name,Last name of the actor,text,"full name = (first name, last name)"
+address_id,address id,id number identifying the address,integer,
+picture,picture of the staff,,blob,
+email,email of the staff,,text,
+store_id,store id,id number identifying the store,integer ,
+active,,Whether the staff is active or not.,integer,"1: active
+0: not active"
+username,,username to login the staff,text,
+password,,password to login the staff,text,
+last_update,last update,The time of the latest update,datetime,

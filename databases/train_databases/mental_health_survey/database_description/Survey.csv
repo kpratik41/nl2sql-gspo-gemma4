@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+SurveyID,Survey ID,The unique id of each survey ,integer,"commonsense evidence: 
+Each SurveyID is unique. And SurveyID is simply survey year ie 2014, 2016, 2017, 2018, 2019."
+Description,,The Description of the specific survey.,text,

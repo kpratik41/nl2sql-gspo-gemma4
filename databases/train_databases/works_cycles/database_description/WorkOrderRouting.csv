@@ -1,0 +1,13 @@
+original_column_name,column_name,column_description,data_format,value_description
+WorkOrderID,WorkOrderID,The id number of work order.,integer,
+ProductID,ProductID,The id number identifying products.,integer,
+OperationSequence,Operation Sequence,Indicates the manufacturing process sequence.,integer,
+LocationID,Location ID,Manufacturing location where the part is processed.,integer,
+ScheduledStartDate,Scheduled Start Date,Planned manufacturing start date.,datetime,
+ScheduledEndDate,Scheduled End Date,Planned manufacturing end date.,datetime,
+ActualStartDate,Actual Start Date,Actual start date.,datetime,
+ActualEndDate,ActualEndDate,Actual end date.,datetime,
+ActualResourceHrs,Actual Resource Hours,Number of manufacturing hours used.,real,
+PlannedCost,Planned Cost,Estimated manufacturing cost.,real,
+ActualCost,ActualCost,Actual manufacturing cost.,real,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

@@ -1,0 +1,44 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+playerID,,ID number identifying the unique number of the player,text,
+useFirst,use first name,,text,not useful
+firstName,,the first name of the player,text,
+middleName,,the middle name of the player,text,
+lastName,,the last name of the player,text,
+nameGiven,,,text,not useful
+fullGivenName,,,text,not useful
+nameSuffix,,the suffix name of the player,text,
+nameNick,nick name,,text,
+pos,position,the position of the player,text,"C: Center
+
+F: Forward
+
+G: Guard 
+
+commonsense evidence:
+some player can have two positions simultaneously"
+firstseason,,,integer,nothing special
+lastseason,,,integer,nothing special
+height,,inch,real,inch
+weight,,lb,integer,null or empty means it doesn't have this information
+college,,college,text,"null or empty means it doesn't have this information
+
+which colledge does this player graduate from"
+collegeOther,,the college that transferred from ,text,"commonsense evidence:
+
+some players may have the record of transferring from other colleges"
+birthDate,,birthdate,date,
+birthCity,,birthcity,text,null / empty refers to not recorded
+birthState,,birth state,text,
+birthCountry,,birth country,text,
+highSchool,,high school,text,null / empty refers to not recorded
+hsCity,high school city,high school city,text,null / empty refers to not recorded
+hsState,high school state,high school state,text,null / empty refers to not recorded
+hsCountry,high school country,high school country,text,null / empty refers to not recorded
+deathDate,,deathdate,date,"0000-00-00 means this player is still alive
+
+within clear date：
+2011-11-10, which means this guy was died on ""2011-11-10"""
+race,,,text,"B：black,
+W: white
+
+null or empty: nothing"

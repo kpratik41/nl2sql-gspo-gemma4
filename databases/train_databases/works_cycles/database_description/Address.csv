@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+AddressID,address id,Unique id number identifying the address.,integer,Primary key for Address records. Identity / Auto increment column.
+AddressLine1,address line 1,First street address line.,text,
+AddressLine2,address line 2,Second street address line.,text,"commonsense evidence:
+1. total address = (AddressLine1+AddressLine2) 
+2. if AddressLine2 is not null, it means the address is too long"
+City,,Name of the city.,text,
+StateProvinceID,state province id,Identification number for the state or province. ,integer,
+PostalCode,postal code,Postal code for the street address.,text,
+SpatialLocation,spatial location,Latitude and longitude of this address.,text,
+rowguid,rowguid,Uniquely identifying the record. Used to support a merge replication sample. ,text,Default: newid()
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

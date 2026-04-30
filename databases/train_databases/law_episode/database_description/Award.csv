@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+award_id,award id,the unique identifier for the award nomination,integer,
+organization,,the name of the organization that grants the award,text,
+year,,the year of the nomination for  the award,integer,
+award_category,award category,the class of the award,text,
+award,,the specific award,text,
+series,,the name of the Law & Order series that has been nominated,text,
+episode_id,episode id,the id of the episode that has been nominated,text,
+person_id,,the id of the person that has been nominated,text,
+role,,the role that has been nominated,text,
+result,,the nomination result,text,"Nominee / Winner
+commonsense evidence: 'Winner' means that the award was actually received. "

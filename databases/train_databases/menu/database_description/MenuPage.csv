@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,,the unique id number indentifying the menupage,integer,
+menu_id,menu id,the id of the menu,integer,
+page_number,page number,the page number ,integer,
+image_id,image id,the id of the image ,real,
+full_height,full height,full height of the menu page,integer,(mm)
+full_width,full width,full width of the menu page,integer,(mm)
+uuid,,,text,

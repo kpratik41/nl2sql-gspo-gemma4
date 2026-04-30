@@ -1,0 +1,13 @@
+original_column_name,column_name,column_description,data_format,value_description
+ProductID,Product ID,The id number identifying the products.,integer,
+BusinessEntityID,Business Entity ID,The id number identifying the business entities.,integer,
+AverageLeadTime,Average Lead Time,The average span of time between placing an order with the vendor and receiving the purchased product.,integer,in days
+StandardPrice,Standard Price,The vendor's usual selling price.,real,
+LastReceiptCost,Last Receipt Cost,The selling price when last purchased.,real,"commonsense evidence:
+profit on net can be computed by LastReceiptCost - StandardPrice"
+LastReceiptDate,Last Receipt Date,Date the product was last received by the vendor.,datetime,
+MinOrderQty,Min Order Quantity,The maximum quantity that should be ordered.,integer,
+MaxOrderQty,Max Order Quantity,The minimum quantity that should be ordered.,integer,
+OnOrderQty,On Order Quantity,The quantity currently on order.,integer,"if it's equal to 0, it means ""out of stock"""
+UnitMeasureCode,Unit Measure Code,The product's unit of measure.,text,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

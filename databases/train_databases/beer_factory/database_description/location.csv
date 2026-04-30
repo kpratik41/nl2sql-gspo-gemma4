@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+LocationID,location id,the unique id for the location,integer,
+LocationName,location name,the name of the location,text,
+StreetAddress,street address,the street address,text,
+City,,the city where the location locates,text,
+State,,the state code,text,
+ZipCode,zip code,the zip code of the location,integer,

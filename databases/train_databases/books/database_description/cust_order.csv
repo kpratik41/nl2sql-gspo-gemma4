@@ -1,0 +1,10 @@
+original_column_name,column_name,column_description,data_format,value_description
+order_id,order id,the unique identifier of the customer order,integer ,
+order_date,order date,the date of the order,datetime,
+customer_id,customer id ,"the id of the customer
+Maps to customer(customer_Id)",integer,"commonsense evidence:
+The number of orders ordered by the customer = the show-up times of the relative customer id in the table"
+shipping_method_id,shipping method id,"the id of the shipping method
+Maps to shipping_method(method_id)",integer,
+dest_address_id,destination address id ,"the id of the destination address
+Maps to address(address_id)",integer,

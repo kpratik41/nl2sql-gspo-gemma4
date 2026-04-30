@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+EVENTID,EVENT ID,unique id of event (sales),integer,
+REFID,REFERENCE ID,Reference to customer ID,integer,
+EVENT_DATE,EVENT DATE,date of sales,datetime,
+AMOUNT,AMOUNT,amount of sales,real,

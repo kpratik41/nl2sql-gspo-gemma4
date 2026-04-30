@@ -1,0 +1,3 @@
+original_column_name,column_name,column_description,data_format,value_description
+zip_code,zip code,the zip code of the alias,integer,
+alias,,the alias of the city,text,

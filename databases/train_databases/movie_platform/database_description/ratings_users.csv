@@ -1,0 +1,13 @@
+original_column_name,column_name,column_description,data_format,value_description
+user_id,,ID related to the user rating the movie,integer,
+rating_date_utc,,Rating date for the movie rating.,text,YYYY-MM-DD
+user_trialist,,whether the user was a trialist when he rated the movie,integer,"1 = the user was a trialist when he rated the movie
+ 0 = the user was not a trialist when he rated the movie"
+user_subscriber,,whether the user was a subscriber when he rated the movie,integer,"1 = the user was a subscriber when he rated the movie 
+0 = the user was not a subscriber when he rated the movie"
+user_avatar_image_url,,URL to the user profile image on Mubi,text,
+user_cover_image_url,,URL to the user profile cover image on Mubi,text,
+user_eligible_for_trial,,whether the user was eligible for trial when he rated the movie,integer,"1 = the user was eligible for trial when he rated the movie
+ 0 = the user was not eligible for trial when he rated the movie"
+user_has_payment_method ,,whether the user was a paying subscriber when he rated the movie,integer,"1 = the user was a paying subscriber when he rated the movie 
+0 = the user was not a paying subscriber when he rated"

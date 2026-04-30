@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description,
+SalesOrderID,,,integer,,
+SalesOrderDetailID,,,integer,,
+CarrierTrackingNumber,,,text,,
+OrderQty,,,integer,,
+ProductID,,,integer,,
+SpecialOfferID,,,integer,,
+UnitPrice,,,real,,
+UnitPriceDiscount,,,real,,
+LineTotal,,,real,,
+rowguid,,,text,,
+ModifiedDate,ModifiedDate,modified date,datetime,Date and time the record was last updated. ,Default: getdate()

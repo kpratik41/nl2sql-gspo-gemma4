@@ -1,0 +1,14 @@
+original_column_name,column_name,column_description,data_format,value_description
+Div,Division,Division Id,text,
+Date,,Match Date,date,YYYY-MM-DD
+HomeTeam,,Name of Home Team,text,
+AwayTeam,,Name of Away Team,text,
+FTHG,Final-time Home-team Goals,Final-time Home-team Goals,integer,
+FTAG,Final-time Away-team Goals,Final-time Away-team Goals,integer,
+FTR,Final-time Results,Final-time Results,text,"commonsense evidence:
+H stands for home victory, which means FTHG is higher than FTAG
+
+A stands for away victory, which means FTAG is higher than FTHG
+
+D stands for draft, which means FTHG equals to FTAG"
+season,,season of the match,integer,

@@ -1,0 +1,17 @@
+original_column_name,column_name,column_description,data_format,value_description
+business_id,business id, unique number identifying the business,integer,
+active,,whether the business is still actively running until now,text,"commonsense reasoning:
+� ""True"": the business is still running 
+� ""False"": the business is closed or not running now"
+city,,The city where the business is located,text,
+state,,The state where the business is located,text,
+stars,,ratings of the business,real,"5 � Great experience 
+4 � Good experience 
+3 � Average experience 
+2 � Bad experience 
+1 - Terrible experience 
+commonsense evidence: 
+� the rating of >3 stars referring to ""wonderful experience"" or positive comments and vice versa"
+review_count,review count,the total number of reviews the users have written for a business,text,"commonsense evidence: 
+� If a business has a low total review count and a high star rating of >3, it means there is a low veracity of reviews. 
+� higher review count and with high star rating of > 3 means this business is more popular or more appealing to users."

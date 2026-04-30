@@ -1,0 +1,14 @@
+original_column_name,column_name,column_description,data_format,value_description
+year,,year,integer,
+round,,round ,text,see abbrev.csv for details
+series,,series,text,used for the NHL designations
+tmIDWinner,Team ID of winner,Team ID of winner,text,
+lgIDWinner,League ID of winner,League ID of winner,text,
+tmIDLoser,Team ID of loser,Team ID of winner,text,
+lgIDLoser,league id of loser,league id of loser,text,
+W,wins ,wins ,integer,
+L,loses,loses,integer,
+T,ties ,ties ,integer,
+GoalsWinner,goals for winner,goals for winner,integer,
+GoalsLoser,goals for loser,goals for loser,integer,
+note,,note,note,"Note: EX = exhibition, ND = no decision, TG = total-goals series"

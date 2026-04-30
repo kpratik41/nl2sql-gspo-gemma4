@@ -1,0 +1,14 @@
+original_column_name,column_name,column_description,data_format,value_description
+country_id,country id,unique id number identifying the country,integer ,
+country,the name of the country,number identifying the country,text,"commonsense evidence:
+ Africa: (Algeria, Angola, Cameroon, Chad, Congo, The Democratic Republic of the, Egypt, Ethiopia, Gambia...)
+ Asia: (Afghanistan, Armenia, Azerbaijan, 
+Bahrain, Bangladesh, Brunei, Cambodia, China, Hong Kong, India, Indonesia, Iran, Iraq, Israel...)
+ Oceania (American Samoa, Australia, French Polynesia...)
+ North America (Anguilla, Canada, Dominican Republic, Ecuador, Greenland...)
+ South America (Argentina, Bolivia, Brazil, Chile, 
+Colombia, Ecuador, French Guiana....)
+ Europe (Austria, Belarus, Bulgaria, Czech Republic, Estonia, Faroe Islands, Finland, France, Germany, Greece, Holy See (Vatican City State), Hungary, Italy...)
+details: https://worldpopulationreview.com/country-rankings/list-of-countries-by-continent
+question can mention i.e., Europe instead of Austria, etc."
+last_update,last update,The time of the latest update,datetime,

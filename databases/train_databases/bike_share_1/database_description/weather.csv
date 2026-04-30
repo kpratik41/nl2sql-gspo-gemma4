@@ -1,0 +1,27 @@
+original_column_name,column_name,column_description,data_format,value_description
+date,,,text,
+max_temperature_f,max temperature in Fahrenheit degree,max temperature in Fahrenheit degree,integer,"commonsense evidence:
+It represents the hottest temperature."
+mean_temperature_f,mean temperature in Fahrenheit degree,mean temperature in Fahrenheit degree,integer,
+min_temperature_f,min temperature in Fahrenheit degree,min temperature in Fahrenheit degree,integer,"commonsense evidence:
+It represents the coldest temperature."
+max_dew_point_f,max dew point in Fahrenheit degree ,max dew point in Fahrenheit degree ,integer,
+mean_dew_point_f,mean dew point in Fahrenheit degree ,mean dew point in Fahrenheit degree ,integer,
+min_dew_point_f,min dew point in Fahrenheit degree ,min dew point in Fahrenheit degree ,integer,
+max_humidity,max humidity,max humidity,integer,
+mean_humidity,mean humidity,mean humidity,integer,
+min_humidity,min humidity,min humidity,integer,
+max_sea_level_pressure_inches,max sea level pressure in inches,max sea level pressure in inches,real,
+mean_sea_level_pressure_inches,mean sea level pressure in inches,mean sea level pressure in inches,real,
+min_sea_level_pressure_inches,min sea level pressure in inches,min sea level pressure in inches,real,
+max_visibility_miles,max visibility in miles,max visibility in miles,integer,
+mean_visibility_miles,mean visibility in miles,mean visibility in miles,integer,
+min_visibility_miles,min visibility in miles,min visibility in miles,integer,
+max_wind_Speed_mph,max wind Speed in mph,max wind Speed in mph,integer,
+mean_wind_speed_mph,mean wind Speed in mph,mean wind Speed in mph,integer,
+max_gust_speed_mph,max gust Speed in mph,max gust Speed in mph,integer,
+precipitation_inches,precipitation in inches,precipitation in inches,text,
+cloud_cover,cloud cover,cloud cover,integer,
+events,,,text,"Allowed input: [null], Rain, other"
+wind_dir_degrees,wind direction degrees,wind direction degrees,integer,
+zip_code,zip code,zip code,text,

@@ -1,0 +1,18 @@
+original_column_name,column_name,column_description,data_format,value_description
+episode_id,episode id,A unique identifier for episodes,text,
+season,,the season of the episode,integer,
+episode,,the episode number of the episode,integer,
+number_in_series,number in series,the number in series,integer,
+title,,the title of the episode,text,
+summary,,the summary of the episode,text,
+air_date,air date,the air date of the episode,text,YYYY-MM-DD
+episode_image,episode image,the image of episode,text,
+rating,,the rating of episode,real,"0.0 - 10.0
+commonsense evidence:
+Higher ratings mean higher quality and better response.
+ excellent: 7.0 < rating <= 10.0
+ average: 5.0 < rating <= 7.0 
+ bad: 0.0 < rating <= 5.0
+not bad: average, excellent"
+votes,,the votes of episode,integer,"commonsense evidence:
+Higher votes mean more audience supports (or popular)."

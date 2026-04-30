@@ -1,0 +1,6 @@
+original_column_name,column_name,column_description,data_format,value_description
+Match_Id,match id,unique id for match,integer,
+Player_Id,player id,the id of the player,integer,
+Role_Id,role id,the id of the play's role in the match,integer,"commonsense evidence:
+if a player has multiple roles in a match, it means this player is versatile"
+Team_Id,team id,the id of player's team,integer,

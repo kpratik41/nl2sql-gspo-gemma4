@@ -1,0 +1,33 @@
+original_column_name,column_name,column_description,data_format,value_description
+playerID,,id number identifying the player,text,number identifying players
+year,,year,integer,"2005-06 listed as ""2005"""
+stint,,order of appearance in a season,integer,"commonsense evidence: 
+the entire date in this table is ""year"" / ""month"" / ""date"""
+tmID,team ID,team abbreviated name,text,
+lgID,league ID,league abbreviated name,text,
+GP,Games played,Games played,text,
+Min,Minutes,Minutes of appearance,text,
+W,wins,wins,text,
+L,loses,loses,text,
+T/OL,Ties / overtime losses,Ties / overtime losses,text,
+ENG,Empty net goals,Empty net goals,text,"commonsense evidence: 
+An empty net goal happens when a team scores against their opponent who has pulled their goalie. Since there is no goalie in the net, the net is considered “empty"" "
+SHO,Shutouts,Shutouts,text,"commonsense evidence: 
+In ice hockey, a shutout (SHO) is credited to a goaltender who successfully stops the other team from scoring during the entire game."
+GA,Goals against,Goals against,text,"commonsense evidence: 
+“Goals Against” are the number of goals recorded while the goalie is on the ice. Include all goals against during regulation and overtime play."
+SA,Shots against,Shots against,text,"commonsense evidence: 
+“Shot Against” are the number of shots recorded while the goalie is on the ice"
+PostGP,Postseason games played,Postseason games played,text,
+PostMin,Postseason minutes,Postseason minutes,text,
+PostW,Postseason wins,Postseason wins,text,
+PostL,Postseason loses,Postseason loses,text,
+PostT,Postseason ties,Postseason ties,text,
+PostENG,Postseason empty net goals,Postseason empty net goals,text,"commonsense evidence: 
+An empty net goal happens when a team scores against their opponent who has pulled their goalie. Since there is no goalie in the net, the net is considered “empty"" "
+PostSHO,Postseason Shutouts,Postseason Shutouts,text,"commonsense evidence: 
+In ice hockey, a shutout (SHO) is credited to a goaltender who successfully stops the other team from scoring during the entire game."
+PostGA,Postseason Goals against,Postseason Goals against,text,"commonsense evidence: 
+“Goals Against” are the number of goals recorded while the goalie is on the ice. Include all goals against during regulation and overtime play."
+PostSA,Postseason Shots against,Postseason Shots against,text,"commonsense evidence: 
+“Shot Against” are the number of shots recorded while the goalie is on the ice."

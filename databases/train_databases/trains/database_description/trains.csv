@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,,the unique id representing the trains,integer,
+direction,,the direction of trains that are running ,text,"â¢ east;
+â¢ west;"

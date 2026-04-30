@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,,the unique identifier of the game publisher,integer,
+publisher_name,,the name of the publisher,text,"commonsense evidence:
+The publisher is the company or organization that finances, produces, and distributes the game. The publisher can influence the development of the game by providing resources, guidance, and support to the game's development team. The publisher can also affect the marketing and distribution of the game, as they are responsible for promoting the game and making it available to players. "

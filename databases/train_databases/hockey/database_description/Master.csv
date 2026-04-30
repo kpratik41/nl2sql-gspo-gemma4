@@ -1,0 +1,47 @@
+original_column_name,column_name,column_description,data_format,value_description
+playerID,,id number identifying the player,text,
+coachID,coach ID,coach id number,text,"commonsense evidence:
+if a person has both playerID and coachID, it means this person becomes coach after retirement."
+hofID,,hall of fame id,text,
+firstName,first name,first name,text,
+lastName,last name,last name,text,
+nameNote,name note,note about name,text,
+nameGiven,name given ,Given name,text,
+nameNick,Nickname ,Nickname ,text,"(multiple entries separated by ""/"")"
+height,,height,text,
+weight,,weight,text,
+shootCatch,shoot catch,Shooting hand (or catching hand for goalies),text,"commonsense evidence: 
+Shooting hand (or catching hand for goalies)
+L: left hand
+R: right hand
+if null or 'empty', it means this player is good at both left and right hand"
+legendsID,legends ID,ID at Legends Of Hockey,text,
+ihdbID,Internet Hockey Database ID,ID at the Internet Hockey Database,text,
+hrefID,Hockey-Reference.com ID,ID at Hockey-Reference.com,text,
+firstNHL,First NHL season,First NHL season,text,
+lastNHL,Last NHL season,Last NHL season,text,
+firstWHA,First WHA season,First WHA season,text,
+lastWHA,Last WHA season,Last WHA season,text,
+pos,position,,text,"commonsense evidence:
+LW: left winger
+RW: right winger
+C: center
+G: goalie
+D: defenseman
+W: winger
+F: forward
+the player with W (winger) means he can play the role as both LW (left winger) and RW (right winger)
+some players have two positions, which will be shown as ""L/D"". It means that LW + D --> left winger and defenseman"
+birthYear,birth Year,birth Year,text,
+birthMon,birth Month,birth Month,text,
+birthDay,birth Day,birth Day,text,"commonsense evidence:
+the entire / detail birth date in this table is ""year"" / ""month"" / ""date"""
+birthCountry,birth Country,birth Country,text,
+birthState,birth State,birth State,text,
+birthCity,birth city,birth city,text,
+deathYear,death year,death year,text,
+deathMon,death month,death month,text,
+deathDay,death day,death day,text,
+deathCountry,death country,death country,text,
+deathState,death state,death state,text,
+deathCity,death city,death city,text,

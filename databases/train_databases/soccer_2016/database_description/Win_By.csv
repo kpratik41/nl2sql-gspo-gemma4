@@ -1,0 +1,3 @@
+original_column_name,column_name,column_description,data_format,value_description
+Win_Id,winning id,the unique id for the winning,integer,
+Win_Type,winning type,the winning type,text,

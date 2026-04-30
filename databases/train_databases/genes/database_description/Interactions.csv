@@ -1,0 +1,11 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+GeneID1,gene id 1,identifier number of genes,text,
+GeneID2,gene id 2,identifier number of genes,text,
+Type,,Type,text,
+Expression_Corr,Expression correlation score,Expression correlation score,real,"range: (0,1)
+
+if the value is the positive then it's ""positively correlated""
+
+if the value is the negative then it's ""negatively correlated""
+
+if the value is very high positively, it means two genes are highly correlated"

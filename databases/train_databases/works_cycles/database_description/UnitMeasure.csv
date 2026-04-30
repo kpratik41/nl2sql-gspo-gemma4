@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+UnitMeasureCode,Unit Measure Code,The unique identifying numbers for measure.,text,
+Name,Name,Unit of measure description.,text,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

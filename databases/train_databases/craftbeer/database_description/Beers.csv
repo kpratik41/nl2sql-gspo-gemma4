@@ -1,0 +1,8 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+id,,unique id number of beers,integer,
+brewery_id,brewery id,id number of the breweries,integer ,
+abv,alcohol by volume,alcohol by volume,text,Alcohol by VolumeABV is the most common measurement of alcohol content in beer; it simply indicates how much of the total volume of liquid in a beer is made up of alcohol. 
+ibu,International Bitterness Units,International Bitterness Units,real,"IBU stands for International Bitterness Units, a scale to gauge the level of a beer's bitterness. More specifically, IBUs measure the parts per million of is humulone from hops in a beer, which gives beer bitterness."
+name,,name of beers,text,
+style,,style / sorts of beers,text,
+ounces,,ounces,real,

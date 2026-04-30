@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+ship_id,ship id,Unique identifier of the shipment,integer,
+cust_id,customer id ,A reference to the customer table that indicates which customer the shipment is for,integer,
+weight,,The number of pounds being transported on the shipment,real,
+truck_id,truck id,A reference to the truck table that indicates which truck is used in the shipment,integer,
+driver_id,driver id,A reference to the driver table that indicates which driver transported the goods in the shipment,integer,
+city_id,city id,A reference to the city table that indicates the destination of the shipment,integer,
+ship_date,ship date,the date the items were received by the driver,text,yyyy-mm-dd

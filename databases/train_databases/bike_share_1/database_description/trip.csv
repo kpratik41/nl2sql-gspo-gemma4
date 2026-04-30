@@ -1,0 +1,15 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,,,integer,
+duration,,The duration of the trip in seconds.,integer,"commonsense evidence:
+duration = end_date - start_date "
+start_date,start date,start date,text,
+start_station_name,start station name,The name of the start station,text,"commonsense evidence:
+It represents the station name the bike borrowed from."
+start_station_id,start station id,The ID of the start station,integer,
+end_date,end date,end date,text,
+end_station_name,end station name,The name of the end station,text,"commonsense evidence:
+It represents the station name the bike returned to."
+end_station_id,end station id,The ID of the end station,integer,
+bike_id,bike id,The ID of the bike,integer,
+subscription_type,subscription type,subscription type,text,"Allowed input: Subscriber, Customer."
+zip_code, zip code,zip code,integer,

@@ -1,0 +1,15 @@
+original_column_name,column_name,column_description,data_format,value_description
+user_id,,ID related to the user who created the list.,integer,
+list_id,,ID of the list on Mubi,integer,
+list_update_date_utc,,Last update date for the list,text,YYYY-MM-DD
+list_creation_date_utc,,Creation date for the list,text,YYYY-MM-DD
+user_trialist,,whether the user was a tralist when he created the list ,integer,"1 = the user was a trialist when he created the list
+ 0 = the user was not a trialist when he created the list"
+user_subscriber,,whether the user was a subscriber when he created the list ,integer,"1 = the user was a subscriber when he created the list 
+0 = the user was not a subscriber when he created the list"
+user_avatar_image_url,,User profile image URL on Mubi,text,
+user_cover_image_url,,User profile cover image URL on Mubi,text,
+user_eligible_for_trial,,whether the user was eligible for trial when he created the list ,text,"1 = the user was eligible for trial when he created the list 
+0 = the user was not eligible for trial when he created the list"
+user_has_payment_method ,,whether the user was a paying subscriber when he created the list ,text,"1 = the user was a paying subscriber when he created the list 
+0 = the user was not a paying subscriber when he created the list "

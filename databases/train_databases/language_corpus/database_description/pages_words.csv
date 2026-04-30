@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+pid,page id,page id of Wikipedia about Catalan language,integer,
+wid,word id,The word id of the Catalan language,integer,The value is unique.
+occurrences,,times of this word appears into this page,integer,

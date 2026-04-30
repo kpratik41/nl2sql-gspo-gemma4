@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+SalesID,Sales ID,the unique id of the sales,integer,
+SalesPersonID,SalesPerson ID,the unique id of the sale person,integer,
+CustomerID,Customer ID,the unique id of the customer,integer,
+ProductID,Product ID,the unique id of the product,integer,
+Quantity,,trading quantity,integer,"commonsense evidence:
+total price = quantity x Products' Price"

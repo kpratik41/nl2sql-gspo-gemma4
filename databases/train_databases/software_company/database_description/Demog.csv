@@ -1,0 +1,24 @@
+original_column_name,column_name,column_description,data_format,value_description
+GEOID,GEOGRAPHIC ID,unique geographic identifier,integer,
+INHABITANTS_K,INHABITANTS (THOUSANDS),number of inhabitants,real,the unit is K (thousands)
+INCOME_K,INCOME (THOUSANDS),average income per inhabitant per month,real,"the unit is dollar, it indicates the average income per inhabitant per month.
+commonsense evidence:
+some computation like: total income per year = INHABITANTS_K x INCOME_K x 12"
+A_VAR1,,,,
+A_VAR2,,,,
+A_VAR3,,,,
+A_VAR4,,,,
+A_VAR5,,,,
+A_VAR6,,,,
+A_VAR7,,,,
+A_VAR8,,,,
+A_VAR9,,,,
+A_VAR10,,,,
+A_VAR11,,,,
+A_VAR12,,,,
+A_VAR13,,,,
+A_VAR14,,,,
+A_VAR15,,,,
+A_VAR16,,,,
+A_VAR17,,,,
+A_VAR18,,,,

@@ -1,0 +1,3 @@
+original_column_name,column_name,column_description,data_format,value_description
+Toss_Id,toss id,the unique id for the toss,integer,
+Toss_Name,toss name,the toss decision name,text,

@@ -1,0 +1,17 @@
+original_column_name,column_name,column_description,data_format,value_description
+coachID,coach ID,number identifying coaches,text,number identifying coaches
+year,,In which year did the coach teach this team,integer,
+tmID,team ID,team abbreviated name,text,
+lgID,league ID,league abbreviated name,text,
+stint,,stint,integer,
+notes ,,note if needed,text,"commonsense evidence: 
+noted information"
+g,games,number of games,integer,
+w,wins,number of wins,integer,"commonsense evidence: 
+winning rates = wins / (wins + loses)"
+l,loses,number of loses,integer,
+t,ties,number of ties,integer,
+postg,post-season games,number of post-season games,text,
+postw,post-season wins,number of post-season wins,text,
+postl,post-season loses,number of post-season loses,text,
+postt,post-season ties,number of post-season ties,text,

@@ -1,0 +1,112 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+id,,the unique number to identify this record,integer,
+playerID,,ID number identifying the unique number of the player,text,
+year,,year,integer,
+stint,,the period of the time player spent played for this team,integer,
+tmID,team ID,team name,text,abbreviated name
+lgID,,,,
+GP,game presentatons,game presentatons (attendance),integer,"min: 0, max: 82
+
+commonsense evidence:
+
+if this number is equal to 82, means full attendance"
+GS,game starting,game starting,,"min: 0, max: 82,
+
+commonsense evidence:
+
+when GP = GS, it means that this player plays as the stating lineup fully. "
+minutes,,minutes,integer,
+points,,points,integer,
+oRebounds,offense rebounds,offense rebounds,integer,"empty or null refers to none offense rebounds，
+
+1: one offense rebound"
+dRebounds,defense rebounds,defense rebounds,integer,"empty or null refers to none defense rebounds，
+
+1: one defense rebound"
+rebounds,,total rebounds,integer,"empty or null refers to none total rebounds，
+
+3: totally gets 3 rebounds including offense and defense rebounds
+
+commensense evidence:
+
+total rebounds = offense rebounds + defense rebounds"
+assists,assistants,assistants,integer,"null or empty refers to none
+
+2: 2 assistants"
+steals,,steals,integer,"null or empty refers to none
+
+2: 2 steals"
+blocks,,blocks,integer,"null or empty refers to none
+
+2: 2 blocks"
+turnovers,,turnovers,integer,"null or empty refers to none
+
+2: 2 turnovers"
+PF,personal fouls,personal fouls,integer,"null or empty refers to none
+
+2: 2 personal fouls"
+fgAttempted,field goal attempted,field goal attempted,integer,"null or empty refers to none
+
+2: 2 field goal attempts"
+fgMade,field goal made,field goal made,integer,"null or empty refers to none
+
+2: 2 field goal made"
+ftAttempted,free throw attempted,free throw attempted,integer,"null or empty refers to none
+
+2: 2 free throw attempts"
+ftMade,free throw made,free throw made,integer,"null or empty refers to none
+
+2: 2 free throw made"
+threeAttempted,three point attempted,three point attempted,integer,"null or empty refers to none
+
+2: 2 three point attempts"
+threeMade,three point made,three point made,integer,"null or empty refers to none
+
+2: 2 three point made"
+PostGP,post season game presentations,post season game presentations,integer,0: this player doesn't present in the post season (playoffs)
+PostGS,post season game starting,post season game starting,integer,
+PostMinutes,post season minutes,post season minutes,integer,
+PostPoints,post season points,post season points,integer,
+PostoRebounds,post season offense rebounds,post season offense rebounds,integer,"null or empty refers to none
+
+1: 1 offense rebounds in the post season"
+PostdRebounds,post season defense rebounds,post season defense rebounds,integer,"null or empty refers to none
+
+1: 1 defense rebounds in the post season"
+PostRebounds,post season defense rebounds,post season defense rebounds,integer,"null or empty refers to none
+
+3: 3 rebounds in the post season totally"
+PostAssists,post season assistants,,integer,"null or empty refers to none
+
+1: 1 assistance in the post season"
+PostSteals,post season steals,,integer,"null or empty refers to none
+
+1: 1 offense steals in the post season"
+PostBlocks,post season blocks,,integer,"null or empty refers to none
+
+1: 1 block in the post season"
+PostTurnovers,post season turnovers,,integer,"null or empty refers to none
+
+1: 1 turnover in the post season"
+PostPF,post season personal fouls,,integer,"null or empty refers to none
+
+1: 2 personal fouls in the post season"
+PostfgAttempted,post season field goal attempted,,integer,"null or empty refers to none
+
+1: 1 field goal attempts in the post season"
+PostfgMade,post season field goal made,,integer,"null or empty refers to none
+
+1: 1 field goal made in the post season"
+PostftAttempted,post season field free throw attempted,,integer,"null or empty refers to none
+
+1: 1 free throw attempts in the post season"
+PostftMade,post season free throw made,,integer,"null or empty refers to none
+
+1: 1 free throw made in the post season"
+PostthreeAttempted,post season three point attempted,,integer,"null or empty refers to none
+
+1: 1 three point attempts in the post season"
+PostthreeMade,post season three point made,,integer,"null or empty refers to none
+
+1: 1 three point made in the post season"
+note,,,,

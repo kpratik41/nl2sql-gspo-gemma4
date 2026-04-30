@@ -1,0 +1,11 @@
+original_column_name,column_name,column_description,data_format,value_description
+WorkOrderID,Work Order ID,The unique id number identifying work order.,integer,
+ProductID,Product ID,Product identification number.,integer,
+OrderQty,Order Quantity,Product quantity to build.,integer,
+StockedQty,Stocked Quantity,Quantity built and put in inventory.,integer," Computed: isnull([OrderQty]-[ScrappedQty],(0))"
+ScrappedQty,Scrapped Quantity,Quantity that failed inspection.,integer,
+StartDate,Start Date,Work order start date.,datetime,
+EndDate,End Date,Work order end date.,datetime,
+DueDate,Due Date,Work order due date.,datetime,
+ScrapReasonID,Scrap Reason ID,Reason for inspection failure.,integer,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+date,date,the date of sales,date,
+store_nbr,store number,store number,integer,
+item_nbr,item number,item / product number,integer,
+units,,the quantity sold of an item on a given day,integer,

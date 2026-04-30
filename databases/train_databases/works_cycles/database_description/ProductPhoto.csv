@@ -1,0 +1,10 @@
+original_column_name,column_name,column_description,data_format,value_description
+ProductPhotoID,Product Photo ID,unique id number identifying the products,integer,
+ThumbNailPhoto,Thumb Nail Photo,Small image of the product.,blob,"The size of small images.
+commonsense evidence:
+""80x49 GIF image 3.07 kB"". ""3.07"" represents the size of images, ""GIF"" refers to type of images like JPEG, GIF, etc. "
+ThumbnailPhotoFileName,Thumbnail Photo File Name,Small image file name,text,
+LargePhoto,large photo,Large image of the product.,blob,
+LargePhotoFileName,Large Photo File Name,Large image file name.,text,"commonsense evidence:
+similar to ThumbNailPhoto"
+ModifiedDate,Modified Date,Date and time the record was last updated.,datetime,

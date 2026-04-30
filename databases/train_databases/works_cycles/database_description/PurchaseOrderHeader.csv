@@ -1,0 +1,14 @@
+original_column_name,column_name,column_description,data_format,value_description
+PurchaseOrderID,Purchase Order ID,The unique id number identifying purchase order.,integer,
+RevisionNumber,Revision Number,Incremental number to track changes to the purchase order over time. ,integer,
+Status,Status,Order current status.,integer,1 = Pending; 2 = Approved; 3 = Rejected; 4 = Complete Default: 1
+EmployeeID,Employee ID,Employee who created the purchase order.,integer,
+VendorID,Vendor ID,Vendor with whom the purchase order is placed.,integer,
+ShipMethodID,Ship Method ID,Shipping method,integer,
+OrderDate,Order Date,Purchase order creation date,datetime,Default: getdate()
+ShipDate,Ship Date,Estimated shipment date from the vendor.,datetime,
+SubTotal,SubTotal,Purchase order subtotal,real, Computed as SUM (PurchaseOrderDetail.LineTotal)for the appropriate PurchaseOrderID
+TaxAmt,Tax Amount,Tax amount,real,
+Freight,Freight,Shipping cost,real,
+TotalDue,Total Due,Total due to vendor,real,"Computed as Subtotal + TaxAmt + Freight. Computed: isnull(([SubTotal]+[TaxAmt])+[Freight],(0))"
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

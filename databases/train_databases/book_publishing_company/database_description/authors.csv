@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+au_id,author id,unique number identifying authors,text,
+au_lname,author last name,author last name,text,
+au_fname,author first name,author first name,text,
+phone,,phone number,text,
+address,,address,text,
+city,,city ,text,
+state,,state ,text,
+zip,,zip code,text,
+contract,,contract status,text,"commonsense evidence:
+0: not on the contract
+1: on the contract"

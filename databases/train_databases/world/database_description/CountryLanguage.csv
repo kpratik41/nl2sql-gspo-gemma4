@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+CountryCode,Country Code,The unique code for country ,text,
+Language,,Country language,text,
+IsOfficial,Is Official,Information on whether the language is official in a given country,text,T / F
+Percentage,,Percentage of language use,real,

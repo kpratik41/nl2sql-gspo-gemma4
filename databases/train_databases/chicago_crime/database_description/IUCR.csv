@@ -1,0 +1,13 @@
+original_column_name,column_name,column_description,data_format,value_description
+iucr_no,iucr number,Unique identifier for the incident classification,text,
+primary_description,primary description,The general description of the incident classification,text,"commonsense evidence:
+
+It's the general description "
+secondary_description,secondary description,The specific description of the incident classification,text,"commonsense evidence:
+
+It's the specific description "
+index_code,index code,"Uses values ""I"" and ""N"" to indicate crimes ",text,"commonsense evidence:
+
+â¢ ""Indexed"" (severe, such as murder, rape, arson, and robbery)
+
+â¢ ""Non-Indexed"" (less severe, such as vandalism, weapons violations, and peace disturbance) "

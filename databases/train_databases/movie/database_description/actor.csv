@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+ActorID,actor id,the unique id for the actor,integer,
+Name,,actor's name,text,
+Date of Birth,date of birth,actor's birth date,date,
+Birth City,birth city,actor's birth city,text,
+Birth Country,birth country,actor's birth country,text,
+Height (Inches),height inches,actor's height,integer,the unit is inch
+Biography,,actor's biography,text,
+Gender,,actor's gender,text,
+Ethnicity,,actor's ethnicity,text,
+NetWorth,,actor's networth,text,"commonsense evidence:
+The actor with more networth is richer. "

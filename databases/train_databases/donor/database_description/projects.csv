@@ -1,0 +1,43 @@
+original_column_name,column_name,column_description,data_format,value_description
+projectid,project id,project's unique identifier,text,
+teacher_acctid,teacher_acctid,teacher's unique identifier (teacher that created a project),text,
+schoolid,schoolid,school's identifier (school where teacher works),text,
+school_ncesid,school national center for education statistics id,Public National Center for Ed Statistics id,text,
+school_latitude,school latitude,latitude of school ,real,
+school_longitude,school longitude,longitude of school ,real,
+school_city,school city,city where the school is located,text,
+school_state,school state,state where the school is located,text,
+school_zip,school zip,zipcode of school,integer,
+school_metro,school metro,metro where the school is located,text,
+school_district,school district,district where the school is located,text,
+school_county,school county,country where the school is located,text,
+school_charter,school charter,whether it is a public charter school or not (no private schools in the dataset),text,
+school_magnet,school magnet,whether a public magnet school or not,text,
+school_year_round,school year round,whether it is a public year round school or not,text,
+school_nlns,school Nonleafy Normal Stature,whether it is a public Nonleafy Normal Stature school or not,text,
+school_kipp,school Knowledge Is Power Program,whether it is a public Knowledge Power Program school or not,text,
+school_charter_ready_promise,school charter ready promise,whether it is a public ready promise school or not,text,
+teacher_prefix,teacher prefix,teacher's gender,text,"commonsense evidence:
+if the value is equal to ""Dr. "", it means this teacher acquired P.h.D or doctor degree."
+teacher_teach_for_america,teachers teach for america,Teach for America or not,text,
+teacher_ny_teaching_fellow,teacher_new_york_teaching_fellow,New York teaching fellow or not,text,"• t: true
+• f: false
+commonsense evidence:
+if true: it means that this teacher is a New York teacher"
+primary_focus_subject,primary focus subject,main subject for which project materials are intended,text,
+primary_focus_area,primary focus area,main subject area for which project materials are intended,text,
+secondary_focus_subject,secondary focus subject,secondary subject,text,
+secondary_focus_area,secondary focus area,secondary subject area,text,
+resource_type,resource type,main type of resources requested by a project,text,
+poverty_level,poverty level,school's poverty level,text,"commonsense evidence:
+highest: 65%+ free of reduced lunch; high: 40-64%; moderate: 10-39%low: 0-9%"
+grade_level,grade level,grade level for which project materials are intended,text,
+fulfillment_labor_materials,fulfillment labor materials, cost of fulfillment,real,"commonsense evidence:
+higher means higher cost, or need more labors"
+total_price_excluding_optional_support,total price excluding optional support,project cost excluding optional tip that donors give to DonorsChoose.org while funding a project,real,
+total_price_including_optional_support,total price including optional support,project cost including optional tip that donors give to DonorsChoose.org while funding a project,real,"commonsense evidence:
+cost of optional tip = total_price_including_optional_support -total_price_excluding_optional_support"
+students_reached,students reached,number of students impacted by a project (if funded),integer,
+eligible_double_your_impact_match,eligible double your impact match," project was eligible for a 50% off offer by a corporate partner (logo appears on a project, like Starbucks or Disney)",text,
+eligible_almost_home_match,eligible almost home match,project was eligible for a $100 boost offer by a corporate partner,text,
+date_posted,date posted,data a project went live on the site,date,

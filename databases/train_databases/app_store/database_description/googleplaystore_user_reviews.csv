@@ -1,0 +1,17 @@
+original_column_name,column_name,column_description,data_format,value_description
+App,,Name of app,text,
+Translated_Review,,User review (Preprocessed and translated to English),text,"nan 42%
+Good 0%
+Other (37185) 58%"
+Sentiment,,Overall user rating of the app (as when scraped),text,"commonsense evidence:
+Positive: user holds positive attitude towards this app
+Negative: user holds positive attitude / critizes on this app
+Neural: user holds neural attitude
+nan: user doesn't comment on this app."
+Sentiment_Polarity,Sentiment Polarity,Sentiment polarity score,text,"commonsense evidence:
+• score >= 0.5 it means pretty positive or pretty like this app.
+• 0 <= score < 0.5: it means user mildly likes this app.
+• -0.5 <= score < 0: it means this user mildly dislikes this app or slightly negative attitude
+• score <-0.5: it means this user dislikes this app pretty much."
+Sentiment_Subjectivity,Sentiment Subjectivity,Sentiment subjectivity score,text,"commonsense evidence:
+more subjectivity refers to less objectivity, vice versa."

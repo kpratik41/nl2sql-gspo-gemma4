@@ -1,0 +1,22 @@
+original_column_name,column_name,column_description,data_format,value_description
+report_no,report number,unique Numeric identifier of the crime report.,integer,
+case_number,case number,Case number assigned to the reported crime.,text,"commonsense evidence: 
+
+There is usually one case number for any reported crime except in the case of multiple homicide where a single report will produce one case number for each victim
+
+if case_number appears > 1, it means this is a multiple homicide"
+date,,Date of the occurrence of the incident being reported,text,
+block,,A redacted address indicating in which city block the incident occurred,text,
+iucr_no,Illinois Uniform Crime Reporting number,Illinois Uniform Crime Reporting code: a four digit code used to classify criminal incidents when taking reports.,text,
+location_description,location description,A description of the kind of area where incident occurred,text,
+arrest,,A true/false value indicating if an arrest has been made,text,
+domestic,,A true/false value indicating if the incident is as case of domestic violence,text,
+beat,,,integer,
+district_no,district number,A number indicating the geographic subdivision of the police district where the incident occurred,integer,
+ward_no,ward number,A two digit number identifying the legislative district (ward) where the incident occurred.,integer,
+community_area_no,community area number,A number identifying one of 77 geographic areas where the incident occurred,integer,
+fbi_code_no,fbi code number,A code identifying the type of crime reported according to the classification scheme used by the FBI.,text,
+latitude,,The latitude where incident is reported to have occurred.,text,
+longitude,,The longitude where incident is reported to have occurred.,text,"commonsense evidence: 
+
+The precise location / coordinate: combines the longitude and latitude for plotting purposes. (latitude, longitude)"

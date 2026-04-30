@@ -1,0 +1,8 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+id,id,unique id number identifying the work,integer,
+Title,,title of the work,text," commonsense evidence:
+the short title or abbreviated title
+"
+LongTitle,Long Title,full title of the work,text,
+Date,character id,date of the work,integer,
+GenreType,genre type,the type of the genere,text,

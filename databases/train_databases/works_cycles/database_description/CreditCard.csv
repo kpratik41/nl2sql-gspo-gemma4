@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+CreditCardID,Credit Card ID,The unique id number identifying the credit card.,integer,
+CardType,Card Type,Credit card name.,text,
+CardNumber,Card Number,Credit card number.,text,
+ExpMonth,Expiration Month,Credit card expiration month.,integer,
+ExpYear,Expiration Year ,Credit card expiration year.,integer,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

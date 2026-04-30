@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+inspection_id,inspection id,the unique id for the inspection,integer,
+point_id,point id,the inspection point id,integer,
+fine,,the fine of the violation,integer,"commonsense evidence: The fine of more serious food safety problems will be higher. 
+ Minor: 100 
+ Serious: 250 
+ Critical: 500"
+inspector_comment,,the comment of the inspector,text,

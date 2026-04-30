@@ -1,0 +1,11 @@
+original_column_name,column_name,column_description,data_format,value_description
+TransactionID,Transaction ID,The unique id number identifying TransactionHistory records.,integer,
+ProductID,Product ID,Product identification number.,integer,
+ReferenceOrderID,Reference Order ID,"Purchase order, sales order, or work order identification number.",integer,
+ReferenceOrderLineID,Reference Order Line ID,"Line number associated with the purchase order, sales order, or work order.",integer,
+TransactionDate,Transaction Date,Date and time of the transaction.,datetime,
+TransactionType,Transaction Type,Type of transaction records.,text,"commonsense evidence: 
+W = WorkOrder, S = SalesOrder, P = PurchaseOrder"
+Quantity,,Product quantity.,integer,
+ActualCost,Actual Cost,Product cost.,real,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

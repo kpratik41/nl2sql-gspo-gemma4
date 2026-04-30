@@ -1,0 +1,11 @@
+original_column_name,column_name,column_description,data_format,value_description
+course_id,course id,the id of courses,integer,
+student_id,student id,the id of students,integer,
+grade,,the grades that the students acquire in this course,text,"commonsense evidence:
+ A: excellent -- 4
+ B: good -- 3
+ C: fair -- 2
+ D: poorly pass -- 1
+ null or empty: this student fails to pass this course
+ gpa of students for this semester = sum (credits x grade) / sum (credits)"
+sat,satisfying degree,student satisfaction with the course,integer,

@@ -1,0 +1,58 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+playerID,,ID number identifying the unique number of the player,text,
+first_name,,the first name of the player,text,
+last_name,,the last name of the player,text,
+season_id,,the id number of the season,integer,
+conference,,which conference that players belong to,text,two categories: west; east
+league_id,league ID,the league name,text,two categories: NBA; ABA
+games_played,,how many all star games that this player played in this season,integer,mostly it's 1
+minutes,,minutes of attendance,integer,18：played in 18 minutes
+points,,points,integer,"19: get 19 points；
+
+null --> doesn't get points"
+o_rebounds,offense rebounds,offense rebounds,integer,"empty or null refers to none offense rebounds，
+
+1: one offense rebound"
+d_rebounds,defense rebounds,defense rebounds,integer,"empty or null refers to none defense rebounds，
+
+1: one defense rebound"
+rebounds,,total rebounds,integer,"empty or null refers to none total rebounds，
+
+3: totally gets 3 rebounds including offence and defense rebounds
+
+commensense evidence:
+
+total rebounds = offense rebounds + defense rebounds"
+assists,assistants,assistants,integer,"null or empty refers to none
+
+2: 2 assistants"
+steals,,steals,integer,"null or empty refers to none
+
+2: 2 steals"
+blocks,,blocks,integer,"null or empty refers to none
+
+2: 2 blocks"
+turnovers,,turnovers,integer,"null or empty refers to none
+
+2: 2 turnovers"
+personal_fouls,,personal fouls,integer,"null or empty refers to none
+
+2: 2 personal fouls"
+fg_attempted,field goal attempted,field goal attempted,integer,"null or empty refers to none
+
+2: 2 field goal attempts"
+fg_made,field goal made,field goal made,integer,"null or empty refers to none
+
+2: 2 field goal made"
+ft_attempted,free throw attempted,free throw attempted,integer,"null or empty refers to none
+
+2: 2 free throw attempts"
+ft_made,free throw made,free throw made,integer,"null or empty refers to none
+
+2: 2 free throw made"
+three_attempted,three point attempted,three point attempted,integer,"null or empty refers to none
+
+2: 2 three point attempts"
+three_made,three point made,three point made ,integer,"null or empty refers to none
+
+2: 2 three point made"

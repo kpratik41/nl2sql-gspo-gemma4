@@ -1,0 +1,9 @@
+original_column_name,column_name,column_description,data_format,value_description
+user_id,user id,the unique id number identifying which user,integer,
+user_yelping_since_year,user yelping since year,the time when the user join Yelp,integer,
+user_average_stars,user average stars,the average ratings of all review,real,
+user_votes_funny,user votes funny,total number of funny votes sent by the user,text,
+user_votes_useful,user votes useful,how many useful votes created by the user,text,
+user_votes_cool,user votes cool,how many cool votes created by the user,text,
+user_review_count,user review count,total number of reviews the user has written,text,
+user_fans,user fans,total number of fans / followers the user has,text,"commonsense evidence: Users with “Uber” number of fans indicate that they have sent an “Uber” number of ‘cool’, ‘useful’ and ‘funny” votes."

@@ -1,0 +1,12 @@
+torch
+transformers
+datasets
+accelerate
+deepspeed
+trl
+vllm
+wandb
+sentencepiece
+protobuf
+flash-attn
+rank-bm25

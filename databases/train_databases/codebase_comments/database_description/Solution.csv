@@ -1,0 +1,9 @@
+,original_column_name,column_name,column_description,data_format,value_description
+0,Id,,unique id to identify this solution,integer,
+1,RepoId,Repository Id,id of repository,integer,
+2,Path,Path,path of this solution,text,
+3,ProcessedTime,Processed Time,processed time,integer,
+4,WasCompiled,Was Compiled,whether this solution needs to be compiled or not,integer,"
+commonsense evidence:
+0: this solution needs to be compiled if user wants to implement it.
+1: this solution can be implemented without needs of compilation"

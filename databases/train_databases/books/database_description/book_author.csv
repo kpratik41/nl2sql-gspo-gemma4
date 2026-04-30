@@ -1,0 +1,6 @@
+original_column_name,column_name,column_description,data_format,value_description
+book_id,book id,"the id of the book
+Maps to book(book_id)",integer,
+author_id,author id,"the id of the author
+Maps to author(author_id)",integer,"commonsense evidence:
+Books with the same author id are written by the same author. "

@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+person_id,person id,the unique identifier for the person,text,
+name,,the name of the person,text,
+birthdate,birth date,the date the person was born,date,"if null, it means this birthdate of the person is not available"
+birth_name,birth name,the name parents gave to the person shortly after birth,text,
+birth_place,birth place,the place where a person was born.,text,"commonsense evidence: the birth place info is integrate if birth_name, birth_place, birth_region don't contain null value
+the full birth place = birth_country +birth_region +birth_place"
+birth_region,birth region,the geographical area describing where a person was born that is larger than the birth place,text,
+birth_country,birth country,the name of the country where the person was born,text,"commonsense evidence: can ask questions about its corresponding continent: e.g.: 
+USA --> North America"
+height_meters,height meters,how tall the person is in meters,real,
+nickname,,the nickname the person goes by,text,

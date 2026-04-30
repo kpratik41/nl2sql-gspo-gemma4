@@ -1,0 +1,4 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+River,,the name of the river,text,
+Country,,the country code where it is located,text,
+Province,,the province of this country,text,

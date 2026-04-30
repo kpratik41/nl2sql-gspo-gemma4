@@ -1,0 +1,22 @@
+original_column_name,column_name,column_description,data_format,value_description
+patient,,the unique id for the patient,text,
+birthdate,birth date,the birth date of the patient,date,
+deathdate,death date,the death date of the patient,date,"commonsense evidence: 
+ the age of the patient = death year - birth year 
+ if null, it means this patient is still alive"
+ssn,social security number,the social security number of the patient,text,
+drivers,,the driver number of the patient,text,"commonsense evidence: if not, this patient doesn't have driving license"
+passport,,the passport number,text,"commonsense evidence: if not, this patient cannot go abroad, vice versa"
+prefix,,the prefix,text,
+first,,the first name,text,
+last,,the last name,text,commonsense evidence: full name = first + last
+suffix,,the suffix of the patient,text,"commonsense evidence: if suffix = PhD, JD, MD, it means this patient has doctoral degree. Otherwise, this patient is not."
+maiden,,the maiden name of the patient,text,commonsense evidence: Only married women have the maiden name
+marital,,the marital status of the patient,text,"commonsense evidence: 
+ M: married 
+ S: single"
+race,,the race of the patient,text,
+ethnicity,,the ethnicity of the patient,text,
+gender,,the gender of the patient,text,
+birthplace,birth place,the birth place,text,
+address,,the specific address,text,

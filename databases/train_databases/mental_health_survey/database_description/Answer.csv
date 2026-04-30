@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+AnswerText,Answer Text,The specific and detailed answer text of each question.,text,The content is highly depend on the question.
+SurveyID,Survey ID,The id of each survey.,integer,"The SurveyID is simply survey year i.e., 2014, 2016, 2017, 2018, 2019."
+UserID,User ID,The id of different user.,integer,"commonsense evidence: 
+Some questions can contain multiple answers, thus the same user can appear more than once for that QuestionID."
+QuestionID,Question ID,The id of different questions.,integer,"commonsense evidence: 
+Some questions can contain multiple answers, thus the same user can appear more than once for that QuestionID."

@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+CultureID,Culture ID,The unique id string identifying the language in which AdventrueWorks data is stored.,text,
+Name,,Name of the language.,text,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

@@ -1,0 +1,9 @@
+original_column_name,column_name,column_description,data_format,value_description
+IMG_ID,IMAGE ID,the image id ,integer,
+PRED_CLASS_ID,PREDICTION CLASS ID,the prediction relationship class between objects,integer,"commonsense evidence:
+
+if OBJ1_SAMPLE_ID = OBJ2_SAMPLE_ID, this relationship is the self-relation."
+OBJ1_SAMPLE_ID,OBJECT1 SAMPLE ID,the sample id of the first object,integer,
+OBJ2_SAMPLE_ID,OBJECT2 SAMPLE ID,the sample id of the second object,integer,"commonsense evidence:
+
+if (OBJ1_SAMPLE_ID, OBJ2_SAMPLE_ID) has multiple PRED_CLASS_ID, it means these two objects have multiple relations."

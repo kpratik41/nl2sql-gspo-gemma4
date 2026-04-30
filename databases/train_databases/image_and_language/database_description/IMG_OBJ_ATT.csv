@@ -1,0 +1,10 @@
+original_column_name,column_name,column_description,data_format,value_description
+IMG_ID,IMAGE ID,id number of each image,integer,
+ATT_CLASS_ID,ATTRIBUTE CLASS ID,attribute class number for image,integer,"commonsense evidence:
+
+if one IMG_ID has many ATT_CLASS_ID, it refers to that this image has multiple attributes"
+OBJ_SAMPLE_ID,OBJECT SAMPLE ID,object sample id,integer,"commonsense evidence:
+
+â¢ if one IMG_ID has many OBJ_SAMPLE_ID, it refers to that this image has multiple objects
+
+â¢ if one ATT_CLASS_ID has many OBJ_SAMPLE_ID, it refers to that this attribute is composed of multiple objects."

@@ -1,0 +1,12 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+Name,,the name of the river,text,
+River,,the river where it finally flows to,text,
+Lake,,the lake where it finally flows to,text,
+Sea,, the sea where it finally flows to,text,"(note that at most one out of {river,lake,sea} can be non-null"
+Length,,the length of the river,real,
+SourceLongitude,,the longitude of its source,real,
+SourceLatitude,,the latitude of its source,real,
+Mountains,,the mountains where its source is located,text,
+SourceAltitude,, the elevation (above sea level) of its source,real,
+EstuaryLongitude,,the coordinates of its estuary,real,
+EstuaryLatitude,,the latitude of its estuary,real,

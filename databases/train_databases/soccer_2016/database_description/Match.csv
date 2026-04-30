@@ -1,0 +1,18 @@
+original_column_name,column_name,column_description,data_format,value_description
+Match_Id,,unique id for match,integer,
+Team_1,team 1,the team id of the first team,integer,
+Team_2,team 2,the team id for the second team,integer,
+Match_Date,match date,the date of the match,date,yyyy-mm-dd
+Season_Id,season id,the id of the season,integer,
+Venue_Id,venue id,the id of the venue where the match held,integer,
+Toss_Winner,toss winner,the id of the toss winner,integer,"commonsense evidence:
+The toss winner is a term used in cricket and is the team that wins the heads or tails toss of coin at the beginning of a match which then enables the team captain to decide whether to bat or bowl first on the pitch."
+Toss_Decide,toss decide,the decision (batting or bowling) made after winning the toss,integer,"â¢ field 
+â¢ bat"
+Win_Type,winning type,the id of the winning type ,integer,
+Win_Margin,winning margin,the points of the winning margin,integer,"commonsense evidence:
+A winning margin bet is a wager on the final result of a game, within a certain range of points."
+Outcome_type,outcome type,the id of the outcome type,integer,
+Match_Winner,match winner,the team id of the match winner,integer,
+Man_of_the_Match,man of the match,the id of the man of the match,integer,"commonsense evidence:
+In team sport, a player of the match or man (or woman) of the match award is often given to the outstanding player in a particular match."

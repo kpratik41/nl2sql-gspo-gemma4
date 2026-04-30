@@ -1,0 +1,10 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,,the unique id representing the menu item,integer,
+menu_page_id,menu_page_id,the id of menu page,integer,
+price,,the price of this dish (menu item),real,
+high_price,high price,high price of this dish,real,
+dish_id,dish_id,the id of the dish,integer,
+created_at,created at,the dates when the item was created,text,
+updated_at,updated at,the dates when the item was updated,text,
+xpos,x position,x-axis position of the dish in this menu page,real,
+ypos,y position,y-axis position of the dish in this menu page,real,

@@ -1,0 +1,6 @@
+original_column_name,column_name,column_description,data_format,value_description
+coachID,coach ID,string ID of the coach,text,
+award,,awards that the coach achieve,text,
+year,,year of award,integer,
+lgID,league ID,league abbreviated name,text,
+note,,,text,

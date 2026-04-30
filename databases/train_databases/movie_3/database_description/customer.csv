@@ -1,0 +1,11 @@
+original_column_name,column_name,column_description,data_format,value_description
+customer_id,country id,unique id number identifying the country,integer,
+store_id,store id,unique id number identifying the store,integer,
+first_name,first name,First name of the customer,text,
+last_name,last name,Last name of the customer,text,
+email,,Email address of the customer,text,
+address_id,address id,Address id number of the customer.,integer ,
+active,,Wether the customer is active or not.,integer,"1: active
+0: not active"
+create_date,create date,The date when the record is created.,datetime,
+last_update,last update,The time of the latest update,datetime,

@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+EmployeeID,Employee ID,the unique id of the employee,integer,
+FirstName,First Name,the employee's first name,text,
+MiddleInitial,Middle Initial,the employee's middle initial ,text,
+LastName,Last Name,the employee's last name,text,

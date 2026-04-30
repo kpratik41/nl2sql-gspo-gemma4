@@ -1,0 +1,36 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,,the unique id number representing the cars,integer,
+train_id,train id,the counterpart id for trains that the cars belong to,integer,
+position,,postion id of cars in the trains,integer,"1-4:
+commonsense evidence:
+1: head car
+4: tail car"
+shape,,shape of the cars,text,"â¢ rectangle
+â¢ bucket
+â¢ u_shaped
+â¢ hexagon
+â¢ elipse
+commonsense evidence:
+regular shape: 
+rectangle, u_shaped, hexagon"
+len,length,length of the cars,text,"â¢ short 
+â¢ long"
+sides,,sides of the cars,text,"â¢ not_double
+â¢ double"
+roof,,roof of the cars,text,"commonsense evidence:
+â¢ none: the roof is open
+â¢ peaked
+â¢ flat
+â¢ arc
+â¢ jagged"
+wheels,,wheels of the cars,integer,"â¢ 2:
+â¢ 3: "
+load_shape,,load shape,text,"â¢ circle
+â¢ hexagon
+â¢ triangle
+â¢ rectangle 
+â¢ diamond"
+load_num,load number,load number,integer,"0-3:
+commonsense evidence:
+â¢ 0: empty load
+â¢ 3: full load"

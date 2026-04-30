@@ -1,0 +1,9 @@
+original_column_name,column_name,column_description,data_format,value_description
+id ,,the unique identifier of the record,,
+games_id,games id,"the id of the game
+Maps to games(id)",integer,
+person_id,person id,"the id of the person
+Maps to person(id)",integer,"commonsense evidence:
+The times a person participated in the Olympics games could be calculated by grouping by person_id. "
+age,,the age of the person when he/she participated in the game,integer,"commonsense evidence:
+If person A's age was 22 when he participated in game A and his age was 24 when he participated in game B, it means that game A was held two years earlier than game B."

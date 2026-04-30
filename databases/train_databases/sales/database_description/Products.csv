@@ -1,0 +1,6 @@
+original_column_name,column_name,column_description,data_format,value_description
+ProductID,Product ID,the unique id of the product,integer,
+Name,,the product name,text,
+Price,,the price of the product,real,"unit price
+commonsense evidence:
+if the price = 0.0, it means this product is free or a gift"

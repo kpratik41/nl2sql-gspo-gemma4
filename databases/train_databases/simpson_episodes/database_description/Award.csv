@@ -1,0 +1,14 @@
+original_column_name,column_name,column_description,data_format,value_description
+award_id,award id,the unique id for the award,integer,
+organization,,the organization that holds the award,text,
+year,,year of award,integer,
+award_category,,the category of the award,text,
+award,,the name of the award,text,
+person,,the person who gets the award,text,
+role,,the role of the honoree,text,
+episode_id,episode id,S stands for 'Season' and E stands for 'Episode',text,
+season,,the season of the awarded work,text,
+song,,the theme song of the awarded work,text,
+result,,the final award result,text,"commonsense evidence:
+ Nominee: the prospective recipient of the award. The nominee are people who were nominated but didn't win the award. 
+ Winner: the people who finally won the award"

@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+customer_id,customer id,"the id of the customer
+Maps to customer(customer_id)",integer,
+address_id,address id,"the id of the address
+Maps to address(address_id)",integer,
+status_id,status id ,the id of the address status,integer,"commonsense evidence:
+A customer may have several addresses. If a customer has several addresses, the address that the status_id = 1 is the customer's current address that is in use. The other addresses with 2 as status_id is abandoned addresses. "

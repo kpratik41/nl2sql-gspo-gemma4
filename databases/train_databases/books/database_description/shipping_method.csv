@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+method_id,method id,the unique identifier of the method,integer,
+method_name,method name,the method name,text,
+cost,,the cost of the shipping method,real,"commonsense evidence:
+The main difference between the various shipping methods, such as standard, priority, express, and international, is the speed at which the item is delivered. Standard shipping is the slowest and least expensive option, while express and priority shipping are faster and more expensive. International shipping is for items that are being shipped to a destination outside of the country where they originated."

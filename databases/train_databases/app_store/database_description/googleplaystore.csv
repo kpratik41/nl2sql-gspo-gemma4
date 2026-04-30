@@ -1,0 +1,35 @@
+original_column_name,column_name,column_description,data_format,value_description
+App,,Application name,text,
+Category,,Category the app belongs to,text,"FAMILY 18%
+GAME 11%
+Other (7725) 71%"
+Rating,,Overall user rating of the app (as when scraped),real,
+Reviews,,Number of user reviews for the app (as when scraped),integer,
+Size,,Size of the app (as when scraped),text,"Varies with device 16%
+11M 2%
+Other (8948) 83%"
+Installs,,Number of user downloads/installs for the app (as when scraped),text,"1,000,000+ 15%
+10,000,000+ 12%
+Other (8010) 74%"
+Type,,Paid or Free,text,"Only has 'Paid' and 'Free'
+Free 93%
+Paid 7%"
+Price,,Price of the app (as when scraped),text,"0 93%
+$0.99 1%
+Other (653) 6%
+
+commonsense evidence:
+Free means the price is 0."
+Content Rating,,Age group the app is targeted at - Children / Mature 21+ / Adult,text,"Everyone 80%
+Teen 11%
+Other (919) 8%
+
+commonsense evidence:
+According to Wikipedia, the different age groups are defined as:
+Children: age<12~13
+Teen: 13~19
+Adult/Mature: 21+
+"
+Genres,,An app can belong to multiple genres (apart from its main category).,text,"Tools 8%
+Entertainment 6%
+Other (9376) 86%"

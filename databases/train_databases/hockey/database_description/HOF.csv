@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+year,,year of hall of fame,integer,
+hofID,hall of fame id,hall of fame id,text,
+name,,name,text,
+category,,category,text,

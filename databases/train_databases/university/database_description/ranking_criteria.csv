@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,id,unique id number identifying ranking criteria,integer,
+ranking_system_id,ranking system id,id number identifying ranking system,integer,
+criteria_name,criteria name,name of the criteria,text,

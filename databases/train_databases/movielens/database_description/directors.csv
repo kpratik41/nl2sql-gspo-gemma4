@@ -1,0 +1,4 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+directorid,director id,unique identification number of actors directors,integer,
+d_quality ,director quality,director quality ,integer,"higher value is better, lower is the worse"
+avg_revenue,average revenue,average revenue,integer,"higher value is the higher, lower is the lower"

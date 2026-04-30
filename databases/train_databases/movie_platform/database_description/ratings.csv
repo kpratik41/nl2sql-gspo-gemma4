@@ -1,0 +1,17 @@
+original_column_name,column_name,column_description,data_format,value_description
+movie_id,,Movie ID related to the rating,integer,
+rating_id,,Rating ID on Mubi,integer,
+rating_url,,URL to the rating on Mubi,text,
+rating_score,,Rating score ranging from 1 (lowest) to 5 (highest),integer,"commonsense evidence:
+The score is proportional to the user's liking.
+The higher the score is, the more the user likes the movie"
+rating_timestamp_utc ,,Timestamp for the movie rating made by the user on Mubi,text,
+critic,,Critic made by the user rating the movie. ,text,"If value = ""None"", the user did not write a critic when rating the movie."
+critic_likes,,Number of likes related to the critic made by the user rating the movie,integer,
+critic_comments,,Number of comments related to the critic made by the user rating the movie,integer,
+user_id,,ID related to the user rating the movie,integer,
+user_trialist ,,whether user was a tralist when he rated the movie,integer,"1 = the user was a trialist when he rated the movie 
+0 = the user was not a trialist when he rated the movie"
+user_subscriber,,,integer,
+user_eligible_for_trial,,,integer,
+user_has_payment_method,,,integer,

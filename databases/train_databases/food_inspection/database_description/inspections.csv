@@ -1,0 +1,6 @@
+original_column_name,column_name,column_description,data_format,value_description
+business_id,business id,the unique id of the business ,integer,
+score,score,the inspection score,integer,"commonsense evidence:
+The scores range from 1 to 100, where 100 means that the establishment meets all required standards. "
+date,,the inspection date,date,
+type,,the inspection type,text,

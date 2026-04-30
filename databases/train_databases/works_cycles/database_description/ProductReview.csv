@@ -1,0 +1,10 @@
+original_column_name,column_name,column_description,data_format,value_description
+ProductReviewID,Product Review ID,The unique id numbers identifying product reviews.,integer,
+ProductID,Product ID,Product identification number.,integer,
+ReviewerName,Reviewer Name,The name of reviewer.,text,
+ReviewDate,Review Date,Date review was submitted. ,datetime,Default: getdate()
+EmailAddress,Email Address,Reviewer's e-mail address.,text,
+Rating,,Product rating given by the reviewer. ,integer,"commonsense evidence:
+Scale is 1 to 5 with 5 as the highest rating."
+Comments,,,,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+ProductModelID,Product Model ID,The id number identifying the product model.,integer,
+ProductDescriptionID,Product Description ID,Product description identification number.,integer,
+CultureID,Culture ID,Culture identification number.,text,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

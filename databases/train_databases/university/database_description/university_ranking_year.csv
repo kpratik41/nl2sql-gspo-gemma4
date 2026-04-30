@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+university_id,university id,the id of the university,integer,
+ranking_criteria_id,ranking criteria id,the id of the ranking criteria,integer,
+year,,ranking year,integer,
+score,,ranking score,integer,

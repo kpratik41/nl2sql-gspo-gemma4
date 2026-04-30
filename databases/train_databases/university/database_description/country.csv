@@ -1,0 +1,3 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,id,unique id number identifying country,integer,
+country_name,country name,the name of the country,text,

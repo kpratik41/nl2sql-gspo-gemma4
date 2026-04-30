@@ -1,0 +1,6 @@
+original_column_name,column_name,column_description,data_format,value_description
+business_id,business id,id number identifying the business,integer,
+day_id,day id,id number identifying each day of the week,integer,
+opening_time,opening time,opening time of the business,text,
+closing_time,closing time,closing time of the business,text,"commonsense evidence: 
+how much time does this business open: closing_time - opening_time"

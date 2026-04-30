@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,,the unique identifier of the game genre,integer,
+genre_name,,the game genre,text,"commonsense evidence:
+The game genre can have a significant effect on the game. The genre refers to the category or type of game, such as action, adventure, strategy, or role-playing. The genre can determine the general style and gameplay of the game, as well as the expectations of the players. The genre can also affect the audience for the game, as different genres may appeal to different groups of players."

@@ -1,0 +1,18 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+coachID,,ID number identifying the unique number of the coach,text,
+year,,,integer,
+tmID,team ID,team name,text,abbreviated name
+lgID,league ID,league name,text,"mainly categories: ""NBA"" & ""ABA"""
+stint,,the period of the time coaching this team,integer,
+won,,the number of won games,integer,0: no wins
+lost,,the number of lost games,integer,0: win all the games
+post_wins,post season wins,the number of games won in the post-season (playoffs) games,integer,"0: no wins
+
+commonsense evidence:
+
+If the team's post-season wins and losses are all zero, it implies that the team did not participate in the post-season (playoffs) that year."
+post_losses,post season losses,the number of games lost in the post-season (playoffs) games,integer,"0: win all the games
+
+commonsense evidence:
+
+If the team's post-season wins and losses are all zero, it implies that the team did not participate in the post-season (playoffs) that year."

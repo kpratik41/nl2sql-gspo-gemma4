@@ -1,0 +1,6 @@
+original_column_name,column_name,column_description,data_format,value_description
+device_id,device id,the id number of the device,integer,
+phone_brand,phone brand,phone brand,text,"commonsense evidence:
+phone_brand has duplicated values since some device models belong to the same brand"
+device_model,device model,device model,text,"commonsense evidence:
+phone_brand has duplicated values since some device models belong to the same brand"

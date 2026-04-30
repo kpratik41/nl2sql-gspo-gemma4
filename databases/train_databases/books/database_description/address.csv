@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+address_id,address id ,the unique identifier of the address,integer,
+street_number,street number,the street number of the address,text,"commonsense evidence:
+The street number is typically used to identify a specific building or residence on a street, with higher numbers generally indicating a location further down the street from the starting point. For example, if a street starts at number 1 and goes up to number 100, a building with the number 50 would be closer to the starting point than a building with the number 75."
+street_name,street name,the street name,text,
+city,,the city where the address belongs,text,
+country_id,country id,the id of the country where the address belongs ,integer,"commonsense evidence:
+Maps to the country (country id). The full address of the customer is 'No.street_number street_name, city, country'"

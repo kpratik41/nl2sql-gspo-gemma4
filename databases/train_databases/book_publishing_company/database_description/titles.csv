@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+title_id,title id,title id,text,
+title,,title,text,
+type,,type of titles,text,
+pub_id,publisher id,publisher id,text,
+price,,price,real,
+advance,,pre-paid amount,real,
+royalty,,royalty,integer,
+ytd_sales,year to date sales,year to date sales,integer,
+notes,,notes if any,text,"commonsense evidence:
+had better understand notes contents and put some of them into questions if any"
+pubdate,publication date,publication date,datetime,

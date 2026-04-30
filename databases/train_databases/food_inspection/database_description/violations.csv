@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+business_id,business id,the unique id of the business ,integer,
+date,,the date of the violation,date,
+violation_type_id,violation type id,the unique type id of the violation,text,
+risk_category,risk category,"risk category
+High / Moderate / Low risk",text,"commonsense evidence:
+High risks have more safety and health hazards than low risks"
+description,,the description of the violation,text,

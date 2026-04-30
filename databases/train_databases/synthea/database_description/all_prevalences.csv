@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+ITEM,,the prevalent disease,text,
+POPULATION TYPE,population type,the population type - LIVING,text,
+OCCURRENCES,,the number of occurrences,integer,
+POPULATION COUNT,population count,the number of the counted populations ,integer,
+PREVALENCE RATE,prevalence rate,the prevalence rate,real,commonsense evidence: prevalence rate = occurrences / population_count
+PREVALENCE PERCENTAGE,prevalence percentage,the prevalence percentage,real,commonsense evidence: prevalence rate = occurrences / population_count * 100

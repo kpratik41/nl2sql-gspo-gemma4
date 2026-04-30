@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,id,unique id number identifying university,integer,
+country_id, country id,the country where the university locates,text,
+university_name,university name,name of the university,text,

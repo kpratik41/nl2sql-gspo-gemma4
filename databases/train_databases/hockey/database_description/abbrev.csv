@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+Type,,type of hockey games,text,
+Code,,abbreviated codes,text,
+Fullname,,full names of code,text,

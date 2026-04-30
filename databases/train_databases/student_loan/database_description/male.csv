@@ -1,0 +1,3 @@
+original_column_name,column_name,column_description,data_format,value_description
+name,,student's name who are male,text,"commonsense evidence:
+the students who are not in this list are female."

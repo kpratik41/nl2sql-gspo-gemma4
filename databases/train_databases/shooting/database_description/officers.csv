@@ -1,0 +1,9 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+case_number,case number,case number,text,
+race,race,race,text,
+gender,,gender,text,"M: male;
+
+F: female"
+last_name,last name,last name,text,
+first_name,first name,first name,text,
+full_name,full name,full name,text,

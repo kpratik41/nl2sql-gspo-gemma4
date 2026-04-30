@@ -1,0 +1,15 @@
+original_column_name,column_name,column_description,data_format,value_description
+license_no,license number,the license number of the facility,integer,
+dba_name,doing business as name,the dba name of the facility,text,"commonsense evidence: DBA stands for doing business as. It's also referred to as your business's assumed, trade or fictitious name."
+aka_name,as know as name,the aka name of the facility,text,commonsense evidence: the aka name is used to indicate another name that a person or thing has or uses
+facility_type,facility type,the facility type,text,"commonsense evidence: can ask some questions about its categories, for i.e.:  
+ ""Restaurant"" and ""Cafeteria"" refers to restaurants 
+ PASTRY school and ""CULINARY ARTS SCHOOL"" belongs to ""Education"" or ""School"". Please design this and mention your evidence in the commonsense part of questions, thanks"
+risk_level,risk level,the risk level of the facility,integer,commonsense evidence: Facilities with higher risk level have more serious food safety issues
+address,,physical street address of the facility,text,
+city,,city of the facility's address,text,
+state,,state of the facility's address,text,
+zip,,postal code of the facility's address,integer,
+latitude,,the latitude of the facility,real,
+longitude,,the longitude of the facility,real,"commonsense evidence: location = POINT(latitude, longitude)"
+ward,,the ward number of the facility,integer,"commonsense evidence: Ward number is the number assigned by the local authorities to identify the population count in each town, village and district usually for electoral purposes or to extract property and locality details"

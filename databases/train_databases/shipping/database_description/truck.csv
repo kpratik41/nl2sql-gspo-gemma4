@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+truck_id,truck id,Unique identifier of the truck table,integer,
+make,,The brand of the truck,text,"commonsense evidence: 
+ Peterbilt headquarter: Texas (TX) 
+ Mack headquarter: North Carolina (NC) 
+ Kenworth headquarter: Washington (WA) 
+can ask question about headquarters of the truck"
+model_year,model year,The year the truck was manufactured,integer,commonsense evidence: The truck with earlier model year means this truck is newer.

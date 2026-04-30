@@ -1,0 +1,8 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+Name,,the name of the island,text,
+Islands,,the group of islands where it belongs to,text,
+Area,,the area of the island,real,
+Height,,the maximal elevation of the island,real,
+Type,, the type of the island,text,
+Longitude,,Longitude,real,
+Latitude,,Latitude,real,

@@ -1,0 +1,9 @@
+original_column_name,column_name,column_description,data_format,value_description
+episode_id,episode id,A unique identifier for episodes,text,
+category,,the category of the credit,text,
+person,,the name of cast and crew members,text,
+role,,the role of the person,text,
+credited ,,whether the person is credited ,text,"true/ false
+commonsense evidence:
+ true: The person is included in the credit list
+ false: The person isn't included in the credit list"

@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+actor_id,actor id,unique id number identifying the actor,integer ,
+first_name,first name,First name of the actor,text,
+last_name,last name,Last name of the actor,text,
+last_update,last update,The time of the latest update,datetime,

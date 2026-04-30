@@ -1,0 +1,6 @@
+original_column_name,column_name,column_description,data_format,value_description
+device_id,device id,unique number of devices,integer,
+gender,,gender of the user who uses this device,text,
+age,,age of the user who uses this device,integer," M: male;
+ F: female"
+group,,group of the ages,text,

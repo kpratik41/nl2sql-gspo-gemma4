@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+positionID,position id,the unique id for position,integer,
+positiontitle,position title,the position title,text,
+educationrequired ,education required,the required education year,text,"commonsense evidence:
+Generally, more complex work requires more education year. "
+minsalary,minimum salary,minimum salary of this position ,text,
+maxsalary,maximum salary,maximum salary of this position ,text,

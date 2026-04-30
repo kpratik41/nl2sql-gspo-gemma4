@@ -1,0 +1,49 @@
+original_column_name,column_name,column_description,data_format,value_description
+playerID,,player ID,text,
+year,,play year,integer,
+stint,,Stint (order of appearance in a season),integer,
+tmID,team id,team id,text,
+lgID,league id,league id,text,
+pos,position ,position,text,"commonsense evidence:
+LW: left winger
+RW: right winger
+C: center
+G: goalie
+D: defenseman
+W: winger
+F: forward
+the player with W (winger) means he can play the role as both LW (left winger) and RW (right winger)
+some players have two positions, which will be shown as ""L/D"". It means that LW + D --> left winger and defenseman"
+GP,game played,game played,integer,
+G,goals,goals,integer,
+A,assists,assists,integer,
+Pts,points,points,integer,
+PIM,Penalty minutes,Penalty minutes,integer,
++/-,Plus / minus,Plus / minus,text,"commonsense evidence:
+The plus minus stat is used to determine how often a player is on the ice when a goal is scored for the team versus against the team. A positive plus minus means that the player has been on for more goals scored than against, while a negative number means they have been on for more against.
+In another words, higher ""+ / -"" means more importance to the team, lower means less importance"
+PPG,Power play goals,Power play goals,text,"commonsense evidence:
+When a team with more players on the ice scores a goal it is known as a power play goal. Many goals are scored in power play situations as the team is able to keep possession of the puck and have more scoring chances."
+PPA,Power play assists,Power play assists,text,
+SHG,Shorthanded goals,Shorthanded goals,text,"commonsense evidence: 
+Sometimes the team with fewer players on the ice known as the short-handed team will score a goal."
+SHA,Shorthanded assists,Shorthanded assists,text,
+GWG,Game-winning goals,Game-winning goals,text,"commonsense evidence: 
+A game-winning goal (GWG) is the goal scored to put the winning team in excess of the losing team's final score.
+commonsense evidence:
+if a player gets more GWG, it means this player is more trustworthy in the critical moment."
+GTG,Game-tying goals,Game-tying goals,text,A game-tying goal (GWG) is the goal scored to put the winning team in the ties of the losing team's final score
+SOG,Shots on goal,Shots on goal,text,"commonsense evidence:
+a shot that enters the goal or would have entered the goal if it had not been blocked by the goalkeeper or another defensive player."
+PostGP,Postseason games played,Postseason games played,text,
+PostG,Postseason goals,Postseason goals,text,
+PostA,Postseason assists,Postseason assists,text,
+PostPts,Postseason points,Postseason points,text,
+PostPIM,Postseason penalty minutes,Postseason penalty minutes,text,
+Post+/-,Postseason Plus / minus,Postseason Plus / minus,text,
+PostPPG,Postseason power play goals,Postseason power play goals,text,
+PostPPA,Postseason power play assists,Postseason power play assists,text,
+PostSHG,Postseason Shorthanded goals,Postseason Shorthanded goals,text,
+PostSHA,Postseason Shorthanded assists,Postseason Shorthanded assists,text,
+PostGWG,Postseason game-winning goals,Postseason game-winning goals,text,
+PostSOG,Postseason shots on goal,Postseason shots on goal,text,

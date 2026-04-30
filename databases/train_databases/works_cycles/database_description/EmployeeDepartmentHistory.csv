@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+BusinessEntityID,Business Entity ID,Employee identification number.,integer,
+DepartmentID,DepartmentI D,Department in which the employee worked including currently.,integer,
+ShiftID,Shift ID,Identifies which 8-hour shift the employee works.,integer,
+StartDate,Start Date,Date the employee started working in the department.,date,
+EndDate,End Date,Date the employee ended working in the department.,date,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+year,,year,integer,
+lgID,league ID,league ID number,text,
+tmID,team ID,team ID,text,
+half,,First or second half of season,integer,
+rank,,Final standing for the half,integer,
+G,Games,Games,integer,
+W,wins,wins,integer,
+L,loses,loses,integer,
+T,ties,ties,integer,
+GF,goals for,goals for,integer,
+GA,goals against,goal against,integer,

@@ -1,0 +1,9 @@
+original_column_name,column_name,column_description,data_format,value_description
+name,,the name of the crew,text,
+birthdate,birth date,the birth date of the crew,text,YYYY-MM-DD
+birth_name,birth name,the birth name of the crew,text,
+birth_place,birth place,the birth place of the crew,text,
+birth_region,birth region,the birth region of the crew,text,
+birth_country,birth country,the birth country of the crew,text,
+height_meters,height meters,the height of the crew,real,the unit is meter
+nickname,,the nickname of the crew,text,

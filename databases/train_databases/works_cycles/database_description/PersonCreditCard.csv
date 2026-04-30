@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+BusinessEntityID,Business Entity ID,The id number identifying the person.,integer,
+CreditCardID,Credit Card ID,Credit card identification number.,integer,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

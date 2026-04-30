@@ -1,0 +1,7 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+Country,,the country code,text,
+Independence,,date of independence,date,"Commonsense evidence:
+
+if the value is null or empty, it means this country is not independent"
+Dependent,, the country code where the area belongs to,text,
+Government,,type of government,text,

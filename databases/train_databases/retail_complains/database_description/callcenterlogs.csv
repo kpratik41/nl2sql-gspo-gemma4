@@ -1,0 +1,18 @@
+original_column_name,column_name,column_description,data_format,value_description
+Date received,,complaint date,date,
+Complaint ID,,unique id number representing each complaint,text,
+rand client,,client id,text,
+phonefinal,phone final,final phone number,text,
+vru+line,voice response unit line,voice response unit line,text,
+call_id,call id,id number identifying the call,integer,
+priority,,priority of the complaint,integer,"0, 1, 2, 
+null: not available,
+higher: -> higher priority,
+-> more serious/urgent complaint"
+type,,type of complaint,text,
+outcome,,the outcome of processing of complaints,text,
+server,,server,text,
+ser_start,server start,server start time,text,HH:MM:SS
+ser_exit,server exit,server exit time,text,
+ser_time,server time,server time,text,"commonsense evidence:
+longer server time referring to more verbose/longer complaint"

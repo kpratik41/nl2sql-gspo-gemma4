@@ -1,0 +1,10 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+movieid,movie id,unique identifier number of movies,integer,
+year,year,year,integer,"4: newest;
+
+1: oldest
+
+higher value means newer published date"
+isEnglish,is English,is English,text,
+country,,country,text,
+runningtime,,,integer,

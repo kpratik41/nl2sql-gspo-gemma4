@@ -1,0 +1,20 @@
+original_column_name,column_name,column_description,data_format,value_description
+stateid,state id,state FIPS (Federal Information Processing System) code,integer,
+state,state name ,state name ,text,
+state_post,,,,
+level,,Level of institution,text,"commonsense evidence:
+4-year: bachelor's degree
+2-year: associate's degree"
+control,,,text,"Public, 
+Private not-for-profit, 
+Private for-profit"
+schools_count,,,,
+counted_pct,counted percentage,"Percentage of students in the entering class (Fall 2007 at 4-year institutions, Fall 2010 at 2-year institutions) who are first-time, full-time, degree-seeking students and generally part of the official graduation rate",text,
+awards_per_state_value,awards per state value,"Completions per 100 FTE (full-time equivalent) undergraduate students, state and sector average",text,
+awards_per_natl_value,awards per national value,"Completions per 100 FTE (full-time equivalent) undergraduate students, national sector average",real,
+exp_award_state_value,expected award state value,"Spending per completion, state and sector average ",text,
+exp_award_natl_value,expected award national value,"Spending per completion, national sector average",integer,
+state_appr_value,state appropriation value,State appropriations to higher education in fiscal year 2011 per resident,text,
+state_appr_rank,,,,
+grad_rate_rank,,,,
+awards_per_rank,,,,

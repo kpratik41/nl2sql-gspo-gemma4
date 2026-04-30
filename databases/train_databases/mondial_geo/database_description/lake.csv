@@ -1,0 +1,9 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+Name,,the name of the lake,text,
+Area,,the total area of the lake,real,
+Depth,, the depth of the lake,real,
+Altitude,,the altitude (above sea level) of the lake,real,
+River,,the river that flows out of the lake,text,
+Type,,the type of the lake,text,
+Longitude,,longitude of lake ,real,
+Latitude,,latitude of lake ,real,

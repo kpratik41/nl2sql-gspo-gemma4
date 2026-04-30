@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+ProductID,Product ID,Product identification number.,integer,
+ProductPhotoID,Product Photo ID,Product photo identification number.,integer,
+Primary,,Whether this photo is the principal image or not.,integer,"0 = Photo is not the principal image. 
+1 = Photo is the principal image. 
+commonsense evidence:
+staff can mention ""principal"" in the question in order to make the question more realistic."
+ModifiedDate,Modified Date,,datetime,

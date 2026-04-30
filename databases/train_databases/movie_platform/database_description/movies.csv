@@ -1,0 +1,11 @@
+original_column_name,column_name,column_description,data_format,value_description
+movie_id,,ID related to the movie on Mubi,integer,
+movie_title,,Name of the movie,text,
+movie_release_year,,Release year of the movie,integer,
+movie_url,,URL to the movie page on Mubi,text,
+movie_title_language,,"By default, the title is in English.",text,Only contains one value which is 'en'
+movie_popularity,,Number of Mubi users who love this movie,integer,
+movie_image_url,,Image URL to the movie on Mubi,text,
+director_id,,ID related to the movie director on Mubi,text,
+director_name,,Full Name of the movie director,text,
+director_url ,,URL to the movie director page on Mubi,text,

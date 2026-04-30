@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+Player_Id,player id,the id of the player,integer,
+Player_Name,player name,the name of the player,text,
+DOB,date of birth,player's birthday,date,yyyy-mm-dd
+Batting_hand,batting hand,the id of the batting hand,integer,
+Bowling_skill,bowling skill,the id of the bowling skill,integer,
+Country_Name,country name,the name of the country where the player is from,integer,

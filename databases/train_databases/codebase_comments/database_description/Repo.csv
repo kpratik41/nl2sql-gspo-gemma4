@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+Id,,unique id to identify repositories,integer,
+Url,,github address of repository,text,
+Stars,,stars this repository has received,integer,
+Forks,,forks that the repository has received,integer,
+Watchers,,how many watchers of this repository,integer,
+ProcessedTime,Processed Time,how much processed time of downloading this repository,integer,

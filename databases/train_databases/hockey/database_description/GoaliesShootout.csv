@@ -1,0 +1,11 @@
+original_column_name,column_name,column_description,data_format,value_description
+playerID,,,integer,
+year,,year,integer,"2005-06 listed as ""2005"""
+stint,,stint,text,
+tmID,team ID,team abbreviated name,integer,
+W,Wins,Wins,integer,
+L,Loses,Loses,integer,
+SA,Shots against,Shots against,integer,"commonsense evidence: 
+“Shot Against” are the number of shots recorded while the goalie is on the ice."
+GA,Goals against,Goals against,integer,"commonsense evidence: 
+“Goals Against” are the number of goals recorded while the goalie is on the ice. Include all goals against during regulation and overtime play."

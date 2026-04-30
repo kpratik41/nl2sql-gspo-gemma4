@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+student_id,student id,the id numbe representing each student,integer,
+capability,,"the capability of student on research
+(Evaluated by the professor)",integer,higher --> higher research ability / capability
+prof_id,professor id,professor who advises this student,integer,"this value may be repetitive since one professor may advise many students in this semester
+commonsense evidence:
+if a professor advise > 2 students in this semester, it means this professor's research work is heavy
+or: this professor's popularity on research is higher"
+salary,,the salary of this student.,text,"med: average salary
+high: higher salary than others
+low: lower salary
+free: unpaid RA"

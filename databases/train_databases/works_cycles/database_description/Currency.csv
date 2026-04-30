@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+CurrencyCode,Currency Code,The unique id string identifying the currency.,text,
+Name,,Currency name.,text,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

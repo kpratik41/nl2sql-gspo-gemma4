@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,,the unique identifier of the game,integer,
+genre_id,genre id,the id of the game genre,integer,"commonsense evidence:
+If game A and game B have the same genre, the user who likes game A may also like game B. "
+game_name,game name,the name of the game,text,

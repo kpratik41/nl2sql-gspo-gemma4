@@ -1,0 +1,15 @@
+original_column_name,column_name,column_description,data_format,value_description
+CustomerID,customer id,the unique id for the customer,integer,
+First,first name,the first name of the customer,text,
+Last,last name,the last name of the customer,text,
+StreetAddress,street address,the address of the customer,text,
+City,,the city where the customer lives,text,
+State,,the state code,text,"commonsense evidence: please refer to https://www23.statcan.gc.ca/imdb/p3VD.pl?Function=getVD&TVD=53971
+and mention its corresponding state name in the question. i.e. New York-- NY"
+ZipCode,zip code,the zip code,integer,
+Email,,the customer's email,text,
+PhoneNumber,phone number,the customer's phone number,text,
+FirstPurchaseDate,first purchase date,the first purchase date of the customer,date,yyyy-mm-dd
+SubscribedToEmailList,subscribed to email list,whether the customer subscribe to the email list,text,"commonsense evidence:
+ 'true' means the user permits the company to send regular emails to them. "
+Gender,,the customer's gender,text,

@@ -1,0 +1,41 @@
+original_column_name,column_name,column_description,data_format,value_description
+CountryCode,Country Code,unique code identifying countries,text,
+ShortName,Short Name,Short names of countries ,text,
+TableName,Table Name,table names of countries,text,
+LongName,Long Name,long or full name of countries,text,
+Alpha2Code,Alpha to Code,2 digit code of countries ,text,
+CurrencyUnit,Currency Unit,Currency Unit used in this country,text,
+SpecialNotes,Special Notes,Special Notes,text,
+Region,Region,region that country belongs to ,text,
+IncomeGroup,Income Group,income level of countries ,text,
+Wb2Code,world bank to code,world bank to code,text,
+NationalAccountsBaseYear,National Accounts Base Year,the year used as the base period for constant price calculations in the country's national accounts,text,
+NationalAccountsReferenceYear,National Accounts Reference Year,National Accounts Reference Year,text,
+SnaPriceValuation,SNA Price Valuation,SNA Price Valuation,text,
+LendingCategory,Lending Category,Lending category,text,"• IDA: International Development Associations: (IDA) is the part of the World Bank that helps the world's poorest countries.
+• IBRD: The International Bank for Reconstruction and Development (IBRD) is a global development cooperative owned by 189 member countries.
+• Blend: Blend is the cloud banking infrastructure powering billions of dollars in financial transactions every day."
+OtherGroups,Other groups,other groups,text,"• HIPC: Heavily Indebted Poor Countries
+• Euro Area: The euro area consists of those Member States of the European Union that have adopted the euro as their currency."
+SystemOfNationalAccounts,System Of National Accounts,System Of National Accounts,text,
+AlternativeConversionFactor,Alternative Conversion Factor,Alternative conversion factor is the underlying annual exchange rate used for the World Bank Atlas method,text,
+PppSurveyYear,purchasing power parity survey year,purchasing power parity survey year,text,
+BalanceOfPaymentsManualInUse,Balance Of Payments Manual In Use,Balance Of Payments Manual In Use,text,
+ExternalDebtReportingStatus,External Debt Reporting Status,External Debt Reporting Status,text,"• Actual
+• Preliminary
+• Estimate
+commonsense reasoning:
+If ExternalDebtReportingStatus='Actual', it means this external debt reporting is real and actual, and finished
+if 'Estimate', it means external debt reporting is finished by estimation.
+if 'preliminary', it means this external debt reporting is not finished"
+SystemOfTrade,System Of Trade,System Of Trade,text,
+GovernmentAccountingConcept,Government Accounting Concept,Government Accounting Concept,text,
+ImfDataDisseminationStandard,International Monetory Fund Data Dissemination Standard,IMF Standards for Data Dissemination,text,
+LatestPopulationCensus,Latest Population Census,Latest Population Census,text,
+LatestHouseholdSurvey,Latest Household Survey,,text,
+SourceOfMostRecentIncomeAndExpenditureData,Source Of Most Recent Income And Expenditure Data,Source Of Most Recent Income And Expenditure Data,text,
+VitalRegistrationComplete,Vital Registration Complete,Vital Registration Complete,text,
+LatestAgriculturalCensus,Latest Agricultural Census,Latest Agricultural Census,text,
+LatestIndustrialData,Latest Industrial Data,Latest Industrial Data,integer,
+LatestTradeData,Latest Trade Data,Latest Trade Data,integer,
+LatestWaterWithdrawalData,Latest Water Withdrawal Data,Latest Water Withdrawal Data,integer,

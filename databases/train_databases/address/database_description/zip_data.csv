@@ -1,0 +1,58 @@
+original_column_name,column_name,column_description,data_format,value_description
+zip_code,zip code,the zip code of the postal point,integer,
+city,,the city where the postal point locates,text,
+state,,the state of the city,text,
+multi_county,multi country,whether the country that the city belongs to is multi_country,text,commonsense evidence: The meaning of multi_country is consisting of or involving multiple countries.
+type,,the type of the postal point,text,
+organization ,,the organization to which the postal point belongs,text,commonsense evidence: 'No data' means the postal point is not affiliated with any organization
+time_zone,time zone,the time zone of the postal point location,text,
+daylight_savings,daylight savings,whether the location implements daylight savings,text,"commonsense evidence: Daylight saving is the practice of advancing clocks (typically by one hour) during warmer months so that darkness falls at a later clock time. As a result, there is one 23-hour day in late winter or early spring and one 25-hour day in autumn."
+latitude,,the latitude of the postal point location,real,
+longitude,,the longitude of the postal point location,real,
+elevation,,the elevation of the postal point location,integer,
+state_fips,state fips,state-level FIPS code,integer,
+county_fips,country fips,country-level FIPS code,integer,commonsense evidence: FIPS codes are numbers that uniquely identify geographic areas. The number of digits in FIPS codes varies depending on the level of geography.
+region,,the region where the postal point locates ,text,
+division,,the division of the organization ,text,
+population_2020,population 2020,the population of the residential area in 2020,integer,commonsense evidence: 'No data' means that the postal point is not affiliated with any organization. Or the organization has no division. 
+population_2010,population 2010,the population of the residential area in 2010,integer,
+households,,the number of the households in the residential area,integer,
+avg_house_value,average house value,the average house value in the residential area,integer,
+avg_income_per_household,average income per household,the average income per household in the residential area,integer,
+persons_per_household,persons per household,the number of persons per household residential area,real,
+white_population,white population,the population of white people in the residential area,integer,
+black_population,black population,the population of black people in the residential area,integer,
+hispanic_population,Hispanic population,the population of Hispanic people in the residential area,integer,
+asian_population,Asian population,the population of Asian people in the residential area,integer,
+american_indian_population,American Indian population,the population of American Indian people in the residential area,integer,
+hawaiian_population,Hawaiian population,the population of Hawaiian people in the residential area,integer,
+other_population,other population,the population of other races in the residential area,integer,
+male_population,male population,the population of males in the residential area,integer,
+female_population,female population,the population of females in the residential area,integer,
+median_age,median age,the median age of the residential area,real,commonsense evidence: gender ratio in the residential area = male_population / female_population if female_population != 0
+male_median_age,male median age,the male median age in the residential area,real,
+female_median_age,female median age,the female median age in the residential area,real,
+residential_mailboxes,residential mailboxes,the number of residential mailboxes in the residential area,integer,
+business_mailboxes,business mailboxes,the number of business mailboxes in the residential area,integer,
+total_delivery_receptacles,total delivery receptacles,the total number of delivery receptacles,integer,
+businesses,,the number of businesses in the residential area,integer,
+1st_quarter_payroll,1st quarter payroll,the total wages reported in the 1st quarter payroll report of the residential area,integer,
+annual_payroll,annual payroll,the total wages reported in the annual payroll report of the residential area,integer,
+employees,,the number of employees in the residential area,integer,commonsense evidence: Employers must submit periodic payroll reports to the Internal Revenue Service and state taxing authority. The report is used by employers to report wage information.
+water_area,water area,the water area of the residential area,real,
+land_area,land area,the land area of the residential area,real,
+single_family_delivery_units,single-family delivery units,the number of single-family delivery units in the residential area,integer,
+multi_family_delivery_units,multi-family delivery units,the number of single-family delivery units in the residential area,integer,"commonsense evidence: A single-family unit can be described as a single unit that accommodates only one family or tenant at a time on rent.
+"
+total_beneficiaries,total beneficiaries,the total number of beneficiaries of the postal service,integer,commonsense evidence: multi-family units are usually under a greater surface area with the capacity to accommodate more than one tenant or multiple families on rent at the same time
+retired_workers,retired workers,the number of retired workers in the residential area,integer,
+disabled_workers,disable workers,the number of disabled workers in the residential area,integer,
+parents_and_widowed,parents and widowed,the number of parents and widowed in the residential area,integer,
+spouses,,the number of spouses in the residential area,integer,
+children,,the number of children in the residential area,integer,
+over_65,over 65,the number of people whose age is over 65 in the residential area,integer,
+monthly_benefits_all,monthly benefits all,all benefit payments by month ,integer,"commonsense evidence: no. of over_65 can refer to elders. Higher means more elders
+if the ratio: over_65 / children is higher: the aging is more serious."
+monthly_benefits_retired_workers,monthly benefits retired workers,monthly benefit payments for retired workers,integer,usd
+monthly_benefits_widowed,monthly benefits widowed,monthly benefit payments for retired workers,integer,
+CBSA,,the code of the cbsa officer,integer,

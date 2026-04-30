@@ -1,0 +1,13 @@
+original_column_name,column_name,column_description,data_format,value_description
+district_no,district number,unique number identifying the district,integer,
+district_name,district name, name of the district,text,
+address,,Street address of the police district building,text,
+zip_code,zip code,ZIP code of the police district building,integer,
+commander,,Name of the district's commanding officer,text,"commonsense evidence:
+
+the person who should be responsible for the crime case. "
+email,,Email address to contact district administrators,text,
+phone,,Main telephone number for the district,text,
+fax,,Fax number for the district,text,
+tty,,Number of the district teletype machine.,text,"A teletype machine is a device that lets people who are deaf, hard of hearing, or speech-impaired use the telephone to communicate, by allowing them to type text messages."
+twitter,,The district twitter handle. ,text,"Twitter is a social networking service on which users post and interact with brief messages known as ""tweets"""

@@ -1,0 +1,6 @@
+original_column_name,column_name,column_description,data_format,value_description
+LocationID,Location ID,The unique id number identifying the job candidates.,integer,
+Name,,Location description.,text,
+CostRate,Cost Rate,Standard hourly cost of the manufacturing location.,real,Default: 0.00
+Availability,,Work capacity (in hours) of the manufacturing location.,real,Default: 0.00
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

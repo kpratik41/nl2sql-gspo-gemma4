@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+actor_id,actor id,unique id number identifying the actor,integer ,
+film_id,film id,id number identifying the film,integer ,
+last_update,last update,The time of the latest update,datetime,

@@ -1,0 +1,11 @@
+original_column_name,column_name,column_description,data_format,value_description
+TerritoryID,TerritoryID,The unique id number for SalesTerritory records.,integer,
+Name,,Sales territory description.,text,
+CountryRegionCode,Country Region Code,ISO standard country or region code.,text,
+Group,,Geographic area to which the sales territory belong.,text,
+SalesYTD,Sales Year to Date,Sales in the territory year to date.,real,
+SalesLastYear,Sales Last Year,Sales in the territory the previous year.,real,
+CostYTD,Cost Year to Date,Business costs in the territory year to date.,real,
+CostLastYear,Cost Last Year,Business costs in the territory the previous year.,real,
+rowguid,rowguid,Uniquely identifying the record. Used to support a merge replication sample. ,text,Default: newid()
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

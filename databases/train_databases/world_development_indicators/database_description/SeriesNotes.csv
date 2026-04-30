@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+Seriescode,Series code,code identifying the series,text,
+Year,,year,text,
+Description,,Description of series,text,

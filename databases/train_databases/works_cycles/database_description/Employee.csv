@@ -1,0 +1,17 @@
+original_column_name,column_name,column_description,data_format,value_description
+BusinessEntityID,Business Entity ID,The id number identifying the employee.,integer,
+NationalIDNumber,National ID Number,The national identification number such as a social security number.,text,
+LoginID,Login ID,Network login.,text,
+OrganizationNode,Organization Node,Where the employee is located in corporate hierarchy.,text,Default: newid()
+OrganizationLevel,Organization Level,The depth of the employee in the corporate hierarchy.,integer,Computed: [OrganizationNode].[GetLevel]()
+JobTitle,Job Title,Work title such as Buyer or Sales Representative.,text,
+BirthDate,Birth Date,Date of birth.,date,
+MaritalStatus,Marital Status,Whether this employee is married or not.,text,"M = Married, S = Single"
+Gender,Gender,The gender of this employee.,text,"M = Male, F = Female"
+HireDate,Hire Date,The employee was hired on this date.,date,
+SalariedFlag,Salaried Flag,Job classification.,integer,"0 = Hourly, not exempt from collective bargaining. 1 = Salaried, exempt from collective bargaining."
+VacationHours,Vacation Hours,The number of available vacation hours.,integer,
+SickLeaveHours,Sick Leave Hours,The number of available sick leave hours.,integer,
+CurrentFlag,Current Flag,Whether this employee is active or not,integer,"0 = Inactive, 1 = Active"
+rowguid,rowguid,Uniquely identifying the record. Used to support a merge replication sample. ,text,Default: newid()
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

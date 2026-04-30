@@ -1,0 +1,18 @@
+original_column_name,column_name,column_description,data_format,value_description
+Row ID,row id,the unique id for rows,integer,
+Order ID,order id,the unique identifier for the order,text,
+Order Date,order date,the date of the order,date,yyyy-mm-dd
+Ship Date,ship date,the date of the shipment,date,"yyyy-mm-dd
+commonsense evidence: 'shipment time' refers to the time interval between order_date and ship_date. "
+Ship Mode,ship mode,the ship mode of the order,text,"First Class / Second Class / Standard Class
+commonsense evidence: Among three ship modes, First Class has the fastest delivery speed, followed by Second Class and the speed of the Standard Class is the slowest.
+"
+Customer ID,customer id,the id of the customer,text,
+Region,,region of the customer's address,text,
+Product ID,product id,the id of the product,text,
+Sales,,the sales of the product,real,
+Quantity,,the quantity of the product,integer,
+Discount,,the discount of the product,real,commonsense evidence: original price = sales / (1- discount)
+Profit,,the profit that the company got by selling the product,real,"commonsense evidence: total cost of products =  sales / (1- discount) * quantity - profit
+deficiency: if the value is negative
+"

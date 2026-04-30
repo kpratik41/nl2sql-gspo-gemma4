@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+book_id,book id ,the unique identifier of the book,integer,
+title,,the title of the book ,text,
+isbn13,,the International Standard Book Number of the book,text,"commonsense evidence:
+An ISBN is a unique 13-digit number assigned to each book to identify it internationally. The ISBN13 of a book is the specific version of the ISBN that uses 13 digits. It is typically displayed on the back cover of a book, along with the barcode and other information."
+language_id,language id,"the id of the book language
+Maps to book_language (language_id)",integer,
+num_pages,number pages,the number of the pages,integer,
+publication_date,publication date,the publication date of the book,date,"commonsense evidence:
+The publication date of a book can provide information about when the book was released to the public. This can be useful for understanding the context in which the book was written, as well as for determining how current or outdated the information in the book might be. Additionally, the publication date can provide insight into the age of the book and its potential value as a collectible."
+publisher_id,,"the id of the publisher
+Maps to publisher (publisher_id)",integer,

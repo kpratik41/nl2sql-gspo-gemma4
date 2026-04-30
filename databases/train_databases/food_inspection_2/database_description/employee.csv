@@ -1,0 +1,15 @@
+original_column_name,column_name,column_description,data_format,value_description
+employee_id,employee id,the unique id for the employee,integer,
+first_name,first name,first name of the employee,text,
+last_name,last name,last name of the employee,text,commonsense evidence: full name: first name + last_name
+address,,physical street address of the employee,text,
+city,,city of the employee's address,text,
+state,,state of the customer's address,text,
+zip,,postal code of the employee's address,integer,
+phone,,telephone number to reach the customer,text,
+title,,career title of the employee,text," Sanitarian 
+ Supervisor 
+ Division Manager"
+salary,,the salary of the employee,integer,"us dollars / year
+commonsense evidence: monthly salary: salary / 12"
+supervisor,,the employee id of the employee's supervisor,integer,

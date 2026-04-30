@@ -1,0 +1,59 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+FL_DATE,flight date,flight date,text,
+OP_CARRIER_AIRLINE_ID,operator carrier airline id,operator carrier airline id,integer,
+TAIL_NUM,tail number,plane's tail number,text,plane's tail number
+OP_CARRIER_FL_NUM,operator carrier flight number,operator carrier flight number,integer,
+ORIGIN_AIRPORT_ID,origin airport id,origin airport id,integer,
+ORIGIN_AIRPORT_SEQ_ID,origin airport sequence id,origin airport sequence id,integer,
+ORIGIN_CITY_MARKET_ID,origin city market id,origin city market id,integer,
+ORIGIN,,airport of origin,text,"commonsense evidence:
+
+• the origin city could be inferred by this code:
+
+you can refer to https://www.iata.org/en/publications/directories/code-search/?airport.search=mia
+
+to quickly check"
+DEST_AIRPORT_ID,destination airport id,ID of the destination airport,integer,
+DEST_AIRPORT_SEQ_ID,destination airport sequence id,,integer,
+DEST_CITY_MARKET_ID,destination city market id,,integer,
+DEST,destination,Destination airport,text,"commonsense evidence:
+
+• the dest city could be inferred by this code:
+
+you can refer to https://www.iata.org/en/publications/directories/code-search/?airport.search=mia
+
+to quickly check"
+CRS_DEP_TIME,scheduled local departure time,,integer,
+DEP_TIME,departure time,Flight departure time,integer,stored as the integer
+DEP_DELAY,Departure delay,Departure delay indicator,integer,"in minutes
+
+commonsense evidence:
+
+• if this value is positive: it means this flight delays; if the value is negative, it means this flight departs in advance (-4)
+
+• if this value <= 0, it means this flight departs on time"
+DEP_DELAY_NEW,departure delay new,departure delay new,integer,not useful
+ARR_TIME,arrival time,Flight arrival time.,integer,
+ARR_DELAY,arrival delay,arrival delay time,integer,"in minutes
+
+commonsense evidence:
+
+• if this value is positive: it means this flight will arrives late (delay); If the value is negative, this flight arrives earlier than scheduled. (-4)
+
+• if this value <= 0, it means this flight arrives on time"
+ARR_DELAY_NEW,arrival delay new,arrival delay new,integer,not useful
+CANCELLED,,Flight cancellation indicator.,integer,
+CANCELLATION_CODE,cancellation code,cancellation code,text,"commonsense evidence:
+
+C--> A: more serious reasons lead to this cancellation"
+CRS_ELAPSED_TIME,scheduled elapsed time,scheduled elapsed time,integer,
+ACTUAL_ELAPSED_TIME,actual elapsed time,actual elapsed time,integer,"commonsense evidence:
+
+if ACTUAL_ELAPSED_TIME < CRS_ELAPSED_TIME: this flight is faster than scheduled;
+
+if ACTUAL_ELAPSED_TIME > CRS_ELAPSED_TIME: this flight is slower than scheduled"
+CARRIER_DELAY,carrier delay,carrier delay,integer,minutes
+WEATHER_DELAY,weather delay,delay caused by the wheather problem,integer,minutes
+NAS_DELAY,National Aviavtion System delay,"delay, in minutes, attributable to the National Aviation System",integer,minutes
+SECURITY_DELAY,security delay,delay attribute to security,integer,minutes
+LATE_AIRCRAFT_DELAY,late aircraft delay,delay attribute to late aircraft,integer,minutes

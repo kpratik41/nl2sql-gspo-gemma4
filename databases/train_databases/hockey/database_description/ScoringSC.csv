@@ -1,0 +1,11 @@
+original_column_name,column_name,column_description,data_format,value_description
+playerID,,id number identifying the player,text,number identifying the player
+year,,year,integer,"2005-06 listed as ""2005"""
+tmID,team ID,team abbreviated name,text,
+lgID,league ID,league abbreviated name,text,
+pos,position ,position,text,
+GP,Games played,Games played,integer,
+G,Goals,goals,integer,
+A,assists,assists,integer,
+Pts,points,points,integer,
+PIM,Penalty minutes,Penalty minutes,integer,

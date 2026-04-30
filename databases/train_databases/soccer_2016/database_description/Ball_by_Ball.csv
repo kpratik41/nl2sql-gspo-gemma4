@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+Match_Id,match id,Unique Number Which Identifies a match,integer,
+Over_Id,over id,Unique Number which Identifies an over in an Innings,integer,"commonsense evidence:
+The match is made up of two innings and each team takes a turn at batting and bowling. An innings is made up of 50 overs. An over involves six deliveries from the bowler."
+Ball_Id,ball id,Unique Number which Identifies a ball in an over,integer,
+Innings_No,innings number,Unique Number which Identifies an innings in a match,integer,
+Team_Batting,team batting,Unique Number which Identifies Batting team in a match,integer,
+Team_Bowling,team bowling,Unique Number which Identifies Bowling team in a match,integer,
+Striker_Batting_Position,striker batting position,Unique Number which Identifies the position in which player came into bat,integer,
+Striker,,Unique Number which Identifies the player who is on strike for that particular ball,integer,
+Non_Striker,non striker,Unique Number which Identifies the player who is Non-striker for that particular ball,integer,
+Bowler,,Unique Number which Identifies the player who is Bowling that particular ball,integer,

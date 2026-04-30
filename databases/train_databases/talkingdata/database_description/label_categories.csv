@@ -1,0 +1,3 @@
+original_column_name,column_name,column_description,data_format,value_description
+label_id,label id,unique id of label,integer,
+category,,category of the label,text,

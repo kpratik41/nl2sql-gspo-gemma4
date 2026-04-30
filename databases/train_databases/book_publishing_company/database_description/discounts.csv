@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+discounttype,discount type,discount type,text,
+stor_id,store id,store id,text,
+lowqty,low quantity,low quantity (quantity floor),integer,"commonsense evidence: 
+The minimum quantity to enjoy the discount"
+highqty,high quantity ,high quantity (max quantity),integer,"commonsense evidence: 
+The maximum quantity to enjoy the discount"
+discount,discount,discount,real,

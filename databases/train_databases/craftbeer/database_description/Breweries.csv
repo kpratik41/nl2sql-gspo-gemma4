@@ -1,0 +1,5 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+id,id,unique ID of the breweries,integer,
+name,name,name of the breweries,text,
+city,,city,text,
+state,,state,text,

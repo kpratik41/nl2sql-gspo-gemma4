@@ -1,0 +1,30 @@
+original_column_name,column_name,column_description,data_format,value_description
+year,,year,integer,
+lgID,league ID,league ID number,text,
+tmID,team ID,team ID,text,
+franchID,Franchise ID,Franchise ID,text,
+confID,Conference ID,Conference ID,text,see abbrev.csv for details
+divID,Division ID,Division ID,text,see abbrev.csv for details
+rank,,Final standing,integer,
+playoff,,playoff results,text,
+G,games,games,integer,
+W,wins,wins,integer,
+L,loses,loses,integer,
+T,ties,ties,integer,
+OTL,Overtime losses,Overtime losses,text,
+Pts,points,points,integer,
+SoW,Shootout wins,Shootout wins,text,
+SoL,Shootout loses,Shootout loses,text,
+GF,Goals for,Goals for,integer,
+GA,Goals against,goals against,integer,
+name,Full team name,Full team name,text,
+PIM,Penalty minutes,Penalty minutes,text,
+BenchMinor,Bench minors (minutes),Bench minors (minutes),text,"commonsense evidence: 
+A bench minor penalty is a minor penalty committed by a player or coach that is not on the ice. It is like a minor penalty in that it calls for the offending player to serve two minutes in the penalty box."
+PPG,Power play goals,Power play goals,text,
+PPC,Power play chances,Power play chances,text,"commonsense evidence: 
+power play percentage (PP%) = PPG / PPC"
+SHA,Shorthanded goals against,Shorthanded goals against,text,
+PKG,Power play goals against,Power play goals against,text,
+PKC,Penalty kill chances,Penalty kill chances,text,
+SHF,Shorthanded goals for,Shorthanded goals for,text,

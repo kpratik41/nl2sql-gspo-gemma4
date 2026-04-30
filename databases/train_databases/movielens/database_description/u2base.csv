@@ -1,0 +1,4 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+userid,user id,identifier number of users,integer,
+movieid,movie id,identifier number of movie,integer,
+rating,rating,ratings of movies,text,"higher value refers to higher satisfactory, each value is the rating of movies left by users."

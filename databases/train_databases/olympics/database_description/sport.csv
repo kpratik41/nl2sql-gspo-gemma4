@@ -1,0 +1,3 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,,the unique identifier of the sport,integer,
+sport_name,sport name,the name of the sport,text,

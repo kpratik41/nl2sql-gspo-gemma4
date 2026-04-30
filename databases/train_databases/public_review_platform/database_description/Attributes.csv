@@ -1,0 +1,3 @@
+original_column_name,column_name,column_description,data_format,value_description
+attribute_id,attribute id,unique number identifying the attribute,integer,
+attribute_name,attribute name,the name of the attribute,text,

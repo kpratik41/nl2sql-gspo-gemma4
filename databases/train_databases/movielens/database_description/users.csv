@@ -1,0 +1,11 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+userid,user id,unique identifier number of users,integer,
+age,age,age,text,"1: 1-18 years old; 
+18: 18-25 years old; 
+25: 25-35 years old; 
+35: 35-45 years old; 
+45: 45-50 years old; 
+50: 50-56 years old; 
+56: over 56 years old"
+u_gender,user gender,user gender,text,M / F: Male / Female
+occupation ,,occupation,text,

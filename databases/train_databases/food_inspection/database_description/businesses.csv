@@ -1,0 +1,18 @@
+original_column_name,column_name,column_description,data_format,value_description
+business_id,business id,the unique id of the business ,integer,
+name,,the name of the eatery,text,
+address,,the eatery address,text,
+city,,the city where the eatery is located in,text,
+postal_code,postal code,the postal code of the eatery,text,
+latitude,,the latitude of the position,real,
+longitude,,the longitude of the position,real,"commonsense evidence:
+the distance between eatery A and eatery B = \sqrt{(latitude_A-latitude_B)^2 + (longitude_A-longitude_B)^2}"
+phone_number,phone number,the phone number of the eatery,integer,
+tax_code,tax code,the tax code of the eatery,text,
+business_certificate,business certificate,the business certificate number,integer,
+application_date,application date,the application date of the eatery,date,
+owner_name,owner name,the owner's name,text,
+owner_address,owner address,the owner's address,text,
+owner_city,owner city,the city where the owner is located,text,
+owner_state,owner state,the state where the owner is located,text,
+owner_zip,owner zip,the zip code of the owner,text,

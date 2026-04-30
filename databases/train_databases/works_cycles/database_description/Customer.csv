@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+CustomerID,Customer ID,The unique id number identifying the customer.,integer,
+PersonID,Person ID,The id number identifying the person.,integer,
+StoreID,Store ID,The id number identifying the store / bussiness entity.,integer,
+TerritoryID,Territory ID,ID of the territory in which the customer is located.,integer,
+AccountNumber,Account Number,Unique number identifying the customer assigned by the accounting system.,text,"Computed: isnull('AW'+[ufnLeadingZeros]([CustomerID]),'')"
+rowguid,rowguid,Uniquely identifying the record. Used to support a merge replication sample. ,text,Default: newid()
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

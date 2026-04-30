@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+inventory_id,inventory id,unique id number identifying the inventory,integer ,
+film_id,film id,unique id number identifying the film,integer ,
+store_id,store id, id of the store,integer,
+last_update,last update,the last update time of the film,datetime,

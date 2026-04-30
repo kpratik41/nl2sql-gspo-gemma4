@@ -1,0 +1,10 @@
+original_column_name,column_name,column_description,data_format,value_description,Unnamed: 5,Unnamed: 6
+id_restaurant,id restaurant,the unique id for the restaurant,integer,,,
+street_num,street number,the street number of the restaurant,integer,,,
+street_name,street name,the street name of the restaurant,text,,,
+city,,the city where the restaurant is located in,text,,,
+,,,,,,
+,,,,,,
+,,,,,,
+,,,,,,
+,,,,,,

@@ -1,0 +1,9 @@
+original_column_name,column_name,column_description,data_format,value_description
+Season_Id,season id,the unique id for season,integer,
+Man_of_the_Series,man of the series,the player id of man of the series,integer,"commonsense evidence:
+In team sport, a player of the series or man (or woman) of the series award is often given to the outstanding player in a particular series."
+Orange_Cap,orange cap,the player id who wins the orange cap,integer,"commonsense evidence:
+The Orange Cap is a coveted award for a batter who is participating in the Indian Premier League (IPL)"
+Purple_Cap,purple cap,the player id who wins the purple cap,integer,"commonsense evidence:
+The Purple Cap is awarded to the bowler who has emerged as the leading wicket-taker in a particular edition of the high-profile Indian Premier League (IPL)"
+Season_Year,season year,the year of the season,integer,

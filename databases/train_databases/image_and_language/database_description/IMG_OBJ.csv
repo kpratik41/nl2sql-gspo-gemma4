@@ -1,0 +1,10 @@
+original_column_name,column_name,column_description,data_format,value_description
+IMG_ID,IMAGE ID,the id representing images,integer,
+OBJ_SAMPLE_ID,OBJECT SAMPLE ID,the id of the object sample,integer,
+OBJ_CLASS_ID,OBJECT CLASS ID,the id indicating class of the objects,integer,
+X,,x coordinate ,integer,
+Y,,y coordinate ,integer,
+W,,width of the bounding box of the object,integer,
+H,,height of the bounding box of the object,integer,"commonsense evidence:
+
+bounding box of the object: (x, y, W, H)"

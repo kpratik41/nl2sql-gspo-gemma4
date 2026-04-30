@@ -1,0 +1,21 @@
+original_column_name,column_name,column_description,data_format,value_description
+film_id,film id,unique id number identifying the film,integer ,
+title,title,title of the film,text,
+description,description,main content of the film,text,
+release_year,release year,the year when the film is released,text,
+language_id,language id,the language id of the film,integer ,
+original_language_id,original language id,the original language id of the film,integer ,
+rental_duration,rental duration,how long this film can be rent at once,integer,"commonsense evidence:
+days
+price / day = rental_rate / retal_duration"
+rental_rate,rental rate,the rate of renting this film,real,higher -> expensive
+length,length,Duration time of the film screening,integer,minutes
+replacement_cost,replacement cost,cost of replacing this film,real,
+rating,rating,The Motion Picture Association film rating,text,"commonsense evidence:
+G ?General Audiences
+PG ? Parental Guidance Suggested
+PG-13 ? Parents Strongly Cautioned
+R ? Restricted
+NC-17 ? Adults Only"
+special_features,special features,features of this film,text,
+last_update,last update,The time of the latest update,datetime,

@@ -1,0 +1,3 @@
+original_column_name,column_name,column_description,data_format,value_description
+abbreviation,,the abbreviation of the state name,text,
+name,,the state name,text,

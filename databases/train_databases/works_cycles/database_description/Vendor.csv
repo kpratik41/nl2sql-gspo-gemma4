@@ -1,0 +1,14 @@
+original_column_name,column_name,column_description,data_format,value_description
+BusinessEntityID,BusinessEntityID,The unique number identifying Vendor records.,integer,
+AccountNumber,AccountNumber,Vendor account (identification) number.,text,
+Name,Name,Company name.,text,
+CreditRating,CreditRating,Rating of credit.,integer,"commonsense evidence: 
+1 = Superior, 2 = Excellent, 3 = Above average, 4 = Average, 5 = Below average. 
+commonsense evidence:
+1, 2, 3 can represent good credit, 4 is average credit, 5 is bad credit."
+PreferredVendorStatus,Preferred Vendor Status,Preferred Vendor Status,integer,"commonsense evidence: 
+0 = Do not use if another vendor is available. 1 = Preferred over other vendors supplying the same product."
+ActiveFlag,Active Flag,Vendor URL,integer,"commonsense evidence:
+0 = Vendor no longer used. 1 = Vendor is actively used. Default: 1"
+PurchasingWebServiceURL,PurchasingWebServiceURL,Purchasing Web Service URL,text,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

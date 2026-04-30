@@ -1,0 +1,7 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+Name,,the name of the mountain,text,
+Mountains,,the mountains where it belongs to,text,
+Height,, the maximal elevation of the summit of the mountain,real,
+Type,, the sea where it finally flows to,text,"(note that at most one out of {river,lake,sea} can be non-null"
+Longitude,,the length of the river,real,
+Latitude,,the longitude of its source,real,

@@ -1,0 +1,11 @@
+original_column_name,column_name,column_description,data_format,value_description
+ssn,social security number,employee's ssn,text,
+lastname,last name,employee's last name,text,
+firstname,first name,employee's first name,text,"commonsense evidence:
+employee's full name is firstname lastname . "
+hiredate,hire date,employee's hire date,text,yyyy-mm-dd
+salary,,employee's salary,text,the unit is dollar per year
+gender,,employee's gender,text,
+performance,,employee's performance,text,Good / Average/ Poor
+positionID,position id,the unique id for position,integer,
+locationID,location id,the unique id for location,integer,

@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,id,unique id number identifying the chapter,integer auto_increment,
+Act,,"An act is a major division of a theatre work, including a play, film, opera, or musical theatre",integer,"commonsense evidence:
+An act can consist of one or more scenes"
+Scene,,"A scene is a dramatic part of a story, at a specific time and place, between specific characters.",integer,
+Description,,textual description of the chapter.,text,
+work_id,work id,id number identifying the work,integer,

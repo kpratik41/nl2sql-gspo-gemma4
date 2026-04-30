@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+LocationID,location id,the id of the location,integer,
+Latitude,,the latitude of the location,real,
+Longitude,,the longitude of the location,real,"commonsense evidence:
+precise location / coordinate = POINT(latitude, longitude)"

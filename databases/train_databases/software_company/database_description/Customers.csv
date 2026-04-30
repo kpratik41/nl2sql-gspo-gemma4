@@ -1,0 +1,15 @@
+original_column_name,column_name,column_description,data_format,value_description
+ID,,the unique number identifying the customer,integer,
+SEX,,the sex of the customer,text,
+MARITAL_STATUS,MARITAL STATUS,,text,"� Never-married
+� Married-civ-spouse
+� Divorced
+� Widowed
+� Other
+commonsense evidence: ""Married-civ-spouse"", ""Divorced"", ""Widowed"" mean customer has been married.
+"
+GEOID,GEOGRAPHIC ID,geographic identifier,integer,
+EDUCATIONNUM,EDUCATION NUMBER,the level of education,integer,commonsense evidence: higher education number refers to higher education
+OCCUPATION,,occupation of customers,text,
+age,,age of customers,integer,"commonsense evidence: � teenager: 13-19 years old.
+� elder: people aged over 65"

@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+Id,, Id of the paper,integer,
+Title,,Title of the paper,text,
+Year,,Year of the paper,integer,"commonsense reasoning: if the year is ""0"", it means this paper is preprint, or not published"
+ConferenceId,,Conference Id in which paper was published,integer,
+JournalId,,Journal Id in which paper was published,integer,"commonsense reasoning: If a paper contain ""0"" in both ConferenceID and JournalId, it means this paper is preprint"
+Keyword,,Keywords of the paper ,text,"commonsense reasoning: Keywords should contain words and phrases that suggest what the topic is about. 
+Similar keywords represent similar fields or sub-field. "

@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+PurchaseOrderID,Purchase Order ID,Purchase order number.,integer,
+PurchaseOrderDetailID,Purchase Orde rDetail ID,Unique purchase detail order.,integer,
+DueDate,Due Date,Date the product is expected to be received.,datetime,
+OrderQty,Order Quantity,Quantity ordered.,integer,
+ProductID,Product ID,The id number identifying products.,integer,
+UnitPrice,Unit Price,Vendor's selling price of a single product.,real,
+LineTotal,Line Total,Per product subtotal,real,"Computed as OrderQty * UnitPrice. Computed: isnull([OrderQty]*[UnitPrice],(0.00))"
+ReceivedQty,ReceivedQty,Quantity actually received from the vendor.,real,
+RejectedQty,,,,
+StockedQty,,,,
+ModifiedDate,,,,

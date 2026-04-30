@@ -1,0 +1,3 @@
+original_column_name,column_name,column_description,data_format,value_description
+questiontext,question text,The detailed text of the question.,text,
+questionid,question id,The unique id of the question.,integer,Each questiontext can only have one unique questionid

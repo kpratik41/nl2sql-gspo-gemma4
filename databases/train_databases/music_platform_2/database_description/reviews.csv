@@ -1,0 +1,11 @@
+original_column_name,column_name,column_description,data_format,value_description
+podcast_id,podcast id,The unique id of the podcast ,text,
+title,,The title of the podcast review.,text,"commonsense evidence: 
+This usually is the abstract of the whole review."
+content,,The content of the podcast review.,text,"commonsense evidence: 
+This usually is the detailed explanation of the podcast review title."
+rating,,The rating of the podcast review.,integer,"commonsense evidence: 
+Allowed values: 0 to 5. 
+This rating is highly related with ""title"" and ""content""."
+author_id,author id,The author id of the podcast review.,text,
+created_at,created at,The date and time of the podcast review creation.,text,"In the format of ""Date time"". e.g., 2018-05-09T18:14:32-07:00"

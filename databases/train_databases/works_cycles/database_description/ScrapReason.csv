@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+ScrapReasonID,Scrap Reason ID,The unique number identifying for ScrapReason records.,integer,
+Name,Name,Failure description.,text,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

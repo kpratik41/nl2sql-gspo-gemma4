@@ -1,0 +1,3 @@
+original_column_name,column_name,column_description,data_format,value_description
+Outcome_Id,outcome id,unique id for outcome,integer,
+Outcome_Type,outcome type,type of the outcome,text,

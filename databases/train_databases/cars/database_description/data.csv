@@ -1,0 +1,11 @@
+original_column_name,column_name,column_description,data_format,value_description
+ID,,unique ID for each car ,integer,
+mpg,mileage per gallon,mileage of the car in miles per gallon,real,commonsense evidence: The car with higher mileage is more fuel-efficient. 
+cylinders,number of cylinders,the number of cylinders present in the car,integer,
+displacement,,engine displacement in cubic mm,real,"commonsense evidence: sweep volume = displacement / no_of cylinders
+"
+horsepower,horse power,horse power associated with the car,integer,"commonsense evidence: horse power is the metric used to indicate the power produced by a car's engine - the higher the number, the more power is sent to the wheels and, in theory, the faster it will go. "
+weight,,weight of the car in lbs,integer,"commonsense evidence: A bigger, heavier vehicle provides better crash protection than a smaller"
+acceleration,,acceleration of the car in miles per squared hour,real,
+model,,the year when the car model was introduced in the market,integer,commonsense evidence: 0 --> 1970
+car_name,car name,name of the car,text,

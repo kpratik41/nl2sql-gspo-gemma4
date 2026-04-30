@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+status_id,status id,the unique identifier of the status,integer,
+address_status,address status,the status of the address,text,"commonsense evidence:
+	active: the address is still in use
+	inactive: the address is not in use anymore"

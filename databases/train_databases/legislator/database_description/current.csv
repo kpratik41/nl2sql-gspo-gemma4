@@ -1,0 +1,38 @@
+original_column_name,column_name,column_description,data_format,value_description
+ballotpedia_id,ballotpedia id,"The ballotpedia.org page name for the person (spaces are given as spaces, not underscores).",text,"commonsense evidence:
+if this value is null or empty, it means this legislator doesn't have account on ballotpedia.org"
+bioguide_id,bioguide id,The alphanumeric ID for this legislator ,text,
+birthday_bio,birthday bio,"The legislator's birthday,",date,in YYYY-MM-DD format.
+cspan_id,cspan id,"The numeric ID for this legislator on C-SPAN's video website,",real,"commonsense evidence:
+if this value is null or empty, it means this legislator doesn't have account on C-SPAN's video website"
+fec_id,fec id, A list of IDs for this legislator in Federal Election Commission data.,text,"commonsense evidence:
+if this value is null or empty, it means this legislator hasn't not been registered in Federal Election Commission data."
+first_name,first name,first name of the legislator,text,
+gender_bio,gender bio,gender of the legislator,text,
+google_entity_id_id,google entity id,google entity id,text,"commonsense evidence:
+if this value is null or empty, it means this legislator are not google entities"
+govtrack_id,govtrack id,The numeric ID for this legislator on GovTrack.us,integer,"commonsense evidence:
+if this value is null or empty, it means this legislator doesn't have account on GovTrack.us"
+house_history_id,house history id,The numeric ID for this legislator on http://history.house.gov/People/Search/,real,"commonsense evidence:
+The ID is present only for members who have served in the U.S. House."
+icpsr_id,interuniversity consortium for political and social research id,"The numeric ID for this legislator in Keith Poole's VoteView.com website, originally based on an ID system by the Interuniversity Consortium for Political and Social Research (stored as an integer).",real,"commonsense evidence:
+if this value is null or empty, it means this legislator doesn't have account on VoteView.com "
+last_name,last name,last name of the legislator,text,
+lis_id,legislator id,The alphanumeric ID for this legislator found in Senate roll call votes,text,"commonsense evidence:
+The ID is present only for members who attended in Senate roll call votes"
+maplight_id,maplight id,The numeric ID for this legislator on maplight.org,real,"commonsense evidence:
+if this value is null or empty, it means this legislator doesn't have account on maplight.org"
+middle_name,middle name ,the middle name of the legislator,text,
+nickname_name,nickname,nickname of the legislator,text,
+official_full_name,official full name,official full name,text,
+opensecrets_id,opensecrets id,The alphanumeric ID for this legislator on OpenSecrets.org.,text,"commonsense evidence:
+if this value is null or empty, it means this legislator doesn't have account on OpenSecrets.org."
+religion_bio,religion bio,The legislator's religion.,text,
+suffix_name,suffix name,suffix name,text,
+thomas_id,thomas id,The numeric ID for this legislator on http://thomas.gov and http://beta.congress.gov. ,integer,"commonsense evidence:
+if this value is null or empty, it means this legislator doesn't have account on both http://thomas.gov and http://beta.congress.gov."
+votesmart_id,votesmart id,The numeric ID for this legislator on VoteSmart.org,real,"commonsense evidence:
+if this value is null or empty, it means this legislator doesn't have account on VoteSmart.org"
+wikidata_id,wikidata id,the id for wikidata,text,
+wikipedia_id,wikipedia id, The Wikipedia page name for the person,text,"commonsense evidence:
+if a legislator has wikipedia id, it means he or she is famous or impact"

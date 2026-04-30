@@ -1,0 +1,16 @@
+original_column_name,column_name,column_description,data_format,value_description
+playerID,player id,string ID of players,text,unique string ID of the player
+award,,award name,text,
+year,,year of award,integer,
+lgID,league ID,league abbreviated name,text,
+note,,note if needed,text,
+pos,position,position of players,text,"commonsense evidence: 
+LW: left winger
+RW: right winger
+C: center
+G: goalie
+D: defenseman
+W: winger
+F: forward
+
+the player with W (winger) means he can play the role as both LW (left winger) and RW (right winger)"

@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+prof_id,professor id,unique id for professors,integer,
+gender,gender,gender of the professor,text,
+first_name,first name,the first name of the professor,text,
+last_name,last name,the last name of the professor ,text,"commonsense evidence:
+full name: first name, last name"
+email,,email of the professor,text,
+popularity,,popularity of the professor,integer,"commonsense evidence:
+higher --> more popular"
+teachingability,teaching ability,the teaching ability of the professor,integer,"commonsense evidence:
+higher --> more teaching ability, his / her lectures may have better quality"
+graduate_from,graduate from,the school where the professor graduated from,text,

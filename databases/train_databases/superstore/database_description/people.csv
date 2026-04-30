@@ -1,0 +1,17 @@
+original_column_name,column_name,column_description,data_format,value_description
+Customer ID,,the id of the customers,text,
+Customer Name,,the name of the customers,text,
+Segment,,the segment that the customers belong to,text,"commonsense evidence: 
+ consumer 
+ home office: synonym: headquarter. 
+ corporate"
+Country,,the country of people,text,
+City,,the city of people,text,
+State,,the state of people,text,"commonsense evidence: please mention its full name in the question, by referring to 
+https://www23.statcan.gc.ca/imdb/p3VD.pl?Function=getVD&TVD=53971
+e.g., New York --> NY"
+Postal Code,,the postal code,integer,
+Region,,the region of people,text," Central: 
+ East: 
+ West: 
+ South: "

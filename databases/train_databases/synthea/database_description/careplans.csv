@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+ID,,the unique id of the care plan,text,
+START,,the start date of the care plan,date,yyyy-mm-dd
+STOP,,the stop date of the care plan,date,"yyyy-mm-dd
+commonsense evidence: care plan period:
+stop - start"
+PATIENT,,the patient id,text,
+ENCOUNTER,,the medical encounter id,text,
+CODE,,the code of the care plan ,real,
+DESCRIPTION,,the description of the care plan,text,
+REASONCODE,,the reason code,integer,
+REASONDESCRIPTION,reason description,the description of the reason why the patient needs the care plan,text,

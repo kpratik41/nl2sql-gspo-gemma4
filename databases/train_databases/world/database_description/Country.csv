@@ -1,0 +1,26 @@
+original_column_name,column_name,column_description,data_format,value_description
+Code,,the unique country code of the country,text,
+Name,,the country name,text,
+Continent,,the continent that the country locates,text,
+Region,,the region that the country locates,text,
+SurfaceArea,Surface Area,the surface area of the country,real,
+IndepYear,Independence Year,the year that the country declared independence ,integer,
+Population,,the number of the population in the area,integer,"commonsense evidence:
+
+more population --> more crowded"
+LifeExpectancy,Life Expectancy,the life expectancy at birth of the country,real,"commonsense evidence:
+
+ Life expectancy at birth is defined as how long, on average, a newborn can expect to live if current death rates do not change"
+GNP,Gross National Product,the GNP of the country,real,"commonsense evidence:
+
+ GNP measures the total monetary value of the output produced by a country's residents. "
+GNPOld,Gross National Product Old,Gross national product - old value.,real,
+LocalName,Local Name,The country's local name,text,
+GovernmentForm,Government Form,The country's goverment form.,text,"commonsense evidence:
+
+Republic: governmentform contains ""Republic"""
+HeadOfState,Head Of State,The head of state full name.,text,
+Capital,,The country's capital ,integer,"commonsense evidence:
+
+if the capital is null, it means this country doesn't have a city where a region's government is located"
+Code2,,The second country code.,text,

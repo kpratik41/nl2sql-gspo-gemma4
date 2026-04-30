@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+PaperId,, Paper Id,integer,
+AuthorId,,Author Id,integer,"commonsense reasoning: A paper can have more than one author. Co-authorship can be derived from (paper ID, author ID) pair. "
+Name,,Author Name (as written on paper),text,
+Affiliation,,Author Affiliation (as written on paper),text,the name of an organization with which an author can be affiliated

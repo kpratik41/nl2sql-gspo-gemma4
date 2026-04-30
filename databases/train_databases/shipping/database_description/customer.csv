@@ -1,0 +1,13 @@
+original_column_name,column_name,column_description,data_format,value_description
+cust_id,customer id ,Unique identifier for the customer,integer,
+cust_name,customer name,Business name of the customer,text,
+annual_revenue,annual revenue,Annual revenue of the customer,integer,
+cust_type,customer type,Whether the customer is a manufacturer or a wholes,text,
+address,,Physical street address of the customer,text,
+city,,City of the customer's address,text,
+state,,State of the customer's address,text,"commonsense evidence: 
+please mention its full name in the question, by referring to 
+https://www23.statcan.gc.ca/imdb/p3VD.pl?Function=getVD&TVD=53971
+e.g., NY --> New York"
+zip,,Postal code of the customer's address,real,
+phone,,Telephone number to reach the customer,text,

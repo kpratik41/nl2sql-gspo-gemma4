@@ -1,0 +1,80 @@
+original_column_name,column_name,column_description,data_format,value_description
+unitid,Unit ID number,unique Education Unit ID number,integer,
+chronname,,Institution name,text,
+city,,Institution city,text,
+state,,Institution state,text,
+level,,Level of institution,text,"commonsense evidence:
+4-year: bachelor's degree
+2-year: associate's degree"
+control,,Control of institution,text,"Public, 
+Private not-for-profit, 
+Private for-profit"
+basic,,Carnegie Foundation for the Advancement of Teaching Basic Classification (2010 version),text,
+hbcu,Historically Black College and Universities,Denotes Historically Black College and Universities,text,
+flagship,,Denotes Public flagship institutions,text,
+long_x,,Institution longitude,real,
+lat_y,,Institution latitude,real,"commonsense evidence:
+institute Coordinate"
+site,,Institution Web site address,text,
+student_count,student count,Total number of undergraduates in 2010,integer,
+awards_per_value,awards per value,"Completions per 100 FTE (full-time equivalency) undergraduate students (average 2011, 2012, and 2013)",real,
+awards_per_state_value,awards per state value,"Completions per 100 FTE (full-time equivalency) undergraduate students, state and sector average",real,"commonsense evidence:
+ if his institute's completion (or graduation) rate exceeds the average for the state and sector in which it belongs:
+awards_per_value > awards_per_state_value
+ if his institute's completion (or graduation) rate falls below the average for the state and sector in which it belongs:
+awards_per_value < awards_per_state_value"
+awards_per_natl_value,awards per national value,"Completions per 100 FTE (full-time equivalency) undergraduate students, national sector average",real,"commonsense evidence:
+ if his institute's completion (or graduation) rate exceeds the average for the nationalin which it belongs:
+awards_per_value > awards_per_natl_value
+ if his institute's completion (or graduation) rate falls below the average for the state and industry in which it belongs:
+awards_per_value < awards_per_natl_value"
+exp_award_value,expected award value,Estimated educational spending per academic award in 2013. Includes all certificates and degrees,integer,"expenses related to instruction, research, public service, student services, academic support, institutional support, operations and maintenance. Includes all certificates and degrees"
+exp_award_state_value,expected award state value,"Spending per completion, state and sector average",integer,
+exp_award_natl_value,expected award national value,"Spending per completion, national sector average",integer,
+exp_award_percentile,,,,
+ft_pct,Full-time percentage,Percentage of undergraduates who attend full-time,real,
+fte_value,Full-time percentage,total number of full-time equivalent undergraduates,integer,
+fte_percentile,,,,
+med_sat_value,median SAT value,Median estimated SAT value for incoming students,text,
+med_sat_percentile,median SAT percentile,Institution's percent rank for median SAT value within sector,text,Institution's percent rank for median SAT value within sector
+aid_value,aid value,The average amount of student aid going to undergraduate recipients,integer,
+aid_percentile,aid percentile,Institution's percent rank for average amount of student aid going to undergraduate recipients within sector,integer,Institution's percent rank for average amount of student aid going to undergraduate recipients within sector
+endow_value,endow value,End-of-year endowment value per full-time equivalent student,text,
+endow_percentile,endow percentile,Institution's percent rank for endowment value per full-time equivalent student within sector,text,
+grad_100_value,graduation 100 value,"percentage of first-time, full-time, degree-seeking undergraduates who complete a degree or certificate program within 100 percent of expected time (bachelor's-seeking group at 4-year institutions)",real,"%, 
+commonsense evidence:
+lower means harder to graduate for bachelor"
+grad_100_percentile,graduation 100 percentile,Institution's percent rank for completers within 100 percent of normal time within sector,integer,
+grad_150_value,graduation 150 value,"percentage of first-time, full-time, degree-seeking undergraduates who complete a degree or certificate program within 150 percent of expected time (bachelor's-seeking group at 4-year institutions)",real,"%, 
+commonsense evidence:
+lower means harder to graduate for bachelor"
+grad_150_percentile,graduation 150 percentile,Institution's percent rank for completers within 150 percent of normal time within sector,integer,
+pell_value,pell value,percentage of undergraduates receiving a Pell Grant,real,
+pell_percentile,pell percentile,Institution's percent rank for undergraduate Pell recipients within sector,integer,
+retain_value,retain value,share of freshman students retained for a second year,real,
+retain_percentile,retain percentile,Institution's percent rank for freshman retention percentage within sector,integer,
+ft_fac_value,full time faculty value,"Percentage of employees devoted to instruction, research or public service who are full-time and do not work for an associated medical school",real,
+ft_fac_percentile,full time faculty percentile,Institution's percent rank for full-time faculty share within sector ,integer,
+vsa_year,voluntary system of accountability year,Most recent year of Student Success and Progress Rate data available from the Voluntary System of Accountability,text,
+vsa_grad_after4_first,voluntary system of accountability after 4 year first time,"First-time, full-time students who graduated from this institution within four years",text,
+vsa_grad_elsewhere_after4_first,voluntary system of accountability graduation elsewhere after 4 year first time,"First-time, full-time students who graduated from another institution within four years",text,
+vsa_enroll_after4_first,voluntary system of accountability enrollment after 4 year first time,"First-time, full-time students who are still enrolled at this institution after four years",text,
+vsa_enroll_elsewhere_after4_first,voluntary system of accountability enrollment elsewhere after 4 year first time,"First-time, full-time students who are enrolled at another institution after four years",text,
+vsa_grad_after6_first,voluntary system of accountability graduation elsewhere after 6 year first time,"First-time, full-time students who graduated from this institution within six years",text,null: not available
+vsa_grad_elsewhere_after6_first,voluntary system of accountability graduation elsewhere after 6 year first time,"First-time, full-time students who graduated from another institution within six years",text,
+vsa_enroll_after6_first,voluntary system of accountability enrollment after 6 year first time,"First-time, full-time students who are still enrolled at this institution after six years",text,
+vsa_enroll_elsewhere_after6_first,voluntary system of accountability enrollment elsewhere after 6 year first time,"First-time, full-time students who are enrolled at another institution after six years",text,
+vsa_grad_after4_transfer,voluntary system of accountability transfer after 6 year first time,Full-time transfer students who graduated from this institution within four years,text,
+vsa_grad_elsewhere_after4_transfer,voluntary system of accountability graduation elsewhere after 4 year ,Full-time transfer students who graduated from this institution within four years,text,
+vsa_enroll_after4_transfer,voluntary system of accountability enrollment after 4 years transfer,Full-time transfer students who are still enrolled at this institution after four years,text,
+vsa_enroll_elsewhere_after4_transfer,voluntary system of accountability enrollment elsewhere after 4 years transfer,Full-time transfer students who are enrolled at another institution after four years,text,
+vsa_grad_after6_transfer,voluntary system of accountability enrollment elsewhere after 6 years transfer,Full-time transfer students who graduated from this institution within six years,text,
+vsa_grad_elsewhere_after6_transfer,voluntary system of accountability graduation elsewhere after 6 years transfer,Full-time transfer students who graduated from another institution within six years,text,
+vsa_enroll_after6_transfer,voluntary system of accountability enrollment after 6 years transfer,Full-time transfer students who are still enrolled at this institution after six years,text,
+vsa_enroll_elsewhere_after6_transfer,voluntary system of accountability enrollment elsewhere after 6 years transfer,Full-time transfer students who are enrolled at another institution after six years,text,
+similar,,,,
+state_sector_ct,,,,
+carnegie_ct,,,,
+counted_pct,,,,
+nicknames,,,,
+cohort_size,,,,

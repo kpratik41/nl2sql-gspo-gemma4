@@ -1,0 +1,19 @@
+original_column_name,column_name,column_description,data_format,value_description
+MovieID,movie id,the unique id for the movie,integer,
+Title,,the title of the movie,text,
+MPAA Rating,motion picture association of america rating,MPAA rating of the movie,text,"commonsense evidence:
+MPAA rating is the movie rating for parents to use as a guide to determine the appropriateness of a film's content for children and teenagers. 
+ rated G: General audiences  All ages admitted
+ rated PG: Parental guidance suggested  Some material may not be suitable for pre-teenagers
+ rated R: Restricted  Under 17 requires accompanying parent or adult guardian
+ rated X: No one under 17 admitted"
+Budget,,the budget of the movie,integer,the unit is dollar
+Gross,,the gross of the movie,integer,
+Release Date,,release date,text,yyyy-mm-dd
+Genre,,the genre of the movie,text,
+Runtime,,the runtime of the movie,integer,
+Rating,,the rating of the movie,real,"0.0 - 10.0
+commonsense evidence:
+Higher ratings mean higher quality and better response. "
+Rating Count,rating count,the number of the ratings,integer,
+Summary,,the summary of the movie,text,

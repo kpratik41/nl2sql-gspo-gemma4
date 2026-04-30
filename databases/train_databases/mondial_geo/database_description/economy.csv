@@ -1,0 +1,7 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+Country,,the country code,text,
+GDP,gross domestic product,gross domestic product,real,
+Agriculture,,percentage of agriculture of the GDP,real,
+Service,,"percentage of services of the GDP,",real,
+Industry,,percentage of industry of the GDP,real,
+Inflation,,"inflation rate (per annum),",real,

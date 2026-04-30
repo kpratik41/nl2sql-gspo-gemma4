@@ -1,0 +1,37 @@
+original_column_name,column_name,column_description,data_format,value_description
+donationid,donation id,unique donation identifier,text,
+projectid,project id,project identifier that received the donation,text,
+donor_acctid,donor accid,donor that made a donation,text,
+donor_city,donor city,donation city,text,
+donor_state,donor state,donation state,text,
+donor_zip,donor zip,donation zip code,text,
+is_teacher_acct,is teacher acct,whether donor is also a teacher,text,"commonsense evidence:
+• f: false, it means this donor is not a teacher
+• t: true, it means this donor is a teacher"
+donation_timestamp,donation timestamp,the time of donation,datetime,
+donation_to_project,donation to project,"amount to project, excluding optional support (tip)",real,
+donation_optional_support,donation optional support,amount of optional support,real,
+donation_total,donation total,donated amount,real,"commonsense evidence:
+donated amount = donation_to_project + donation_optional_support"
+dollar_amount,dollar amount,donated amount in US dollars,text,
+donation_included_optional_support,donation included optional support,whether optional support (tip) was included for DonorsChoose.org,text,"commonsense evidence:
+• f: false, optional support (tip) was not included for DonorsChoose.org
+• t: true, optional support (tip) was included for DonorsChoose.org"
+payment_method,payment method,what card/payment option was used,text,
+payment_included_acct_credit,payment included acct credit,whether a portion of a donation used account credits redemption,text,"commonsense evidence:
+• f: false, a portion of a donation didn't use account credits redemption
+• t: true, a portion of a donation used account credits redemption"
+payment_included_campaign_gift_card,payment included campaign gift card,whether a portion of a donation included corporate sponsored gift card,text,"commonsense evidence:
+• f: false, a portion of a donation included corporate sponsored gift card
+• t: true, a portion of a donation included corporate sponsored gift card"
+payment_included_web_purchased_gift_card,payment included web purchased gift card,whether a portion of a donation included citizen purchased gift card (ex: friend buy a gift card for you),text,"• f: false
+• t: true"
+,,,text,
+payment_was_promo_matched,payment was promo matched,whether a donation was matched 1-1 with corporate funds,text,"commonsense evidence:
+• f: false, a donation was not matched 1-1 with corporate funds
+• t: true, a donation was matched 1-1 with corporate funds"
+via_giving_page,via giving page,donation given via a giving / campaign page (example: Mustaches for Kids),text,
+for_honoree,for honoree,donation made for an honoree,text,"commonsense evidence:
+• f: false, this donation is not made for an honoree
+• t: true, this donation is made for an honoree"
+donation_message,donation message,donation comment/message. ,text,

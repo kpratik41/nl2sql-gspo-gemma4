@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+PhoneNumberTypeID,Phone Number Type ID,The id number identifying the telephone number type records.,integer,
+Name,Phone Number,Name of the telephone number type.,text,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

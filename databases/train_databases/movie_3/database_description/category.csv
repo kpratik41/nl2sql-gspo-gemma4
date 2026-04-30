@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+category_id,category id,unique id number identifying the category,integer ,
+name,,name of the category,text,
+last_update,last update,The time of the latest update,datetime,

@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+ShoppingCartItemID,Shopping CartItem ID,The unique id number identifying the shopping cart item records.,integer,
+ShoppingCartID,Shopping Cart ID,Shopping cart identification number.,text,
+Quantity,Quantity,Product quantity ordered.,integer,Default: 1
+ProductID,Product ID,Product ordered.,integer,
+DateCreated,Date Created,Date the time the record was created. ,datetime,Default: getdate()
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

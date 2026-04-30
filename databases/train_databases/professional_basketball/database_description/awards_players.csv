@@ -1,0 +1,10 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+playerID,,ID number identifying the unique number of the player,text,
+award,,the name of the award,text,
+year,,the time of this award,integer,
+lgID,league ID,the name of the league,text,"mainly categories: ""NBA"" & ""ABA"""
+note,,notification,text,"”null“ refers to that no special things
+”tie“ represents that coaches are tied for some awards"
+pos,position,the position of the player,text,"C: Center
+F: Forward
+G: Guard "

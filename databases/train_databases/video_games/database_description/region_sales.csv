@@ -1,0 +1,6 @@
+original_column_name,column_name,column_description,data_format,value_description
+region_id,,the id of the region,integer,
+game_platform_id,game platform id,the id of the game platform,integer,
+num_sales,number sales,the number of sales in this region,real,"commonsense evidence:
+The number of games sold in the region = num_sales * 100000.
+The game platform with higher num_sales is more popular in the region. "

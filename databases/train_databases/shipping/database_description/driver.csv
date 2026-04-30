@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+driver_id,driver id,Unique identifier for the driver,integer,
+first_name,first name,First given name of the driver,text,
+last_name,last name ,Family name of the driver,text,commonsense evidence: full name = first_name + last_name
+address,,Street address of the driver's home,text,
+city,,City the driver lives in,text,
+state,,State the driver lives in,text,"commonsense evidence: 
+please mention its full name in the question, by referring to 
+https://www23.statcan.gc.ca/imdb/p3VD.pl?Function=getVD&TVD=53971 
+e.g., NY --> New York"
+zip_code,zip code,postal code of the driver's address,integer,
+phone,,telephone number of the driver,text,

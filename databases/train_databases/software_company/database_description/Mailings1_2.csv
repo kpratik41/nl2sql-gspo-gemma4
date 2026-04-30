@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+REFID,REFERENCE ID,unique id number identifying the customer,integer,
+REF_DATE,REFERENCE DATE,indicating the date when the mailing was sent,datetime,
+RESPONSE,,Response to the incentive mailing that marketing department sent,text,"• True
+• False 
+commonsense evidence: 
+1. any person who has not responded to a mailing within two months is considered to have responded negatively.
+2. true respond to the mailing, otherwise, no"

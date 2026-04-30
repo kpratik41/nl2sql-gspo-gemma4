@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+ContactTypeID,Contact Type ID,The unique id number identifying the contact type ID.,integer,
+Name,,Contact type description.,text,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

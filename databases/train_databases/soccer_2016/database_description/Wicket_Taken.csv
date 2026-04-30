@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+Match_Id,match id,the id of the match,integer,
+Over_Id,over id,the id of the over in an inning,integer,
+Ball_Id,ball id,the id of the ball in an over,integer,
+Player_Out,player out,the player id who got an out,integer,
+Kind_Out,kind out,the id that represents the out type,integer,
+Fielders ,,the id of fielders,integer,
+Innings_No,innings number ,number which identifies an innings in a match,integer,

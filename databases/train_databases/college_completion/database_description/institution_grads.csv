@@ -1,0 +1,17 @@
+original_column_name,column_name,column_description,data_format,value_description
+unitid,unit id,Education Unit ID number,integer,
+year,,year of data release,integer,
+gender,,gender of students,text,'B' = both genders; 'M' = male; 'F' = female
+race,,race/ethnicity of students,text,"commonsense evidence:
+'X' = all students; 'Ai' = American Indian; 'A' = Asian; 'B' = Black; 'H' = Hispanic; 'W' = White"
+cohort,,degree-seeking cohort type,text,"commonsense evidence:
+ '4y bach' = Bachelor's/equivalent-seeking cohort at 4-year institutions; 
+ '4y other' = Students seeking another type of degree or certificate at a 4-year institution; 
+ '2y all' = Degree-seeking students at 2-year institutions
+4-year degree is bachelor's degree
+2-year degree is associate's degree"
+grad_cohort,graduation cohort,"Number of first-time, full-time, degree-seeking students in the cohort being tracked, minus any exclusions",text,
+grad_100,graduation 100,Number of students who graduated within 100 percent of normal/expected time,text,
+grad_150,graduation 150,Number of students who graduated within 150 percent of normal/expected time,text,
+grad_100_rate,grad_100_rate,Percentage of students who graduated within 100 percent of normal/expected time,text,
+grad_150_rate,grad_150_rate,Percentage of students who graduated within 150 percent of normal/expected time,text,

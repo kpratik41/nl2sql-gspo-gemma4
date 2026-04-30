@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+Countrycode,Country code,code identifying unique countries,text,
+Seriescode,Series code,Series code of countries,text,
+Year,,Year,text,
+Description,,Description of country footnotes,text,

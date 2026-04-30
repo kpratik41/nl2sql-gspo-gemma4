@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+BillOfMaterialsID,bill of materials id,The unique number identifying bill of materials.,integer,Primary key for BillOfMaterials records. Identity / Auto increment column.
+ProductAssemblyID,product assembly id,Parent product identification number.,integer,
+ComponentID,component ID,Component identification number.,integer,
+StartDate,start date,Date the component started being used in the assembly item.,datetime,
+EndDate,end date,Date the component stopped being used in the assembly item.,datetime,"commonsense evidence:
+1. assembly item duration = (EndDate - StartDate) 
+2. if EndDate is null, it means the assembly item doesn't finish (still going on)."
+UnitMeasureCode,unit measure code,Standard code identifying the unit of measure for the quantity.,text,
+BOMLevel,bill of materials level,Indicates the depth the component is from its parent (column2)(AssemblyID).,integer,
+PerAssemblyQty,per assembly quantity,Quantity of the component needed to create the assembly.,real,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

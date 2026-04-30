@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+university_id,university id,id of the university,integer,
+year,,,integer,
+num_students,number of students,the total number of students for the year,integer,
+student_staff_ratio,student staff ratio,,real,commonsense evidence: student_staff_ratio = number of students / number of staff
+pct_international_students,pct internation student,the percentage of international students among all students,real,commonsense evidence: pct_international_student = number of interbational students / number of students
+pct_female_students,pct female students,the percentage of female students,real,commonsense evidence: pct_female_students = number of female students / number of students

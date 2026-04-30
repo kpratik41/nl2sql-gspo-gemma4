@@ -1,0 +1,16 @@
+original_column_name,column_name,column_description,data_format,value_description
+Id ,,"unique id number
+that identifies methods",integer,
+Name ,,name of methods ,text,"the second part is the task of this method
+delimited by ""."""
+FullComment,Full Comment,full comment of this method,text,
+Summary,Summary,summary of the method,text,
+ApiCalls,Api Calls,linearized sequenced of API calls,text,
+CommentIsXml,CommentIs Xml,whether the comment is XML format or not,integer,"commonsense evidence:
+
+0: the comment for this method is not XML format.
+1: the comment for this method is XML format."
+SampledAt,Sampled At,the time of sampling,integer,
+SolutionId,Solution Id,id number of solutions,integer,
+Lang,Language,language code of method,text,
+NameTokenized,Name Tokenized,tokenized name,text,

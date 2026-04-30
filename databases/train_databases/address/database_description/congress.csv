@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+cognress_rep_id,congress representative id,the representative id of congress representatives,text,
+first_name ,first name,the first name of the congress representative,text,
+last_name,last name,the last name of the congress representative,text,
+CID,,the unique identifier for the congress representative,text,
+party,,the party of the representative,text,
+state,,the state that the representative is from,text,
+abbreviation,,the abbreviation of the state,text,
+House,,the house that the representative is from,text,
+District,,the id of the district that the representative represents ,integer,"commonsense evidence: The state is divided into different districts. The districts under the same state will be numbered uniformly. 
+'NA' means that the state is not divided into districts. "
+land_area,land area,the land area of the district,real,

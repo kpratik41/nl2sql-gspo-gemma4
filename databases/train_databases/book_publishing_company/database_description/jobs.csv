@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+job_id,job id,unique id number identifying the jobs,integer,
+job_desc,job description,job description,text,"commonsense evidence:
+staff should be mentioned"
+min_lvl,min level,min job level,integer,
+max_lvl,max level,max job level,integer,"commonsense evidence:
+level range for jobs mentioned in job_desc is (min_lvl, max_lvl)"

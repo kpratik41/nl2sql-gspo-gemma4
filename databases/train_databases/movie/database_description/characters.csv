@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+MovieID,movie id,the unique id for the movie,integer,
+ActorID,actor id,the unique id for the actor,integer,
+Character Name,character name,the name of the character,text,
+creditOrder,credit order,order of the character in the credit list ,integer,
+pay,,the salary of the character,text,
+screentime,,the screentime of the character,text,"commonsense evidence:
+Screentime is directly proportional to the importance of the characters. "

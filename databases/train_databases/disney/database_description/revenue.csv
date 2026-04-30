@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+Year,,The year the movie was released.,integer,
+Studio Entertainment[NI 1],,The studio entertainment segment of the Walt Disney Company.,real,
+Disney Consumer Products[NI 2],,The consumer products segment of the Walt Disney Company.,real,
+Disney Interactive[NI 3][Rev 1],,The interactive segment of the Walt Disney Company. ,integer,
+Walt Disney Parks and Resorts,,The parks and resorts segment of the Walt Disney Company.,real,
+Disney Media Networks,,The media networks segment of the Walt Disney Company.,text,
+Total,,The total box office gross for the movie.,integer,

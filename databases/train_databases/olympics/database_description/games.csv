@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,,the unique identifier of the game,integer,
+games_year,games year,the year of the game,integer,
+games_name,games name,the name of the game,text,"commonsense evidence:
+games_name is 'games_year season'"
+season,,the season of the game,text,"commonsense evidence:
+The Olympics are held every four years and include both summer and winter games. The summer games include a wide range of sports, such as athletics, swimming, and gymnastics, while the winter games feature sports that are played on ice or snow, such as ice hockey, figure skating, and skiing."

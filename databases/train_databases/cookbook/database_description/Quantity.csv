@@ -1,0 +1,9 @@
+original_column_name,column_name,column_description,data_format,value_description
+quantity_id,quantity id,the unique identifier for the quantity,integer,
+recipe_id,recipe id,the id of the recipe,integer,
+ingredient_id,ingredient id,the id of the ingredient,integer,
+max_qty,maximum quantity,the max quantity of the ingredient,real,
+min_qty,minimum quantity,the min quantity of the ingredient,real,"commonsense evidence: If max_qty equals to min_qty, it means that the ingredient must be rationed. "
+unit,,the unit of the ingredient,text,
+preparation,,,text,commonsense evidence: 'No data' means the ingredient doesn't need preprocessing. 
+optional,,whether the ingredient is optional ,text,

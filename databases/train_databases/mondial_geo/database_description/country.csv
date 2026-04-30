@@ -1,0 +1,7 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+Name,,the country name,text,
+Code,,country code,text,
+Capital,,"the name of the capital,",text,
+Province,,"the province where the capital belongs to,",text,
+Area,,"the total area,",real,
+Population,,the population number.,integer,

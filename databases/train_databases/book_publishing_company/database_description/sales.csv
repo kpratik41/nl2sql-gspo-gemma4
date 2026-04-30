@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+stor_id,store id,id number identifying stores,text,
+ord_num,order number,id number identifying the orders,text,
+ord_date,order date,the date of the order,datetime,
+qty,quantity,quantity of sales ,integer,
+payterms,,payments,text,
+title_id,title id,id number identifying titles,text,

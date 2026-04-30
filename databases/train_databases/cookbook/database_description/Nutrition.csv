@@ -1,0 +1,37 @@
+original_column_name,column_name,column_description,data_format,value_description
+recipe_id,recipe id,the id of the recipe,integer,
+protein,,the protein content in the recipe,real,
+carbo,,the carbo content in the recipe,real,
+alcohol,,the alcohol content in the recipe,real,
+total_fat,total fat,the total fat content in the recipe,real,commonsense evidence: higher --> higher possibility to gain weight
+sat_fat,saturated fat,the saturated fat content in the recipe,real,commonsense evidence: unsaturated fat = total_fat - saturated fat
+cholestrl,cholesterol,the cholesterol content in the recipe,real,
+sodium,,the sodium content in the recipe,real,"commonsense evidence:
+Salt/Sodium-Free - Less than 5 mg of sodium per serving
+Very Low Sodium - 35 mg of sodium or less per serving
+Low Sodium -140 mg of sodium or less per serving
+Reduced Sodium - At least 25% less sodium than the regular product
+Light in Sodium or Lightly Salted - At least 50% less sodium than the regular product
+No-Salt-Added or Unsalted - No salt is added during processing - but these products may not be salt/sodium-free unless stated"
+iron,,the iron content in the recipe,real,"commonsense evidence: if iron > 20mg, it will lead to  
+ constipation 
+ feeling sick 
+ being sick 
+ stomach pain 
+question could mention any of functions listed before."
+vitamin_c,vitamin c,the vitamin c content in the recipe,real,"commonsense evidence: Vitamin C, also known as ascorbic acid, if the VC is higher, it will:
+ helping to protect cells and keeping them healthy 
+ maintaining healthy skin, blood vessels, bones and cartilage 
+ helping with wound healing 
+question could mention any of functions listed before."
+vitamin_a,vitamin a,the vitamin a content in the recipe,real,"commonsense evidence:
+higher --> beneficial to 
+ helping your body's natural defense against illness and infection (the immune system) work properly 
+ helping vision in dim light 
+ keeping skin and the lining of some parts of the body, such as the nose, healthy 
+question could mention any of functions listed before."
+fiber,,the fiber a content in the recipe,real,
+pcnt_cal_carb,percentage calculation carbo,percentage of carbo in total nutrient composition,real,
+pcnt_cal_fat,percentage calculation fat,percentage of fat in total nutrient composition,real,
+pcnt_cal_prot,percentage calculation protein,percentage of protein in total nutrient composition,real,
+calories,,the calories of the recipe,real,

@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+groupName,,release title,text,
+totalSnatched,,number of times the release has been downloaded,integer,
+artist,,artist / group name,text,
+groupYear,,release year,integer,
+releaseType,,"release type (e.g., album, single, mixtape)",text,
+groupId,,Unique release identifier from What.CD. Used to ensure no releases are duplicates.,integer,
+id,,unique identifier (essentially an index),integer,

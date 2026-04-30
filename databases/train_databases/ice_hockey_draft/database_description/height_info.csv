@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+height_id,height id,the unique height id,integer,
+height_in_cm,height in cm,height in cm,integer,e.g. 180 --> the height is 180 cm
+height_in_inch,height in inch,height in inch,text,

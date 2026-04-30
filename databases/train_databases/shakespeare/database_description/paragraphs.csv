@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,id,unique id number identifying the paragraphs,integer ,
+ParagraphNum,paragraph number,unique id number identifying the paragraph number,integer,
+PlainText,Plain Text,main content of the paragraphs,text,
+character_id,character id,unique id number identifying the mentioned character,integer,
+chapter_id,chapter id,unique id number identifying the related chapter,integer,"commonsense evidence:
+if number of the paragraphs is > 150, then it means this is a long chapter"

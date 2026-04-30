@@ -1,0 +1,6 @@
+original_column_name,column_name,column_description,data_format,value_description
+event_id,event id,the id of events,integer,
+app_id,app id,the id of app users,integer,each app_id represents for an user
+is_installed,is installed,whether this app is installed or not,integer," 0: no
+ 1: yes: installed"
+is_active,is active,whether this user is active or not,integer,

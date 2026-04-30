@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+status_id,status id ,the unique identifier of the order status,integer,
+status_value,status value,the status value,text,"commonsense evidence:
+The order statuses include order received, pending delivery, delivery in progress, delivered, canceled, and returned. "

@@ -1,0 +1,14 @@
+original_column_name,column_name,column_description,data_format,value_description
+playerID,,id number identifying the player,text,number identifying players
+year,,year,integer,"2005-06 listed as ""2005"""
+tmID,team ID,team abbreviated name,text,
+lgID,league ID,league abbreviated name,text,
+GP,Games played,Games played,integer,
+Min,Minutes,Minutes of appearance,integer,
+W,Wins,Wins,integer,
+L,Loses,Loses,integer,
+T,Ties,Ties,integer,
+SHO,Shutouts,Shutouts,integer,"commonsense evidence:
+In ice hockey, a shutout (SHO) is credited to a goaltender who successfully stops the other team from scoring during the entire game."
+GA,Goals against,Goals against,integer,"commonsense evidence:
+“Goals Against” are the number of goals recorded while the goalie is on the ice. Include all goals against during regulation and overtime play."

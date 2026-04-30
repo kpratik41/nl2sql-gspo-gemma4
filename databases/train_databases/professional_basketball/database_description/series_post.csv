@@ -1,0 +1,20 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+id,,unique number of this record,integer,
+year,,year,integer,
+round,,round,text,"known abbreviations：
+
+F：final 
+SF: semi-final 
+
+QF：quater-final 1/4
+
+DF：division-final 
+
+DSF：division semi-final"
+series,,,text,not useful
+tmIDWinner,team id winner,team id winner,text,
+lgIDWinner,league id winner,league id winner,text,
+tmIDLoser,team id loser,team id loser,text,
+lgIDLoser,league id loser,league id loser,text,
+W,wins,wins,integer,
+L,loses,loses,integer,

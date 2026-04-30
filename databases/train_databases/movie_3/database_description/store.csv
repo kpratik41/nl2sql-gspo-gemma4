@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+store_id,store id,unique id number identifying the store,integer ,
+manager_staff_id,manager staff id,id number identifying the manager staff,integer ,
+address_id,address id,id number identifying the address,integer ,
+last_update,last update,The time of the latest update,datetime,

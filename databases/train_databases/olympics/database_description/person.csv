@@ -1,0 +1,9 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,,the unique identifier of the person,integer,
+full_name,full name,the full name of the person,text,"commonsense evidence:
+A person's full name is the complete name that they are known by, which typically includes their first name, middle name (if applicable), and last name. "
+gender,,the gender of the person,text,"commonsense evidence:
+M stands for male and F stands for female. "
+height,,the height of the person,integer,
+weight,,the weight of the person,integer,"commonsense evidence:
+The unit of height is cm, and the unit of weight is kg. If the height or the weight of the person is 0, it means his/her height or weight is missing. "

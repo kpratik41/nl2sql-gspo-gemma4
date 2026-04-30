@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+attribute_id,attribute id,id number identifying the attribute,integer,
+business_id,business id,id number identifying the business,integer,
+attribute_value,attribute value,sort of the attributes for each business,text,"commonsense evidence: 
+“None”, “No” or “FALSE” means the business does not have the attribute."

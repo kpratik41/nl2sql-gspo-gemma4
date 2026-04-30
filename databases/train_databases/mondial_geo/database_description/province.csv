@@ -1,0 +1,9 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+Name,,the name of the administrative division,text,
+Country,, the country code where it belongs to,text,
+Area,,"the total area of the province,",integer,
+Population,,the population of the province,real,
+Capital,,the name of the capital,text,"if null, doesn't have capital"
+CapProv,capital province,the name of the province where the capital belongs to,text,"commonsense evidence:
+
+note that capprov is not necessarily equal to name"

@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+line_id,line id,the unique identifier of the order line,integer ,
+order_id,order id ,"the id of the order
+Maps to cust_order(order_id)",integer,
+book_id,book id,"the id of the book
+Maps to book(book_id)",integer,
+price,,the price of the order,real,"commonsense evidence:
+Even though the customer ordered the book with the same book id, the price could be different. The price of the order may be influenced by the shipping method, seasonal discount, and the number of books the customer ordered. "

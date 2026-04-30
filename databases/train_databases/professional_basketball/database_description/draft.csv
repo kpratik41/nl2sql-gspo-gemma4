@@ -1,0 +1,23 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+id,,the unique number to determine one row of the data,integer,
+draftYear,,which year does this draft happens,integer,
+draftRound,,the Round number of this draft,integer,"If the value is 0, it means that there is no draft in this year
+
+1 refers that this player was picked in the first round"
+draftSelection,league ID,the position that the player was picked,integer,"0：This signifies that it doesn't contain the draft information of this player
+
+7：this player was selected in the 7th position in this round
+
+commonsense evidence:
+
+draftRound: 1; 
+draftSelection: 7 
+represents: this player was selected in the round 1, 7th position."
+draftOverall,draft overall rank,The player's overall draft position for the year,integer,this is the overall draft rank of the player.
+tmID,team ID,team name,text,abbreviated name
+firstName,,the first name of the player,text,
+lastName,,the last name of the player,text,
+suffixName,,the suffix name of the player,text,
+playerID,,ID number identifying the unique number of the player,text,
+draftFrom,,the university that the drafted players come from,text,the name of the university
+lgID,league ID,the league name,text,"mainly categories: ""NBA"" & ""ABA"""

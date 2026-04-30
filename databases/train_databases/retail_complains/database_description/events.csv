@@ -1,0 +1,21 @@
+original_column_name,column_name,column_description,data_format,value_description
+Date received,,Date received,date,
+Product,,complaining about which product ,text,
+Sub-product,,sub product if exists,text,"commonsense evidence:
+detailed product"
+Issue,,problems leading to this complaints,text,
+Sub-issue,,sub problems leading to this complaints if exists,text,"commonsense evidence:
+more detailed issue"
+Consumer complaint narrative,,Consumer complaint narrative,text,
+Tags,,tags of client,text,
+Consumer consent provided?,Tags Consumer consent provided?,whether the tags labeled under permission of the clients,text,"commonsense evidence:
+ null, 'N/A' or empty value: indicating that the company didn't get the permission of consent.
+ if the value is not empty: customers provide the consent for this tag."
+Submitted via,,Submitted via,text,
+Date sent to company,,Date sent to company,text,"commonsense evidence:
+delay of the complaints = 'Date sent to company'"
+Company response to consumer,,Company response to consumer,text,
+Timely response?,,whether the response of the company is timely,text,
+Consumer disputed?,,whether the consumer dispute about the response from the company.,text,
+Complaint ID,,id number indicating which complaint,text,
+Client_ID,Client ID,id number indicating which client,text,

@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+Id,,unique id number identifying method parameters,integer,
+MethodId,Method Id,,text,
+Type,,type of the method,text,
+Name,,name of the method,text,"commonsense evidence:
+
+if the name is not a word like ""H"", ""z"", it means this method is not well-discriminative."

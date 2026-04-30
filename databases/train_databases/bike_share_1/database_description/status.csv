@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+station_id,station id,station id,integer,
+bikes_available,,number of available bikes,integer,"commonsense evidence:
+0 means no bike can be borrowed."
+docks_available,,number of available docks,integer,"commonsense evidence:
+0 means no bike can be returned to this station."
+time,,,text,

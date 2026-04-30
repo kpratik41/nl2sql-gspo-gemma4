@@ -1,0 +1,9 @@
+original_column_name,column_name,column_description,data_format,value_description
+event_id,event id,"the id of the event
+Maps to event(id)",integer,
+competitor_id,competitor id,"the id of the competitor
+Maps to games_competitor(id)",integer,"commonsense evidence:
+The number of competitors who participated in a specific event could be calculated by grouping by event_id. "
+medal_id,medal id,"the id of the medal
+Maps to medal(id)",integer,"commonsense evidence:
+For a specific event, the competitor whose medal_id = 1 is the champion, the competitor whose medal_id = 2 is the runner-up, and the competitor whose medal_id = 3 got third place. "

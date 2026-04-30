@@ -1,0 +1,14 @@
+original_column_name,column_name,column_description,data_format,value_description
+p_id,person ID,the unique number identifying each person,integer,
+professor,professor,whether the person is a professor,integer,"0: professor
+1: student"
+student,student,whether the person is a student,integer,"0: professor
+1: student"
+hasPosition,has position,whether the person has a position in the faculty,text,"0: the person is not a faculty member
+Common Sense evidence:
+faculty_aff: affiliated faculty
+faculty_eme: faculty employee"
+inPhase,in phase,the phase of qualification the person is undergoing,text,0: the person is not undergoing the phase of qualification
+yearsInProgram,years in program,the year of the program the person is at,text,"0: the person is not in any programs
+Common Sense evidence:
+yearX means the person is on the Xth year of the program"

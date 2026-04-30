@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+ProductID,Product ID,Product identification number.,integer,
+LocationID,Location ID,Inventory location identification number.,integer,Document identification number
+Shelf,,Storage compartment within an inventory location.,text,
+Bin,,Storage container on a shelf in an inventory location.,integer,
+Quantity,,Quantity of products in the inventory location.,integer,Default: 0
+rowguid,rowguid,Uniquely identifying the record. Used to support a merge replication sample. ,text,Default: newid()
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

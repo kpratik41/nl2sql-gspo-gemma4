@@ -1,0 +1,23 @@
+original_column_name,column_name,column_description,data_format,value_description
+client_id,client id,unique id client number,text,
+sex,,sex of client,text,
+day,,day of the birthday,integer,
+month,,month of the birthday,integer,
+year,,year when is born,integer,
+age,,age ,integer,"teenager: 13-19
+adult: 19-65
+elder: > 65"
+social,,social number,text,ssn: us id number for each person
+first,,first name,text,
+middle,,middle name,text,
+last,,last name,text,
+phone,,phone number,text,
+email,,email,text,"commonsense evidence:
+google email / account: @gamil.com
+microsoft email / account: xxx@outlook.com"
+address_1,,address 1,text,
+address_2,,address 2,text,"entire address = (address_1, address_2)"
+city,,city ,text,
+state,,state code,text,
+zipcode,,zipcode,integer,
+district_id,district id,district id number,integer,

@@ -1,0 +1,10 @@
+original_column_name,column_name,column_description,data_format,value_description
+address_id,address id,unique id number identifying the address,integer ,
+address,,The first address line,text,
+address2,address 2,the second address line,text,"commonsense evidence:
+address2 is the additional address if any"
+district,,,text,
+city_id,,,integer unsigned,
+postal_code,postal code,,text,"a postal code is a series of letters or digits or both, sometimes including spaces or punctuation, included in a postal address for the purpose of sorting mail."
+phone,,phone number,text,
+last_update,last update,The time of the latest update,datetime,

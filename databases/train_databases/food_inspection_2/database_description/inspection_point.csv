@@ -1,0 +1,10 @@
+original_column_name,column_name,column_description,data_format,value_description
+point_id,point id,the unique id for the inspection point,integer,
+Description,,the specific description of the inspection results,text,
+category,,the inspection category,text,
+code,,the sanitary operating requirement code,text,commonsense evidence: Each code stands for an operating requirement
+fine,,the fines for food safety problems,integer,"commonsense evidence: The fine of more serious food safety problems will be higher. 
+ Minor: 100 
+ Serious: 250 
+ Critical: 500"
+point_level,,point level,text,Critical / Serious/ Minor

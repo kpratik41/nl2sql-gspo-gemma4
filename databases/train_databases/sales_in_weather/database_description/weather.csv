@@ -1,0 +1,44 @@
+original_column_name,column_name,column_description,data_format,value_description
+station_nbr,station number,the id of weather stations,integer,
+date,,date,date,
+tmax,temperature max,max temperature,integer,
+tmin,temperature min,min temperature,integer,"commonsense evidence:
+temperature range / difference = tmax - tmin"
+tavg,temperature average,average temperature,integer,
+depart,departure from normal,,integer,"Temperature departure from the normal indicates if the dekadal average temperatures were above or below the 30-year normal.
+commonsense evidence:
+â¢ if null: the temperature is 30-year normal
+â¢ if the value is positive: the temperature is above the 30-year normal, 
+â¢ if the value is negative: the temperature is below the 30-year normal, "
+dewpoint,dew point,,integer,"commonsense evidence:
+The dew point is the temperature to which air must be cooled to become saturated with water vapor, assuming constant air pressure and water content."
+wetbulb,wet bulb,,integer,"commonsense evidence:
+â¢ The wet-bulb temperature (WBT) is the temperature read by a thermometer covered in water-soaked (water at ambient temperature) cloth (a wet-bulb thermometer) over which air is passed.
+â¢ At 100% relative humidity, the wet-bulb temperature is equal to the air temperature (dry-bulb temperature); 
+â¢ at lower humidity the wet-bulb temperature is lower than dry-bulb temperature because of evaporative cooling."
+heat,,calculated heating degree,integer,
+cool,,calculated cooling degree,integer,
+sunrise,,calculated sunrise,text,
+sunset,,calculated sunset,text,
+codesum,code summarization,code summarization for the weather,text,"
+â¢ PY SPRAY 
+â¢ SQ SQUALL 
+â¢ DR LOW DRIFTING 
+â¢ SH SHOWER 
+â¢ FZ FREEZING 
+â¢ MI SHALLOW 
+â¢ PR PARTIAL 
+â¢ BC PATCHES 
+â¢ BL BLOWING 
+â¢ VC VICINITY 
+â¢ - LIGHT 
+â¢ + HEAVY 
+â¢ ""NO SIGN"" MODERATE"
+snowfall,,snowfall,real,snowfall (inches AND tenths)
+preciptotal,,precipitation total,real,inches (240hr period ending at indicated local standard time)
+stnpressure,station pressure,station pressure,real,
+sealevel,sea level,sea level,real,
+resultspeed,resultant speed,resultant wind speed,real,
+resultdir,resultant direction,resultant wind direction,integer,who degree
+avgspeed,average speed,average wind speed,real,"commonsense evidence:
+if avgspeed is larger: much more wind"

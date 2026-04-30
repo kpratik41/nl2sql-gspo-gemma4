@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+business_id,business id,the number identifying the business,integer,
+user_id,user id,the number identifying the user who comments on this business,integer,
+review_stars,review stars,review on this business,integer,"5 – Great experience 
+4 – Good experience 
+3 – Average experience 
+2 – Bad experience 
+1 - Terrible experience"
+review_votes_funny,review votes funny,the amount of funny votes that the user received for the review,text,"commonsense evidence: If the reviews receive an “Uber” number of votes for funny, they will also receive an “Uber”, “High” or “Medium” number of votes for “useful” and “cool”."
+review_votes_useful,review votes useful,how many useful votes that the user received for the review,text,
+review_votes_cool,review votes cool,how many cool votes that the user received for the review,text,
+review_length,review length,The length of the review written by the user,text,

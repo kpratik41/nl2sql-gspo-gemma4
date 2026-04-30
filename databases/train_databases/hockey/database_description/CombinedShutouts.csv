@@ -1,0 +1,10 @@
+original_column_name,column_name,column_description,data_format,value_description
+year,,year,integer,
+month,,month,integer,
+date,,day,integer,"commonsense evidence: 
+the entire date in this table is ""year"" / ""month"" / ""date"""
+tmID,team ID,team abbreviated name,text,
+oppID,opposite team ID,Team ID of opponent,text,
+R/P ,regular / postseason,regular / postseason,text,"R"" for regular season, or ""P"" for postseason"
+IDgoalie1,ID of goalie 1,ID of first goalie,text,
+IDgoalie2,ID of goalie 2,ID of second goalie,text,

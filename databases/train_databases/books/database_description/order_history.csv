@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+history_id,history id,the unique identifier of the order history,integer ,
+order_id,order_id,"the id of the order
+Maps to cust_order(order_id)",integer,
+status_id,status id ,"the id of the order
+Maps to order_status(status_id)",integer,"commonsense evidence:
+The order statuses include order received, pending delivery, delivery in progress, delivered, canceled, and returned."
+status_date,status date,the date of the status updated ,datetime,

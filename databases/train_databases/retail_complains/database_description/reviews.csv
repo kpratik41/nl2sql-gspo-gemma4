@@ -1,0 +1,6 @@
+original_column_name,column_name,column_description,data_format,value_description
+Date,,,date,
+Stars,,,integer,
+Reviews,,,text,
+Product,,,text,
+district_id,,,integer,

@@ -1,0 +1,13 @@
+original_column_name,column_name,column_description,data_format,value_description
+SpecialOfferID,Special Offer ID,The unique id number identifying the special offer.,integer,
+Description,,Discount description.,text,
+DiscountPct,Discount precentage,Discount percentage.,real,
+Type,,Discount type category.,text,
+Category,,Group the discount applies to such as Reseller or Customer.,text,
+StartDate,Start Date,Discount start date.,datetime,
+EndDate,End Date,Discount end date.,datetime,"commonsense evidence:
+promotion date = EndDate - StartDate"
+MinQty,Min Quality,Minimum discount percent allowed.,integer,
+MaxQty,Max Quality,Maximum discount percent allowed.,integer,
+rowguid,rowguid,Uniquely identifying the record. Used to support a merge replication sample. ,text,Default: newid()
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

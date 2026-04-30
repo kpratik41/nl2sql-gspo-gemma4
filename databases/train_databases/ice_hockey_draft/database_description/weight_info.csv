@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+weight_id,weight id,the unique weight id,integer,
+weight_in_kg,weight in kg,weight in kg,integer,e.g. 70: -->70 kg
+weight_in_lbs,weight in lbs,weight in lbs,integer,

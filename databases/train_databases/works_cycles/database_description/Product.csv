@@ -1,0 +1,27 @@
+original_column_name,column_name,column_description,data_format,value_description
+ProductID,Product ID,The unique id number identifying the product.,integer,
+Name,,Name of the product.,text,
+ProductNumber,Product Number,The unique product identification number.,text,
+MakeFlag,Make Flag,The source of product make.,integer,"0 = Product is purchased, 1 = Product is manufactured in-house. Default: 1"
+FinishedGoodsFlag,Finished Goods Flag,Whether the product is salable or not.,integer,0 = Product is not a salable item. 1 = Product is salable. Default: 1
+Color,,Color,text,Product color.
+SafetyStockLevel,Safety Stock Level,The minimum inventory quantity.,integer,
+ReorderPoint,Reorder Point,Inventory level that triggers a purchase order or work order.,integer,
+StandardCost,Standard Cost,Standard cost of the product.,real,
+ListPrice,List Price,Selling price,real,"commonsense evidence: 
+profit = ListPrice - StandardCost"
+Size,,Product size,text,
+SizeUnitMeasureCode,Size Unit Measure Code,Unit of measure for Size column.,text,
+WeightUnitMeasureCode,Weight Unit Measure Code,Unit of measure for Weight column.,text,
+Weight,,Product weight,real,
+DaysToManufacture,Days To Manufacture,Number of days required to manufacture the product.,integer,
+ProductLine,Product Line,Product Routine,text,"R = Road, M = Mountain, T = Touring, S = Standard"
+Class,,Product quality class,text,"H = High, M = Medium, L = Low"
+Style,,Style,text,"W = Womens, M = Mens, U = Universal"
+ProductSubcategoryID,Product Subcategory ID,Product is a member of this product subcategory.,integer,
+ProductModelID,Product Model ID,Product is a member of this product model.,integer,
+SellStartDate,Sell Start Date,Date the product was available for sale.,datetime,
+SellEndDate,Sell End Date,Date the product was no longer available for sale.,datetime,
+DiscontinuedDate,Discontinued Date,Date the product was discontinued.,datetime,
+rowguid,rowguid,Uniquely identifying the record. Used to support a merge replication sample. ,text,Default: newid()
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

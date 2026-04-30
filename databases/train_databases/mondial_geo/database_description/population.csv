@@ -1,0 +1,4 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+Country,,the country code,text,
+Population_Growth,population growth,population growth rate,real,per annum
+Infant_Mortality,infant mortality, infant mortality,real,per thousand

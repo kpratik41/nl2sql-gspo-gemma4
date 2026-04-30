@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+CustomerID,customer id,the id of the customer,integer,
+BrandID,brand id,the id of the brand,integer,
+StarRating,star rating,the star rating of the root beer,integer,"commonsense evidence:
+root beer with higher star rating has higher market evaluation and acceptance"
+ReviewDate,review date,the review date,date,yyyy-mm-dd
+Review,,the specific review content,text,

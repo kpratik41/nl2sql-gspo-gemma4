@@ -1,0 +1,9 @@
+original_column_name,column_name,column_description,data_format,value_description
+podcast_id,podcast id,The unique id of the podcast ,text,
+itunes_id,itunes id,The unique id of the itunes.,integer,
+slug,,The slug of the podcast.,text,"commonsense evidence: 
+It usually has the same name with the ""title"" column. "
+itunes_url,itunes url,The iTunes url of the podcast.,text,"commonsense evidence: 
+Can visit the webpage of the podcast by clicking the itunes_url."
+title,,The title of the podcast.,text,"commonsense evidence: 
+It usually has a very similar name to the ""slug"" column. "

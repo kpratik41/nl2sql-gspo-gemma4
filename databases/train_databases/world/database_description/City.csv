@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+ID,,the unique id for the city,integer,
+Name,,the name of the city,text,
+CountryCode,Country Code,the country code of the country that the city is belonged,text,
+District,,the district where the city locates,text,
+Population,,the number of the population in the area,integer,"commonsense evidence:
+
+more population --> more crowded"

@@ -1,0 +1,3 @@
+original_column_name,column_name,column_description,data_format,value_description
+Team_Id,team id,the unique id for the team,integer,
+Team_Name,team name,the team name ,text,

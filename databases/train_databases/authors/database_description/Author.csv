@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+Id,,Id of the author,integer,
+Name,,Author Name,text,
+Affiliation,,Organization name with which the author is affiliated. ,text,the name of an organization with which an author can be affiliated

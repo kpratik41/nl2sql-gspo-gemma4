@@ -1,0 +1,16 @@
+original_column_name,column_name,column_description,data_format,value_description
+DocumentNode,Document Node,The unique hierarchy id identifying the document nodes.,text,
+DocumentLevel,Document Level,Depth in the document hierarchy.,integer,Computed: [DocumentNode].[GetLevel]()
+Title,,Title of the document.,text,
+Owner,,Employee who controls the document.,integer,
+FolderFlag,Folder Flag,The type of the folders.,integer,"0 = This is a folder, 1 = This is a document. Default: 0"
+FileName,File Name,Uniquely identifying the record. Used to support a merge replication sample. ,text,File name of the document
+FileExtension,File Extension,File extension indicating the document type.,text,
+Revision,,Revision number of the document.,text,
+ChangeNumber,Change Number,Engineering change approval number.,integer,
+Status,,Status of document processing.,integer,"1 = Pending approval, 2 = Approved, 3 = Obsolete"
+DocumentSummary,Document Summary,Document abstract.,text,"commonsense evidence:
+if no document Summary: it means this document is private"
+Document,,Complete document.,blob,
+rowguid,rowguid,Uniquely identifying the record. Used to support a merge replication sample. ,text,Default: newid()
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

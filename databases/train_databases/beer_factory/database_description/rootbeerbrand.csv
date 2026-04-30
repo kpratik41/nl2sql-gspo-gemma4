@@ -1,0 +1,30 @@
+original_column_name,column_name,column_description,data_format,value_description
+BrandID,brand id,the unique id for the brand,integer,
+BrandName,brand name,the brand name,text,
+FirstBrewedYear,first brewed year,the first brewed year of the brand,integer,"commonsense evidence:
+brand with earlier first brewed year has a much longer brewed history"
+BreweryName,brewery name ,the brewery name,text,
+City,,the city where the brewery locates,text,
+State,,the state code,text,
+Country,,the country where the brewery locates,text,"commonsense evidence:
+can find its corresponding continent. e.g., U.S.--> North America "
+Description,,the description of the brand,text,
+CaneSugar,cane sugar,whether the drink contains cane sugar,text,
+CornSyrup,corn syrup,whether the drink contains the corn syrup,text,
+Honey,,whether the drink contains the honey ,text,"commonsense evidence:
+if the beer has honey, it means this beer is sweeter or has sweetness"
+ArtificialSweetener,artificial sweetener,whether the drink contains the artificial sweetener ,text,"commonsense evidence:
+if the beer has artificial sweetener, it means this beer is sweeter or has sweetness"
+Caffeinated,,whether the drink is caffeinated,text,
+Alcoholic,,whether the drink is alcoholic,text,
+AvailableInCans,available in cans,whether the drink is available in cans,text,
+AvailableInBottles,available in bottles,whether the drink is available in bottles,text,
+AvailableInKegs,available in kegs,whether the drink is available in kegs,text,
+Website,,the website of the brand,text,
+FacebookPage,facebook page,the facebook page of the brand,text,"commonsense evidence:
+if not, it means this brand doesn't advertise on facebook"
+Twitter,,the twitter of the brand,text,"commonsense evidence:
+if not, it means this brand doesn't advertise on twitter"
+WholesaleCost,wholesale cost,the wholesale cost,real,
+CurrentRetailPrice,current retail price,the current retail price,real,"commonsense evidence:
+The unit profit available to wholesalers = current retail price - wholesale cost"

@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+CurrencyRateID,Currency Rate ID,The unique id number identifying the currency rate record.,integer,
+CurrencyRateDate,Currency Rate Date,Date and time the exchange rate was obtained.,datetime,
+FromCurrencyCode,From Currency Code,Exchange rate was converted from this currency code.,text,
+ToCurrencyCode,ToCurrencyCode,Exchange rate was converted to this currency code.,text,
+AverageRate,Average Rate ,Average exchange rate for the day.,real,
+EndOfDayRate,End Of Day Rate,Final exchange rate for the day.,real,
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

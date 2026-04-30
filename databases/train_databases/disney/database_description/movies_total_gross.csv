@@ -1,0 +1,17 @@
+original_column_name,column_name,column_description,data_format,value_description
+movie_title,movie title,movie title,text,
+release_date,release date,release date,text,
+genre,,genre of the movie,text,
+MPAA_rating,Motion Picture Association of America rating,Motion Picture Association of America of the disney movie,text,"commonsense evidence:
+â¢ G: general audience
+â¢ PG: mature audiences or parental guidance suggested
+â¢ R: restricted: no children under 17 allowed without parents or adult guardians
+â¢ PG-13: PARENTS STRONGLY CAUTIONED. Some material may be inappropriate for children under 13
+movies need accompany with parents: PG, PG-13, PG-17;
+if ""Not rated"" or null, it means this film can show only gets permissions by theatre management
+if the film can show without need of permissions of theatre management, the MPAA_rating should not be ""Not rated"" or null"
+total_gross,total gross,The total gross of the movie.,text,"commonsense evidence:
+more total_gross--> more popular movie"
+inflation_adjusted_gross,inflation adjusted gross,The inflation-adjusted gross of the movie.,text,"commonsense evidence:
+estimated inflation rate = inflation_adjusted_gross / total_gross;
+the current gross = inflation_adjusted_gross"

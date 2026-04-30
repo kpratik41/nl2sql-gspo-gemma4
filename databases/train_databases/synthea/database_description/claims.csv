@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+ID,,the unique id of the claim,text,
+PATIENT,,the patient id,text,
+BILLABLEPERIOD,billable period,the start date of the billable,date,yyyy-mm-dd
+ORGANIZATION,,the claim organization,text,
+ENCOUNTER,,the medical encounter id,text,
+DIAGNOSIS,,the diagnosis,text,
+TOTAL,,the length of the billable period,integer,

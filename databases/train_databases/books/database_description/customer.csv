@@ -1,0 +1,6 @@
+original_column_name,column_name,column_description,data_format,value_description
+customer_id,customer id,the unique identifier of the customer,integer,
+first_name,first name,the first name of the customer,text,
+last_name,last name,the last name of the customer,text,"commonsense evidence:
+A person's full name is the first name, middle name (if applicable), and last name. "
+email,,the email of the customer,text,

@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+lid,language id,language id ,integer,"commonsense evidence: 
+lid=1 means it's Catalan language.
+"
+w1st,word id of the first word,The word id of the first word of the biwords pair. ,integer,The value is unique.
+w2nd,word id of the second word,The word id of the second word of the biwords pair. ,integer,The value is unique.
+occurrences,,times of this pair appears in this language/page,integer,

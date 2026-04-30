@@ -1,0 +1,4 @@
+original_column_name,column_name,column_description,data_format,value_description
+pub_id,publication id,unique id number identifying publications,text,
+logo,,logo of publications,blob,
+pr_info,publisher's information,publisher's information,text,

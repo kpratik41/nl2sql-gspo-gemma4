@@ -1,0 +1,24 @@
+﻿original_column_name,column_name,column_description,data_format,value_description
+year,,year,integer,
+lgID,league ID,league name,text,"main categories:
+NBA, ABA"
+tmID,team ID,team id,text,abbreviated name
+franchID,,,text,not useful
+confID,,,text,not useful
+divID,division ID,division ID,text,
+rank,,rank,integer,less is better
+confRank,,,,not useful
+playoff,,another name: post season,text,"for brevity, if the value is not null or empty, it means this team attends the playoffs, otherwise, means not attend"
+name,,full name of the team,text,
+o_fgm,offense field goal made,how many offense field goal made by this team in this season,integer,
+o_ftm,offense free throw made,how many offense free throw made by this team in this season,integer,
+o_pts,offense points,offense points,integer,
+d_pts,defense points,defense points,integer,
+homeWon,home wins,wins in the home,integer,
+homeLost,home loses,loses in the home,integer,
+awayWon,away wins,wins in the away,integer,
+awayLost,away loses,loses in the away,integer,
+won,,,integer,total wins of this team in this year.
+lost,,,integer,total losts of this team in this year.
+games,,,integer,total number of games that this team played in this year (season)
+arena,,arena,text,"null or empty refers to the fact that this team doesn't have individual arenas, otherwise, it has individual arenas"

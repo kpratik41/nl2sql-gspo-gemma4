@@ -1,0 +1,6 @@
+original_column_name,column_name,column_description,data_format,value_description
+BusinessEntityID,Business Entity ID,Number identifying the business entity.,integer ,
+AddressID,Address ID,Number identifying the address.,integer,
+AddressTypeID,Address Type ID,Number identifying the address type.,integer,
+rowguid,rowguid,Uniquely identifying the record. Used to support a merge replication sample. ,text,Default: newid()
+ModifiedDate,modified date,Date and time the record was last updated. ,datetime,Default: getdate()

@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+episode_id,episode id,the unique identifier of the episode,text,
+series,,the name of the series,text,
+season,,a number indicating the season of the episode,integer,
+episode,,the sequential number of the episode within a specific season,integer,
+number_in_series,number in series,the overall sequence number of episode in the entire series,integer,
+title,,the title of the episode,text,
+summary,,a brief description of what happens in the episode,text,
+air_date,air date,the date the episode was initially broadcast in the United States,date,
+episode_image,episode image,a link to an image from the episode,text,
+rating,,the weighted average of the votes received for the episode,real,commonsense evidence: The higher rating means the episode has more positive viewer comments. 
+votes,,the total number of rating votes for the episode,integer,

@@ -1,0 +1,28 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,,the unique number identifying the menu,integer,
+name,,the name of the menu,text,"commonsense evidence:
+
+if the value is not null or empty, it means this menu has special dishes.
+
+otherwise, this menu is general and nothing special"
+sponsor,,the sponsor of this menu,text,"commonsense evidence:
+
+if the value is null or empyt, it means this meanu is DIY by the restaurant."
+event,,the event that the menu was created for,text,
+venue,,the venue that the menu was created for,text,
+place,,the location that the menu was used,text, the location that the menu was used
+physical_description,physical description,physical description of the menu,text,
+occasion,,occasion of the menu,text,
+notes,,notes,text,
+call_number,,call number,text,"commonsense evidence:
+if null: not support for taking out or booking in advance"
+keywords,,keywords,text,not useful
+language,,language,text,not useful
+date,,the date that this menu was created,date,
+location,,the location that the menu was used,text,
+location_type,,,text,not useful
+currency,,the currency that the menu was used,text,
+currency_symbol,,the currency symbol,text,
+status,,status of the menu,text,
+page_count,page count,the number of pages of this menu,integer,
+dish_count,dish count,the number of dishes of this menu,integer,

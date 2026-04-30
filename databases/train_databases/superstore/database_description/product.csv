@@ -1,0 +1,27 @@
+original_column_name,column_name,column_description,data_format,value_description
+Product ID,,the id of products,text,
+Product Name,,the name of products,text,
+Category,,the categories of products,text," Furniture 
+ Office Supplies 
+ Technology"
+Sub-Category,,the sub-categories of products,text," Bookcases 
+ Chairs 
+ Furnishings 
+ Tables 
+ Appliances 
+ Art 
+ Binders 
+ Envelopes 
+ Fasteners 
+ Labels 
+ Paper 
+ Storage 
+ Supplies 
+ Accessories 
+ Copiers 
+ Machines 
+ Phones "
+Region,,the region of products,text," Central: 
+ East: 
+ West: 
+ South:"

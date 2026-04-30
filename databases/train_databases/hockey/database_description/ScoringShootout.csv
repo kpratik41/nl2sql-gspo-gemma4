@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+playerID,player id,id number identifying the player,text,number identifying the player
+year,,year,integer,"2005-06 listed as ""2005"""
+stint,,stint,integer,
+tmID,team ID,team abbreviated name,text,
+S,shots,shots,integer,
+G,goals,goals,integer,
+GDG,game deciding goals,game deciding goals,integer,

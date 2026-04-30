@@ -1,0 +1,12 @@
+original_column_name,column_name,column_description,data_format,value_description
+ELITEID,ELITE ID,the id number of the players,integer,
+SEASON,,season when players are playing,text,
+TEAM,,which team the player belong to,text,
+LEAGUE,,league,text,
+GAMETYPE,GAME TYPE ,type of games,text, Regular season  playoffs (post season)
+GP,Game Plays,number of games,integer,
+G,,Goals in Draft Year,integer,
+A,,Assists in Draft Year,integer,
+P,,Points in Draft Year,integer,commonsense evidence: higher --> more valuable
+PIM,Penalty Minutes,Penalty Minutes in Draft Year,integer,commonsense evidence: higher --> This player has committed more rule violations.
+PLUSMINUS,Plus Minutes,Goal Differential in Draft Year,integer,Goal Differential

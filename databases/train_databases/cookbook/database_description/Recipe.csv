@@ -1,0 +1,13 @@
+original_column_name,column_name,column_description,data_format,value_description
+recipe_id,recipe id,the unique identifier for the recipe,integer,
+title,,the title of the recipe,text,
+subtitle,,the subtitle of the recipe,text,
+servings,,the number of people the recipe can serve,integer,
+yield_unit,yield unit ,the unit of the yield for the recipe,text,
+prep_min,preparation minute,the preparation minute of the recipe,integer,
+cook_min,cooked minute,the cooked minute of the recipe,integer,
+stnd_min,stand minute,the stand minute of the price,integer,"commonsense evidence: The stand minute stands for the time to take the dish away from the heat source. 
+the total time of the recipe = prep_min + cook_min + stnd_min"
+source,,the source of the recipe,text,
+intro,introduction,the introduction of the recipe,text,
+directions,,the directions of the recipe,text,

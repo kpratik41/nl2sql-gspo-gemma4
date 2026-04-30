@@ -1,0 +1,5 @@
+original_column_name,column_name,column_description,data_format,value_description
+id,,the unique identifier of the game publisher,integer,
+game_id,game id,the id of the game,integer,
+publisher_id,publisher id,the id of the publisher,integer,"commonsense evidence:
+If game A and game B were published by the same publisher, the user who likes game A may also like game B if the user is a fan of the publisher company."

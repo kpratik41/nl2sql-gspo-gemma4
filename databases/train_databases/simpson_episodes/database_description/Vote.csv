@@ -1,0 +1,8 @@
+original_column_name,column_name,column_description,data_format,value_description
+episode_id,episode id,A unique identifier for episodes,text,
+stars,,the star score of the episode,integer,"1-10
+commonsense evidence:
+Star classification is a type of rating scale. The lowest star is 1 which means the worst, and the highest star is 10 which means the best. "
+votes,,the number of votes of the star score,integer,
+percent,,the percent of the vote number of the star score,real,"commonsense evidence:
+percent = the number of votes for the star / the total amount of votes for all stars "

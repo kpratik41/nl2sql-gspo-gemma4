@@ -1,0 +1,14 @@
+original_column_name,column_name,column_description,data_format,value_description
+student_id,student id,the unique id to identify students,integer,
+f_name,first name,the first name of the student,text,
+l_name,last name,the last name of the student,text,"commonsense evidence:
+full name: f_name, l_name"
+phone_number,phone number ,phone number,text,
+email,,email ,text,
+intelligence,,intelligence of the student,integer,higher --> more intelligent
+gpa,graduate point average,gpa ,real,
+type,,type of the student,text," TPG: taught postgraduate student(master)
+ RPG: research postgraduate student (master)
+ UG: undergraduate student(bachelor)
+commonsense evidence:
+both TPG and RPG are students pursuing a masters degree; UG are students pursuing the bachelor degree"

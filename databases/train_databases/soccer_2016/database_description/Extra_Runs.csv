@@ -1,0 +1,7 @@
+original_column_name,column_name,column_description,data_format,value_description
+Match_Id,match id,Unique Number Which Identifies a match,integer,
+Over_Id,over id,Unique Number which Identifies an over in an Innings,integer,
+Ball_Id,ball id,Unique Number which Identifies a ball in an over,integer,
+Extra_Type_Id,extra type id,Unique Number which Identifies extra type,integer,
+Extra_Runs,extra runs,Number of extra runs,integer,
+Innings_No,innings number,Unique Number which Identifies an innings in a match,integer,
