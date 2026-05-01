@@ -1,4 +1,5 @@
 import argparse
+import csv
 import json
 import multiprocessing as mp
 import os
@@ -278,6 +279,21 @@ def write_summary_markdown(summary: Dict[str, Any], markdown_path: Path) -> None
     markdown_path.write_text("\n".join(content), encoding="utf-8")
 
 
+def write_summary_csv(rows: OrderedDict[str, Dict[str, Any]], csv_path: Path) -> None:
+    with csv_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["group", "correct", "count", "accuracy"])
+        writer.writeheader()
+        for group_name, values in rows.items():
+            writer.writerow(
+                {
+                    "group": group_name,
+                    "correct": values["correct"],
+                    "count": values["count"],
+                    "accuracy": f"{values['accuracy']:.2f}",
+                }
+            )
+
+
 def evaluate_predictions(
     rows: List[Dict[str, Any]],
     predictions: Dict[str, str],
@@ -338,6 +354,8 @@ def main() -> None:
     per_example_eval_path = output_dir / "eval_results.jsonl"
     summary_path = output_dir / "eval_summary.json"
     summary_markdown_path = output_dir / "eval_summary.md"
+    difficulty_csv_path = output_dir / "eval_summary_by_difficulty.csv"
+    db_csv_path = output_dir / "eval_summary_by_db.csv"
     diff_rows = load_diff_rows(args.diff_json_path)
 
     if args.skip_generation:
@@ -367,11 +385,15 @@ def main() -> None:
         json.dump(summary, handle, ensure_ascii=False, indent=2)
 
     write_summary_markdown(summary, summary_markdown_path)
+    write_summary_csv(summary["by_difficulty"], difficulty_csv_path)
+    write_summary_csv(summary["by_db"], db_csv_path)
     print_summary_tables(summary)
     print(f"Saved official BIRD predictions to {predictions_path}")
     print(f"Saved per-example evaluation to {per_example_eval_path}")
     print(f"Saved summary to {summary_path}")
     print(f"Saved markdown summary to {summary_markdown_path}")
+    print(f"Saved difficulty CSV summary to {difficulty_csv_path}")
+    print(f"Saved DB CSV summary to {db_csv_path}")
 
 
 if __name__ == "__main__":

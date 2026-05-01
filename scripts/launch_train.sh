@@ -10,6 +10,8 @@ export WANDB_PROJECT=gemma4-31b-bird-gspo
 REPORT_TO="${REPORT_TO:-wandb}"
 RUN_NAME="${RUN_NAME:-gemma4-31b-gspo-bird}"
 LOGGING_DIR="${LOGGING_DIR:-outputs/gemma4_31b_gspo_bird/tb}"
+TRAIN_LIMIT="${TRAIN_LIMIT:--1}"
+EVAL_LIMIT="${EVAL_LIMIT:--1}"
 
 MODEL_NAME="google/gemma-4-31B-it"
 RESUME_ARGS=()
@@ -25,6 +27,8 @@ accelerate launch \
   --model_name_or_path "${MODEL_NAME}" \
   --train_file outputs/train-6601-schema-filtered.jsonl \
   --eval_file outputs/dev-20251106-schema.jsonl \
+  --train_limit "${TRAIN_LIMIT}" \
+  --eval_limit "${EVAL_LIMIT}" \
   --database_dir databases \
   --output_dir outputs/gemma4_31b_gspo_bird \
   --vllm_server_base_url http://127.0.0.1:8000 \
@@ -41,6 +45,7 @@ accelerate launch \
   --logging_dir "${LOGGING_DIR}" \
   --deepspeed configs/ds_zero3_bf16.json \
   --eval_steps 100 \
+  --eval_on_start \
   --loss_type dapo \
   --scale_rewards batch \
   --beta 0.0 \

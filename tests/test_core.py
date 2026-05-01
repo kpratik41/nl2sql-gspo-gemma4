@@ -52,23 +52,33 @@ class SqlUtilsTests(unittest.TestCase):
 
 
 class TrainScriptTests(unittest.TestCase):
-    def test_parse_args_accepts_resume_checkpoint(self):
+    def test_parse_args_accepts_resume_checkpoint_and_limits(self):
         args = parse_args(
             [
                 "--model_name_or_path",
                 "model",
                 "--train_file",
                 "train.jsonl",
+                "--eval_file",
+                "dev.jsonl",
+                "--train_limit",
+                "123",
+                "--eval_limit",
+                "45",
                 "--database_dir",
                 "databases",
                 "--output_dir",
                 "outputs/run",
+                "--eval_on_start",
                 "--resume_from_checkpoint",
                 "outputs/run/checkpoint-100",
             ]
         )
 
         self.assertEqual(args.resume_from_checkpoint, "outputs/run/checkpoint-100")
+        self.assertEqual(args.train_limit, 123)
+        self.assertEqual(args.eval_limit, 45)
+        self.assertTrue(args.eval_on_start)
 
 
 class RewardTests(unittest.TestCase):

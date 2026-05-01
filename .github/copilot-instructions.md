@@ -186,6 +186,7 @@ The training script also accepts an optional `--resume_from_checkpoint` argument
 
 The current launcher recipe trains from `outputs/train-6601-schema-filtered.jsonl` and evaluates on `outputs/dev-20251106-schema.jsonl`.
 It currently uses `num_generations=16`, `max_prompt_length=16384`, and `max_completion_length=4096` with vLLM server mode.
+It also runs `eval_on_start` for a pre-training dev baseline and supports optional `--train_limit` / `--eval_limit` row caps for smoke runs.
 
 Do not switch to colocated vLLM unless explicitly requested. Server mode is preferred for this project because it separates rollout memory from training memory.
 
@@ -264,6 +265,8 @@ The repository now includes:
 
 - `scripts/run_inference_bird.py`: generates SQL from a trained checkpoint on schema-augmented dev data and evaluates it locally.
 - `scripts/launch_inference.sh`: launcher for post-training or separate-node inference.
+
+The inference workflow writes JSON, Markdown, and CSV summaries for dev-set execution accuracy, including per-difficulty and per-database breakdowns.
 
 The local BIRD execution-accuracy scorer should follow the official dev-set semantics from `AlibabaResearch/DAMO-ConvAI/bird/llm/src/evaluation.py`:
 

@@ -21,6 +21,8 @@ The launcher now trains from the generated schema-augmented training file and ev
 
 The current launcher recipe uses `num_generations=16`, `max_prompt_length=16384`, and `max_completion_length=4096` with vLLM server-mode rollouts.
 
+The trainer also runs dev evaluation before the first optimizer step via `eval_on_start`, which is useful for capturing a true pre-training baseline on the eval split.
+
 The reward stack is currently weighted to make execution correctness dominate soft shaping signals:
 
 - `format_reward`: `0.25`
@@ -35,6 +37,14 @@ To resume training from a saved checkpoint:
 ```bash
 RESUME_FROM_CHECKPOINT=outputs/gemma4_31b_gspo_bird/checkpoint-100 bash scripts/launch_train.sh
 ```
+
+To limit training or evaluation to a subset of rows for smoke runs:
+
+```bash
+TRAIN_LIMIT=256 EVAL_LIMIT=128 bash scripts/launch_train.sh
+```
+
+Set either value to `-1` to use the full file.
 
 Run dev-set inference and BIRD execution-accuracy scoring after training finishes on the same 8-GPU node, or on a different node if you later have one available. In the current 6-train-GPU + 2-vLLM-GPU recipe, the training job already occupies the full node while training is active, so post-training inference is the intended workflow.
 
@@ -51,12 +61,14 @@ Inference outputs are written under `outputs/bird_dev_inference/`:
 - `eval_results.jsonl`: per-example execution results
 - `eval_summary.json`: simple/moderate/challenging/total EX accuracy
 - `eval_summary.md`: summary tables by difficulty and by database
+- `eval_summary_by_difficulty.csv`: CSV summary by difficulty
+- `eval_summary_by_db.csv`: CSV summary by database
 
 The local EX scorer intentionally follows the official BIRD dev evaluation semantics from `AlibabaResearch/DAMO-ConvAI/bird/llm/src/evaluation.py`: it executes predicted and gold SQL on SQLite and checks whether `set(pred_rows) == set(gold_rows)`.
 
 ## Monitoring
 
-The trainer logs online RL metrics such as reward means, reward std, KL, entropy, clipping ratios, completion lengths, and the trainer loss. With `--eval_file` enabled, evaluation runs on the dev split every `eval_steps` and emits `eval_*` metrics through the same reporting backend.
+The trainer logs online RL metrics such as reward means, reward std, KL, entropy, clipping ratios, completion lengths, and the trainer loss. With `--eval_file` enabled, evaluation runs once before training starts and then every `eval_steps`, emitting `eval_*` metrics through the same reporting backend.
 
 The launcher defaults to Weights & Biases because it exports `WANDB_PROJECT`. On AWS you can also enable TensorBoard event files by setting `REPORT_TO=wandb,tensorboard` before launching training.
 

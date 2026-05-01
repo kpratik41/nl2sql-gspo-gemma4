@@ -32,6 +32,8 @@ def parse_args(argv=None):
     parser.add_argument("--model_name_or_path", type=str, required=True)
     parser.add_argument("--train_file", type=str, required=True)
     parser.add_argument("--eval_file", type=str, default=None)
+    parser.add_argument("--train_limit", type=int, default=-1)
+    parser.add_argument("--eval_limit", type=int, default=-1)
     parser.add_argument("--database_dir", type=str, required=True)
     parser.add_argument("--output_dir", type=str, required=True)
 
@@ -71,6 +73,7 @@ def parse_args(argv=None):
     parser.add_argument("--logging_steps", type=int, default=5)
     parser.add_argument("--save_steps", type=int, default=100)
     parser.add_argument("--eval_steps", type=int, default=100)
+    parser.add_argument("--eval_on_start", action="store_true")
 
     parser.add_argument("--beta", type=float, default=0.0)
     parser.add_argument("--epsilon", type=float, default=0.2)
@@ -110,6 +113,9 @@ def main():
         desc="Normalizing NL2SQL chat records",
     )
 
+    if args.train_limit >= 0:
+        train_dataset = train_dataset.select(range(min(args.train_limit, len(train_dataset))))
+
     eval_dataset = None
     if args.eval_file:
         raw_eval_dataset = load_dataset(
@@ -123,6 +129,9 @@ def main():
             remove_columns=raw_eval_dataset.column_names,
             desc="Normalizing NL2SQL eval records",
         )
+
+        if args.eval_limit >= 0:
+            eval_dataset = eval_dataset.select(range(min(args.eval_limit, len(eval_dataset))))
 
     reward_functions = make_nl2sql_rewards(database_dir=args.database_dir)
 
@@ -175,6 +184,7 @@ def main():
         save_steps=args.save_steps,
         eval_strategy="steps" if eval_dataset is not None else "no",
         eval_steps=args.eval_steps if eval_dataset is not None else None,
+        eval_on_start=args.eval_on_start if eval_dataset is not None else False,
         save_total_limit=3,
         report_to=report_to,
         run_name=args.run_name,
