@@ -54,13 +54,17 @@ bash scripts/launch_inference.sh
 
 This launcher loads the checkpoint from `outputs/gemma4_31b_gspo_bird`, generates SQL for `outputs/dev-20251106-schema.jsonl`, writes official-style `predict_dev.json`, and computes BIRD-style execution accuracy against `databases/dev_databases` with difficulty breakdown from `data/bird_dev_data/raw/dev_20251106.json`.
 
-Standalone inference supports `--inference_backend transformers|vllm`. The shell launcher mirrors this through `INFERENCE_BACKEND`, and also forwards `MAX_PROMPT_LENGTH`, `MAX_NEW_TOKENS`, `VLLM_TENSOR_PARALLEL_SIZE`, `VLLM_DATA_PARALLEL_SIZE`, `VLLM_GPU_MEMORY_UTILIZATION`, and `VLLM_MAX_MODEL_LEN`.
+Standalone inference supports `--inference_backend transformers|vllm`. The shell launcher mirrors this through `INFERENCE_BACKEND`, and also forwards `MAX_PROMPT_LENGTH`, `MAX_NEW_TOKENS`, `TRANSFORMERS_DEVICE_MAP`, `TRANSFORMERS_DATA_PARALLEL_SIZE`, `VLLM_TENSOR_PARALLEL_SIZE`, `VLLM_DATA_PARALLEL_SIZE`, `VLLM_GPU_MEMORY_UTILIZATION`, and `VLLM_MAX_MODEL_LEN`.
 
 The launcher now appends a `YYYYMMDD_HHMMSS` timestamp suffix to `OUTPUT_DIR` by default for both backends. Set `APPEND_OUTPUT_TIMESTAMP=0` to keep the directory name unchanged, or set `OUTPUT_TIMESTAMP` explicitly to control the suffix.
 
 Standalone inference defaults to `max_prompt_length=30000` and `max_new_tokens=4096`, and filters out over-length prompts instead of truncating them. Filtered samples are printed during the run and also written to `filtered_examples.jsonl`.
 
-The `transformers` backend already loads a single model with `device_map=auto`, so when `CUDA_VISIBLE_DEVICES` exposes multiple GPUs it can shard that one model across all visible GPUs.
+Standalone inference now uses the normalized `prompt` field when it is present. For older schema-built files that only contain `messages`, it strips any `assistant` turns before rendering the generation prompt so gold SQL is not leaked into the input context.
+
+The local BIRD evaluator now defaults to `eval_timeout=120` seconds per example and `eval_workers=16` concurrent evaluation workers.
+
+The `transformers` backend now defaults to explicit multi-process data parallel instead of `device_map=auto`. By default it starts one worker per visible GPU and each worker loads its own model replica, so this mode is intended for models that fit on a single GPU. To shard one model across the visible GPUs instead, set `TRANSFORMERS_DEVICE_MAP=auto`.
 
 Inference now fails fast if normalized rows are missing required metadata such as `db_id` or `gold_sql`, instead of silently running evaluation against the wrong database.
 
@@ -74,6 +78,7 @@ Example launcher invocations:
 
 ```bash
 INFERENCE_BACKEND=transformers NUM_EXAMPLES=2 bash scripts/launch_inference.sh
+INFERENCE_BACKEND=transformers TRANSFORMERS_DEVICE_MAP=auto MODEL_PATH=google/gemma-4-31B NUM_EXAMPLES=2 bash scripts/launch_inference.sh
 INFERENCE_BACKEND=vllm MODEL_PATH=google/gemma-4-E4B-it NUM_EXAMPLES=2 bash scripts/launch_inference.sh
 ```
 
@@ -137,3 +142,5 @@ The schema builder now:
 - logs progress on the first sample, every 50 samples by default, and the last sample
 
 Older schema-built files that only contain `messages` are still accepted: the shared loader recovers `db_id` from `<db_id>...</db_id>` and `evidence` from `<hint>...</hint>` inside the prompt.
+
+At inference time, those older message-only rows are also converted back to a generation prompt using only the `system` and `user` turns.

@@ -17,7 +17,12 @@ from nl2sql_gspo.data import normalize_record
 from nl2sql_gspo.rewards import make_nl2sql_rewards
 from nl2sql_gspo.train_gspo_nl2sql import parse_args
 from nl2sql_gspo.sql_utils import _DB_CONNECTIONS, extract_sql, get_database_path, is_safe_readonly_sql
-from scripts.run_inference_bird import plan_vllm_device_groups, shard_rows_for_data_parallel
+from scripts.run_inference_bird import (
+    get_generation_messages,
+    plan_transformers_worker_devices,
+    plan_vllm_device_groups,
+    shard_rows_for_data_parallel,
+)
 
 
 class NormalizeRecordTests(unittest.TestCase):
@@ -119,11 +124,47 @@ class TrainScriptTests(unittest.TestCase):
 
 
 class InferenceScriptTests(unittest.TestCase):
+    def test_get_generation_messages_strips_assistant_turns_from_legacy_rows(self):
+        row = {
+            "messages": [
+                {"role": "system", "content": "You are a Text-to-SQL agent."},
+                {"role": "user", "content": "List all users."},
+                {"role": "assistant", "content": "SELECT * FROM users;"},
+            ]
+        }
+
+        messages = get_generation_messages(row)
+
+        self.assertEqual([message["role"] for message in messages], ["system", "user"])
+
+    def test_get_generation_messages_prefers_normalized_prompt(self):
+        row = {
+            "prompt": [
+                {"role": "system", "content": "You are a Text-to-SQL agent."},
+                {"role": "user", "content": "Count users."},
+            ],
+            "messages": [
+                {"role": "system", "content": "stale system"},
+                {"role": "user", "content": "stale user"},
+                {"role": "assistant", "content": "stale sql"},
+            ],
+        }
+
+        messages = get_generation_messages(row)
+
+        self.assertEqual(messages, row["prompt"])
+
     def test_plan_vllm_device_groups_splits_visible_devices(self):
         with mock.patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "0,1,2,3,4,5,6,7"}, clear=False):
             groups = plan_vllm_device_groups(tensor_parallel_size=4, data_parallel_size=2)
 
         self.assertEqual(groups, [["0", "1", "2", "3"], ["4", "5", "6", "7"]])
+
+    def test_plan_transformers_worker_devices_defaults_to_all_visible_devices(self):
+        with mock.patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "0,1,2,3"}, clear=False):
+            devices = plan_transformers_worker_devices(data_parallel_size=0)
+
+        self.assertEqual(devices, ["0", "1", "2", "3"])
 
     def test_shard_rows_for_data_parallel_round_robins_rows(self):
         rows = [{"source_idx": idx} for idx in range(5)]

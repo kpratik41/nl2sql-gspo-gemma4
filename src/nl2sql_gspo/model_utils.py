@@ -183,14 +183,15 @@ def load_model_and_tokenizer(model_name_or_path: str):
     return model, tokenizer
 
 
-def load_inference_model_and_tokenizer(model_name_or_path: str):
+def load_inference_model_and_tokenizer(model_name_or_path: str, device_map=None):
     tokenizer = load_tokenizer(model_name_or_path)
 
     causal_kwargs = {
         "torch_dtype": torch.bfloat16,
         "trust_remote_code": True,
-        "device_map": "auto",
     }
+    if device_map is not None:
+        causal_kwargs["device_map"] = device_map
 
     try:
         model = AutoModelForCausalLM.from_pretrained(
@@ -198,7 +199,10 @@ def load_inference_model_and_tokenizer(model_name_or_path: str):
             attn_implementation="flash_attention_2",
             **causal_kwargs,
         )
-        print("Loaded inference model with AutoModelForCausalLM using flash_attention_2.")
+        print(
+            "Loaded inference model with AutoModelForCausalLM using flash_attention_2. "
+            f"device_map={device_map!r}"
+        )
     except Exception as exc:
         print("AutoModelForCausalLM with flash_attention_2 failed for inference.")
         print(f"Original error: {exc}")
@@ -208,7 +212,10 @@ def load_inference_model_and_tokenizer(model_name_or_path: str):
                 attn_implementation="sdpa",
                 **causal_kwargs,
             )
-            print("Loaded inference model with AutoModelForCausalLM using sdpa fallback.")
+            print(
+                "Loaded inference model with AutoModelForCausalLM using sdpa fallback. "
+                f"device_map={device_map!r}"
+            )
         except Exception as sdpa_exc:
             print("AutoModelForCausalLM with sdpa failed for inference.")
             print(f"SDPA fallback error: {sdpa_exc}")
@@ -217,7 +224,10 @@ def load_inference_model_and_tokenizer(model_name_or_path: str):
                     model_name_or_path,
                     **causal_kwargs,
                 )
-                print("Loaded inference model with AutoModelForCausalLM default fallback.")
+                print(
+                    "Loaded inference model with AutoModelForCausalLM default fallback. "
+                    f"device_map={device_map!r}"
+                )
             except Exception as causal_exc:
                 if AutoModelForImageTextToText is None:
                     raise RuntimeError(

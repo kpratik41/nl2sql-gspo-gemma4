@@ -6,6 +6,7 @@ import os
 import sqlite3
 import traceback
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -46,8 +47,13 @@ def print_run_configuration(args: argparse.Namespace, output_dir: Path) -> None:
     print(f"[run] max_prompt_length={args.max_prompt_length}")
     print(f"[run] max_new_tokens={args.max_new_tokens}")
     print(f"[run] num_examples={args.num_examples}")
+    print(f"[run] eval_timeout={args.eval_timeout}")
+    print(f"[run] eval_workers={args.eval_workers}")
     print(f"[run] skip_generation={args.skip_generation}")
     print(f"[run] CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<unset>')}")
+    if args.inference_backend == "transformers":
+        print(f"[run] transformers_device_map={args.transformers_device_map}")
+        print(f"[run] transformers_data_parallel_size={args.transformers_data_parallel_size}")
     if args.inference_backend == "vllm":
         print(f"[run] vllm_tensor_parallel_size={args.vllm_tensor_parallel_size}")
         print(f"[run] vllm_data_parallel_size={args.vllm_data_parallel_size}")
@@ -75,7 +81,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top_p", type=float, default=1.0)
     parser.add_argument("--num_examples", type=int, default=-1)
-    parser.add_argument("--eval_timeout", type=float, default=30.0)
+    parser.add_argument("--eval_timeout", type=float, default=120.0)
+    parser.add_argument("--eval_workers", type=int, default=16)
+    parser.add_argument("--transformers_device_map", type=str, choices=["none", "auto"], default="none")
+    parser.add_argument("--transformers_data_parallel_size", type=int, default=0)
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=4)
     parser.add_argument("--vllm_data_parallel_size", type=int, default=2)
     parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.9)
@@ -152,6 +161,15 @@ def render_prompt(tokenizer, messages: List[Dict[str, str]]) -> str:
     return "\n\n".join(lines)
 
 
+def get_generation_messages(row: Dict[str, Any]) -> List[Dict[str, str]]:
+    prompt_messages = row.get("prompt") or []
+    if prompt_messages:
+        return prompt_messages
+
+    messages = row.get("messages") or []
+    return [message for message in messages if message.get("role") != "assistant"]
+
+
 def preview_text(text: str, max_chars: int = 160) -> str:
     compact = " ".join(text.split())
     if len(compact) <= max_chars:
@@ -165,7 +183,7 @@ def filter_rows_by_prompt_length(rows: List[Dict[str, Any]], tokenizer, max_prom
     skipped_rows: List[Dict[str, Any]] = []
 
     for row in rows:
-        prompt_messages = row.get("prompt") or row.get("messages") or []
+        prompt_messages = get_generation_messages(row)
         prompt_text = render_prompt(tokenizer, prompt_messages)
         prompt_token_count = len(tokenizer(prompt_text, truncation=False)["input_ids"])
 
@@ -245,11 +263,205 @@ def shard_rows_for_data_parallel(rows: List[Dict[str, Any]], num_shards: int) ->
     return shards
 
 
+def plan_transformers_worker_devices(data_parallel_size: int) -> List[str]:
+    visible_devices = get_visible_devices()
+    worker_count = data_parallel_size if data_parallel_size > 0 else len(visible_devices)
+
+    if len(visible_devices) < worker_count:
+        raise ValueError(
+            "Not enough visible GPUs for the requested transformers multiprocessing setup: "
+            f"need {worker_count} workers, but CUDA_VISIBLE_DEVICES exposes "
+            f"{len(visible_devices)} ({','.join(visible_devices)})."
+        )
+
+    return visible_devices[:worker_count]
+
+
 def prepare_rows_for_generation(rows: List[Dict[str, Any]], tokenizer, max_prompt_length: int) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     rows, skipped_rows = filter_rows_by_prompt_length(rows, tokenizer, max_prompt_length)
     print(f"[inference] running generation for {len(rows)} prompts")
 
     return rows, skipped_rows
+
+
+def _transformers_generate_worker(
+    queue,
+    shard_id: int,
+    device: str,
+    rows: List[Dict[str, Any]],
+    worker_config: Dict[str, Any],
+) -> None:
+    try:
+        os.environ["CUDA_VISIBLE_DEVICES"] = device
+
+        import torch
+
+        from nl2sql_gspo.model_utils import load_inference_model_and_tokenizer
+
+        model, tokenizer = load_inference_model_and_tokenizer(
+            worker_config["model_name_or_path"],
+            device_map=None,
+        )
+
+        if torch.cuda.is_available():
+            torch.cuda.set_device(0)
+            generation_device = torch.device("cuda:0")
+        else:
+            generation_device = torch.device("cpu")
+
+        model.to(generation_device)
+        model.eval()
+        do_sample = worker_config["temperature"] > 0.0
+
+        results = []
+        for row in rows:
+            prompt_text = row["prompt_text"]
+            tokenized = tokenizer(
+                prompt_text,
+                return_tensors="pt",
+                truncation=False,
+            )
+            tokenized = {key: value.to(generation_device) for key, value in tokenized.items()}
+            prompt_token_count = int(row["prompt_tokens"])
+
+            with torch.inference_mode():
+                output_ids = model.generate(
+                    **tokenized,
+                    max_new_tokens=worker_config["max_new_tokens"],
+                    do_sample=do_sample,
+                    temperature=worker_config["temperature"] if do_sample else None,
+                    top_p=worker_config["top_p"] if do_sample else None,
+                    pad_token_id=tokenizer.pad_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
+                )
+
+            generated_ids = output_ids[0][prompt_token_count:]
+            prediction_text = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+            results.append(
+                {
+                    "source_idx": row.get("source_idx", -1),
+                    "db_id": row.get("db_id", ""),
+                    "prompt_tokens": prompt_token_count,
+                    "prediction_text": prediction_text,
+                    "pred_sql": extract_sql(prediction_text),
+                    "completion_token_count": int(generated_ids.shape[0]),
+                }
+            )
+
+        queue.put({"status": "ok", "shard_id": shard_id, "results": results})
+    except Exception:
+        queue.put({"status": "error", "shard_id": shard_id, "error": traceback.format_exc()})
+
+
+def generate_predictions_with_transformers_data_parallel(
+    rows: List[Dict[str, Any]],
+    args: argparse.Namespace,
+    data_parallel_size: int,
+) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    worker_devices = plan_transformers_worker_devices(data_parallel_size)
+    row_shards = shard_rows_for_data_parallel(rows, len(worker_devices))
+    active_shards = [
+        (shard_id, device, shard_rows)
+        for shard_id, (device, shard_rows) in enumerate(zip(worker_devices, row_shards))
+        if shard_rows
+    ]
+
+    print(
+        "[inference] loading transformers workers in multi-process data-parallel mode "
+        f"workers={len(active_shards)} devices={worker_devices}"
+    )
+
+    worker_config = {
+        "model_name_or_path": args.model_name_or_path,
+        "temperature": args.temperature,
+        "top_p": args.top_p,
+        "max_new_tokens": args.max_new_tokens,
+    }
+
+    ctx = mp.get_context("spawn")
+    queue = ctx.Queue()
+    processes = []
+    collect_error: Optional[BaseException] = None
+
+    for shard_id, device, shard_rows in active_shards:
+        print(
+            f"[inference] starting transformers shard {shard_id + 1}/{len(active_shards)} "
+            f"gpu={device} prompts={len(shard_rows)}"
+        )
+        process = ctx.Process(
+            target=_transformers_generate_worker,
+            args=(queue, shard_id, device, shard_rows, worker_config),
+        )
+        process.start()
+        processes.append(process)
+
+    collected_results: Dict[int, Dict[str, Any]] = {}
+    try:
+        for _ in processes:
+            message = queue.get()
+            if message.get("status") != "ok":
+                collect_error = RuntimeError(
+                    "Transformers data-parallel worker failed"
+                    + (f" (shard {message.get('shard_id')})" if "shard_id" in message else "")
+                    + ":\n"
+                    + message.get("error", "unknown error")
+                )
+                raise collect_error
+
+            for result in message["results"]:
+                collected_results[result["source_idx"]] = result
+    finally:
+        for process in processes:
+            process.join(timeout=30)
+            if process.is_alive() and collect_error is not None:
+                process.terminate()
+                process.join(timeout=5)
+
+    for process in processes:
+        if collect_error is None and process.exitcode in (0, None):
+            continue
+        if process.exitcode not in (0, None):
+            raise RuntimeError(f"Transformers data-parallel worker exited with code {process.exitcode}")
+
+    official_predictions: Dict[str, str] = {}
+    detailed_predictions: List[Dict[str, Any]] = []
+    log_each_example = should_log_each_example(len(rows))
+
+    for idx, row in enumerate(rows):
+        source_idx = row.get("source_idx", idx)
+        generated = collected_results.get(source_idx)
+        if generated is None:
+            raise RuntimeError(f"Missing transformers generation result for idx={source_idx}")
+
+        db_id = generated["db_id"]
+        pred_sql = generated["pred_sql"]
+        prediction_text = generated["prediction_text"]
+        prompt_token_count = generated["prompt_tokens"]
+        completion_token_count = generated["completion_token_count"]
+
+        official_predictions[str(source_idx)] = f"{pred_sql}{BIRD_SPLIT_MARKER}{db_id}"
+        detailed_predictions.append(
+            {
+                "idx": source_idx,
+                "db_id": db_id,
+                "prediction_text": prediction_text,
+                "pred_sql": pred_sql,
+                "gold_sql": extract_sql(row.get("gold_sql", "")),
+                "prompt_tokens": prompt_token_count,
+            }
+        )
+
+        if log_each_example:
+            print(
+                f"[inference] finished sample {idx + 1}/{len(rows)} "
+                f"idx={source_idx} completion_tokens={completion_token_count} "
+                f"pred_sql={preview_text(pred_sql, max_chars=120)}"
+            )
+
+        if should_log_progress_tick(idx, len(rows)):
+            print(f"[inference] generated {idx + 1}/{len(rows)} prompts")
+
+    return rows, official_predictions, detailed_predictions, []
 
 
 def _vllm_generate_worker(
@@ -432,12 +644,34 @@ def generate_predictions_with_vllm_data_parallel(
 def generate_predictions_with_transformers(rows: List[Dict[str, Any]], args: argparse.Namespace) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[Dict[str, Any]], List[Dict[str, Any]]]:
     import torch
 
-    from nl2sql_gspo.model_utils import load_inference_model_and_tokenizer
+    from nl2sql_gspo.model_utils import load_inference_model_and_tokenizer, load_tokenizer
 
-    model, tokenizer = load_inference_model_and_tokenizer(args.model_name_or_path)
-    generation_device = next(model.parameters()).device
-    print(f"[inference] model loaded on device={generation_device}")
+    tokenizer = load_tokenizer(args.model_name_or_path)
     rows, skipped_rows = prepare_rows_for_generation(rows, tokenizer, args.max_prompt_length)
+
+    if args.transformers_device_map == "auto":
+        model, _ = load_inference_model_and_tokenizer(
+            args.model_name_or_path,
+            device_map="auto",
+        )
+        generation_device = next(model.parameters()).device
+        print(f"[inference] model loaded on device={generation_device} using device_map='auto'")
+    else:
+        data_parallel_size = args.transformers_data_parallel_size
+        if data_parallel_size != 1 and len(get_visible_devices()) > 1:
+            return generate_predictions_with_transformers_data_parallel(rows, args, data_parallel_size)
+
+        model, _ = load_inference_model_and_tokenizer(
+            args.model_name_or_path,
+            device_map=None,
+        )
+        if torch.cuda.is_available():
+            torch.cuda.set_device(0)
+            generation_device = torch.device("cuda:0")
+        else:
+            generation_device = torch.device("cpu")
+        model.to(generation_device)
+        print(f"[inference] model loaded on device={generation_device} without device_map")
 
     official_predictions: Dict[str, str] = {}
     detailed_predictions: List[Dict[str, Any]] = []
@@ -896,10 +1130,12 @@ def evaluate_predictions(
     database_dir: str,
     diff_rows: List[Dict[str, Any]],
     timeout_s: float,
+    eval_workers: int,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     per_example_results: List[Dict[str, Any]] = []
     log_each_example = should_log_each_example(len(rows))
 
+    prepared_examples: List[Dict[str, Any]] = []
     for idx, row in enumerate(rows):
         source_idx = row.get("source_idx", idx)
         packed_prediction = predictions.get(str(source_idx), "")
@@ -916,22 +1152,53 @@ def evaluate_predictions(
         pred_sql_extracted = has_sql_content(predicted_sql)
         gold_sql_extracted = has_sql_content(gold_sql)
 
-        if log_each_example:
-            print(
-                f"[evaluation] scoring sample {idx + 1}/{len(rows)} "
-                f"idx={source_idx} db_id={db_id} difficulty={difficulty}"
-            )
-
-        eval_result = evaluate_one(predicted_sql, gold_sql, db_path, timeout_s)
-        per_example_results.append(
+        prepared_examples.append(
             {
-                "idx": source_idx,
+                "idx": idx,
+                "source_idx": source_idx,
                 "db_id": db_id,
                 "difficulty": difficulty,
-                "pred_sql": predicted_sql,
+                "db_path": db_path,
+                "predicted_sql": predicted_sql,
                 "gold_sql": gold_sql,
                 "pred_sql_extracted": pred_sql_extracted,
                 "gold_sql_extracted": gold_sql_extracted,
+            }
+        )
+
+    worker_count = max(1, eval_workers)
+    eval_results: List[Dict[str, Any]] = [None] * len(prepared_examples)
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        ordered_results = executor.map(
+            lambda example: evaluate_one(
+                example["predicted_sql"],
+                example["gold_sql"],
+                example["db_path"],
+                timeout_s,
+            ),
+            prepared_examples,
+        )
+
+        for example, eval_result in zip(prepared_examples, ordered_results):
+            idx = example["idx"]
+            source_idx = example["source_idx"]
+            db_id = example["db_id"]
+            difficulty = example["difficulty"]
+
+            if log_each_example:
+                print(
+                    f"[evaluation] scoring sample {idx + 1}/{len(rows)} "
+                    f"idx={source_idx} db_id={db_id} difficulty={difficulty}"
+                )
+
+            eval_results[idx] = {
+                "idx": source_idx,
+                "db_id": db_id,
+                "difficulty": difficulty,
+                "pred_sql": example["predicted_sql"],
+                "gold_sql": example["gold_sql"],
+                "pred_sql_extracted": example["pred_sql_extracted"],
+                "gold_sql_extracted": example["gold_sql_extracted"],
                 "res": int(eval_result["res"]),
                 "status": eval_result["status"],
                 "pred_executed": bool(eval_result["pred_executed"]),
@@ -939,16 +1206,17 @@ def evaluate_predictions(
                 "pred_error": eval_result["pred_error"],
                 "gold_error": eval_result["gold_error"],
             }
-        )
 
-        if log_each_example:
-            print(
-                f"[evaluation] finished sample {idx + 1}/{len(rows)} "
-                f"idx={source_idx} status={eval_result['status']} correct={int(eval_result['res'])}"
-            )
+            if log_each_example:
+                print(
+                    f"[evaluation] finished sample {idx + 1}/{len(rows)} "
+                    f"idx={source_idx} status={eval_result['status']} correct={int(eval_result['res'])}"
+                )
 
-        if should_log_progress_tick(idx, len(rows)):
-            print(f"[evaluation] scored {idx + 1}/{len(rows)} predictions")
+            if should_log_progress_tick(idx, len(rows)):
+                print(f"[evaluation] scored {idx + 1}/{len(rows)} predictions")
+
+    per_example_results = eval_results
 
     summary = build_summary(per_example_results)
     return per_example_results, summary
@@ -1004,6 +1272,7 @@ def main() -> None:
         database_dir=args.database_dir,
         diff_rows=diff_rows,
         timeout_s=args.eval_timeout,
+        eval_workers=args.eval_workers,
     )
 
     with per_example_eval_path.open("w", encoding="utf-8") as handle:

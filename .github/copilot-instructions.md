@@ -236,6 +236,7 @@ These tests currently cover:
 
 - BIRD raw record normalization
 - schema-built message normalization for `db_id` and `evidence`
+- inference prompt preparation for normalized and legacy schema-built rows
 - SQL extraction and readonly checks
 - Database path resolution for split-based database folders
 
@@ -271,11 +272,15 @@ The repository now includes:
 
 Standalone inference supports a backend switch via `--inference_backend transformers|vllm`. The launcher mirrors this through `INFERENCE_BACKEND` and forwards `MAX_PROMPT_LENGTH`, `MAX_NEW_TOKENS`, `VLLM_TENSOR_PARALLEL_SIZE`, `VLLM_DATA_PARALLEL_SIZE`, `VLLM_GPU_MEMORY_UTILIZATION`, and `VLLM_MAX_MODEL_LEN`.
 
+The launcher also forwards `TRANSFORMERS_DEVICE_MAP` and `TRANSFORMERS_DATA_PARALLEL_SIZE` for the local `transformers` backend.
+
 The inference launcher now appends a `YYYYMMDD_HHMMSS` suffix to `OUTPUT_DIR` by default for both backends. Set `APPEND_OUTPUT_TIMESTAMP=0` to disable this, or set `OUTPUT_TIMESTAMP` explicitly to control the suffix.
 
 Standalone inference defaults to `max_prompt_length=30000` and `max_new_tokens=4096`, and filters out prompts longer than that limit instead of truncating them. Filtered prompts are printed during the run and written to `filtered_examples.jsonl` in the output directory.
 
-For the local `transformers` backend, inference model loading should continue to use `device_map="auto"` so a single model can be sharded across all visible GPUs.
+The local BIRD evaluator defaults to `eval_timeout=120` seconds per example and `eval_workers=16` concurrent evaluation workers.
+
+For the local `transformers` backend, standalone inference now defaults to explicit multi-process data parallel with `device_map` disabled. This is intended for models that fit on a single GPU. To shard one model across the visible GPUs instead, opt in with `TRANSFORMERS_DEVICE_MAP=auto`.
 
 For the local vLLM backend, standalone inference defaults to `vllm_tensor_parallel_size=4` and `vllm_data_parallel_size=2` for 8-GPU single-node runs.
 
