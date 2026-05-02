@@ -68,7 +68,7 @@ NUM_ITERATIONS="${NUM_ITERATIONS:-1}"
 ENABLE_DYNAMIC_SAMPLING="${ENABLE_DYNAMIC_SAMPLING:-1}"
 DYNAMIC_SAMPLING_MIN_STD="${DYNAMIC_SAMPLING_MIN_STD:-1e-6}"
 DAPO_MAX_ROUNDS="${DAPO_MAX_ROUNDS:-1}"  # max rollout rounds per step (1 = no resampling)
-DAPO_OVERSAMPLE_FACTOR="${DAPO_OVERSAMPLE_FACTOR:-12}"  # K: single-shot oversample multiplier (>1 enables single-shot path)
+DAPO_OVERSAMPLE_FACTOR="${DAPO_OVERSAMPLE_FACTOR:-4}"  # K: single-shot oversample multiplier (>1 enables single-shot path)
 # Optional: judge group heterogeneity by a single reward function (e.g.
 # result_reward) instead of the aggregated/normalized advantages. Leave
 # unset to use total advantages.
