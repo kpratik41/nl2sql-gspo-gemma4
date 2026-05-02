@@ -49,8 +49,8 @@ if [[ -n "${RESUME_FROM_CHECKPOINT:-}" ]]; then
 fi
 
 # Logging cadence.
-SAVE_STEPS="${SAVE_STEPS:-50}"
-EVAL_STEPS="${EVAL_STEPS:-50}"
+SAVE_STEPS="${SAVE_STEPS:-25}"
+EVAL_STEPS="${EVAL_STEPS:-25}"
 LOGGING_STEPS="${LOGGING_STEPS:-5}"
 # Set EVAL_ON_START=0 to skip the pre-training dev baseline (saves ~10min on first step).
 if [[ "${EVAL_ON_START:-1}" == "1" ]]; then
