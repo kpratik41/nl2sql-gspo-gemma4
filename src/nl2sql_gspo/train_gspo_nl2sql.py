@@ -125,6 +125,20 @@ def parse_args(argv=None):
         ),
     )
     parser.add_argument(
+        "--dapo_oversample_factor",
+        type=int,
+        default=1,
+        help=(
+            "Single-shot oversample multiplier K. When >1, each rank "
+            "generates K * target_local_groups groups in ONE round and "
+            "keeps the first target_local_groups heterogeneous ones; "
+            "remaining slots are filled with random non-het groups whose "
+            "completion_mask is zeroed (no gradient contribution). "
+            "Preferred over iterative resampling when collective-ops "
+            "constraints make multi-round inefficient."
+        ),
+    )
+    parser.add_argument(
         "--dynamic_sampling_reward_name",
         type=str,
         default=None,
@@ -356,6 +370,7 @@ def main():
         enable_dynamic_sampling=args.enable_dynamic_sampling,
         dynamic_sampling_min_std=args.dynamic_sampling_min_std,
         dapo_max_rounds=args.dapo_max_rounds,
+        dapo_oversample_factor=args.dapo_oversample_factor,
         dynamic_sampling_reward_name=args.dynamic_sampling_reward_name,
     )
 

@@ -78,6 +78,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         enable_dynamic_sampling: bool = True,
         dynamic_sampling_min_std: float = 1e-6,
         dapo_max_rounds: int = 6,
+        dapo_oversample_factor: int = 1,
         dynamic_sampling_reward_name: Optional[str] = None,
         **kwargs,
     ) -> None:
@@ -85,6 +86,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         self.enable_dynamic_sampling = enable_dynamic_sampling
         self.dynamic_sampling_min_std = float(dynamic_sampling_min_std)
         self.dapo_max_rounds = max(1, int(dapo_max_rounds))
+        self.dapo_oversample_factor = max(1, int(dapo_oversample_factor))
         self.dynamic_sampling_reward_name = (
             dynamic_sampling_reward_name if dynamic_sampling_reward_name else None
         )
@@ -115,8 +117,13 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 if self.dynamic_sampling_reward_name
                 else "total advantages"
             )
+            mode = (
+                f"single-shot-oversample(K={self.dapo_oversample_factor})"
+                if self.dapo_oversample_factor > 1
+                else "iterative-oversample-and-replace"
+            )
             print(
-                f"[dapo] enabled={self.enable_dynamic_sampling} | mode=oversample-and-replace | "
+                f"[dapo] enabled={self.enable_dynamic_sampling} | mode={mode} | "
                 f"max_rounds={self.dapo_max_rounds} | min_std={self.dynamic_sampling_min_std} | "
                 f"criterion={criterion} | num_generations={self.num_generations}"
             )
@@ -277,6 +284,105 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         return final
 
     # ------------------------------------------------------------------ #
+    # Single-shot oversample path (preferred when K>1)
+    # ------------------------------------------------------------------ #
+    def _oversample_and_filter(self, inputs, target_local_groups: int):
+        """Single-shot oversample by ``dapo_oversample_factor``.
+
+        Each rank generates ``target_local_groups * K`` groups in one
+        round. Per rank we keep the first ``target_local_groups`` het
+        groups; if fewer are found we fill the remainder with random
+        non-het groups whose ``completion_mask`` is zeroed (no gradient
+        contribution). Same shape on every rank by construction.
+        """
+        device = self.accelerator.device
+        K = self.dapo_oversample_factor
+        extra_count = target_local_groups * (K - 1)
+
+        big_inputs = list(inputs)
+        if extra_count > 0:
+            extras_unique = self._draw_replacement_inputs(extra_count)
+            # Backup pool too small: fall back to whatever we got.
+            big_inputs = big_inputs + self._build_round_inputs(extras_unique)
+
+        round_out = super()._generate_and_score_completions(big_inputs)
+
+        het = self._het_mask_for_round(round_out)  # [local_groups]
+        local_groups = int(het.numel())
+        het_idx = torch.nonzero(het).flatten().tolist()
+        nonhet_idx = torch.nonzero(~het).flatten().tolist()
+
+        take_het = het_idx[:target_local_groups]
+        chunks: List[Dict[str, Any]] = []
+        if take_het:
+            ck = self._extract_groups(round_out, take_het)
+            if ck is not None:
+                chunks.append(ck)
+
+        deficit = target_local_groups - len(take_het)
+        n_padded_local = 0
+        if deficit > 0 and nonhet_idx:
+            step = int(getattr(self.state, "global_step", 0))
+            rng = random.Random(step * 1000 + int(self.accelerator.process_index) + 53)
+            take_pad = rng.sample(nonhet_idx, min(deficit, len(nonhet_idx)))
+            ck = self._extract_groups(round_out, take_pad, zero_mask=True)
+            if ck is not None:
+                chunks.append(ck)
+                n_padded_local = len(take_pad)
+            deficit -= len(take_pad)
+
+        # Pathological: not enough groups generated at all (dataset tiny).
+        # Fall back to first available group with zero-mask.
+        if deficit > 0 and local_groups > 0:
+            fallback_idx = list(range(min(deficit, local_groups)))
+            ck = self._extract_groups(round_out, fallback_idx, zero_mask=True)
+            if ck is not None:
+                chunks.append(ck)
+                n_padded_local += len(fallback_idx)
+
+        out = self._concat_chunks(chunks)
+
+        # Recompute num_items_in_batch (DAPO loss normalizer)
+        try:
+            local_count = (out["completion_mask"] > 0).long().sum().to(device)
+            agg = self.accelerator.gather(local_count.unsqueeze(0)).sum()
+            out["num_items_in_batch"] = agg
+        except Exception:
+            pass
+
+        # Logging
+        try:
+            counters = torch.tensor(
+                [local_groups, len(take_het), n_padded_local],
+                device=device,
+                dtype=torch.long,
+            )
+            gathered = self.accelerator.gather(counters.unsqueeze(0))
+            g_attempted = int(gathered[:, 0].sum().item())
+            g_kept = int(gathered[:, 1].sum().item())
+            g_padded = int(gathered[:, 2].sum().item())
+        except Exception:
+            g_attempted = local_groups
+            g_kept = len(take_het)
+            g_padded = n_padded_local
+
+        het_rate = (g_kept / g_attempted) if g_attempted > 0 else 0.0
+        self._metrics["train"]["dapo/rounds_used"].append(1.0)
+        self._metrics["train"]["dapo/groups_attempted"].append(float(g_attempted))
+        self._metrics["train"]["dapo/groups_kept"].append(float(g_kept))
+        self._metrics["train"]["dapo/groups_padded"].append(float(g_padded))
+        self._metrics["train"]["dapo/heterogeneity_rate"].append(het_rate)
+
+        if getattr(self.accelerator, "is_main_process", True):
+            step = int(getattr(self.state, "global_step", 0))
+            print(
+                f"[dapo] step={step} mode=oversample K={K} "
+                f"attempted={g_attempted} kept={g_kept} padded={g_padded} "
+                f"het_rate={het_rate:.2%}"
+            )
+        return out
+
+    # ------------------------------------------------------------------ #
     # Main override — DAPO oversample-and-replace
     # ------------------------------------------------------------------ #
     def _generate_and_score_completions(self, inputs):
@@ -288,6 +394,10 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         target_local_groups = len(inputs) // num_generations
         if target_local_groups == 0 or len(inputs) % num_generations != 0:
             return super()._generate_and_score_completions(inputs)
+
+        # Single-shot oversample path (preferred).
+        if self.dapo_oversample_factor > 1:
+            return self._oversample_and_filter(inputs, target_local_groups)
 
         device = self.accelerator.device
         kept_chunks: List[Dict[str, Any]] = []
