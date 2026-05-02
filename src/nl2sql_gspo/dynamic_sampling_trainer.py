@@ -237,12 +237,18 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         tensor_keys = set()
         for c in chunks:
             for k, v in c.items():
-                if isinstance(v, torch.Tensor):
+                # Only concat row-batched tensors. 0-dim scalars (e.g.
+                # num_items_in_batch) are carried through, not concatenated.
+                if isinstance(v, torch.Tensor) and v.dim() >= 1:
                     tensor_keys.add(k)
 
         final: Dict[str, Any] = {}
         for k in tensor_keys:
-            vals = [c.get(k) for c in chunks if isinstance(c.get(k), torch.Tensor)]
+            vals = [
+                c.get(k)
+                for c in chunks
+                if isinstance(c.get(k), torch.Tensor) and c.get(k).dim() >= 1
+            ]
             if not vals:
                 continue
             v0 = vals[0]
