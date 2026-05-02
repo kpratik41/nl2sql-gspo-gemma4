@@ -153,3 +153,85 @@ def jaccard(set_a: Set, set_b: Set) -> float:
         return 0.0
 
     return len(set_a & set_b) / max(1, len(set_a | set_b))
+
+
+def extract_tables_from_sql(sql: str) -> Set[str]:
+    """Extract bare table names referenced in FROM/JOIN clauses."""
+    if not sql:
+        return set()
+
+    sql_lower = sql.lower()
+    sql_no_strings = re.sub(r"'[^']*'", "''", sql_lower)
+    sql_no_strings = re.sub(r'"[^"]*"', '""', sql_no_strings)
+    sql_no_strings = sql_no_strings.replace("`", "")
+
+    tables: Set[str] = set()
+    for match in re.finditer(
+        r"(?:from|join)\s+([a-z_][a-z0-9_-]*)",
+        sql_no_strings,
+    ):
+        table = match.group(1)
+        if table not in SQL_KEYWORDS:
+            tables.add(table)
+
+    return tables
+
+
+def extract_columns_from_sql(sql: str) -> Set[str]:
+    """Extract column names referenced anywhere in the SQL (alias-resolved)."""
+    if not sql:
+        return set()
+
+    sql_lower = sql.lower()
+    sql_no_strings = re.sub(r"'[^']*'", "''", sql_lower)
+    sql_no_strings = re.sub(r'"[^"]*"', '""', sql_no_strings)
+    sql_no_strings = sql_no_strings.replace("`", "")
+
+    # Build alias -> table map so we know which qualifiers are tables vs aliases.
+    alias_to_table: Dict[str, str] = {}
+    for match in re.finditer(
+        r"(?:from|join)\s+([a-z_][a-z0-9_-]*)(?:\s+(?:as\s+)?([a-z_][a-z0-9_]*))?",
+        sql_no_strings,
+    ):
+        table = match.group(1)
+        alias = match.group(2)
+        if alias and alias not in SQL_KEYWORDS and alias != table:
+            alias_to_table[alias] = table
+
+    columns: Set[str] = set()
+
+    # Qualified columns: pick the column part only.
+    for match in re.finditer(
+        r"\b([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\b",
+        sql_no_strings,
+    ):
+        col = match.group(2)
+        if col not in SQL_KEYWORDS and col != "*":
+            columns.add(col)
+
+    # Unqualified columns from SELECT / WHERE / GROUP BY / ORDER BY / HAVING.
+    table_tokens = set(alias_to_table.values()) | set(
+        re.findall(r"(?:from|join)\s+([a-z_][a-z0-9_-]*)", sql_no_strings)
+    )
+    alias_tokens = set(alias_to_table.keys())
+
+    clause_pattern = re.compile(
+        r"(?:select|where|group\s+by|order\s+by|having|on)\s+(.*?)"
+        r"(?=\b(?:from|where|group\s+by|order\s+by|having|limit|union|except|intersect|on|join)\b|$)",
+        re.DOTALL,
+    )
+
+    for match in clause_pattern.finditer(sql_no_strings):
+        chunk = match.group(1)
+        # Strip qualified identifiers so we don't double count the table side.
+        chunk = re.sub(r"\b[a-z_][a-z0-9_]*\.", "", chunk)
+        for tok in re.findall(r"(?<![\w.])([a-z_][a-z0-9_]*)(?!\s*\()", chunk):
+            if tok in SQL_KEYWORDS:
+                continue
+            if tok in table_tokens or tok in alias_tokens:
+                continue
+            if tok.isdigit():
+                continue
+            columns.add(tok)
+
+    return columns

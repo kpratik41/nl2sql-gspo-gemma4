@@ -187,7 +187,8 @@ vllm_server_base_url="http://127.0.0.1:8000"
 The training script also accepts an optional `--resume_from_checkpoint` argument for explicit checkpoint resume.
 
 The current launcher recipe trains from `outputs/train-6601-schema-filtered.jsonl` and evaluates on `outputs/dev-20251106-schema.jsonl`.
-It currently uses `num_generations=16`, `max_prompt_length=16384`, and `max_completion_length=4096` with vLLM server mode, and the launcher defaults to `google/gemma-4-31B`.
+It currently uses `num_generations=16`, `gradient_accumulation_steps=64`, `max_prompt_length=20000`, and `max_completion_length=4096` with vLLM server mode (vLLM `max_model_len=24576`), and the launcher defaults to `google/gemma-4-31B-it`.
+The vLLM launcher now routes through `python -m nl2sql_gspo.vllm_serve_compat`, a local compatibility shim that strips `truncate_prompt_tokens` before TRL `0.29.1` constructs vLLM `SamplingParams` on local vLLM `0.19.x`.
 It also runs `eval_on_start` for a pre-training dev baseline and supports optional `--train_limit` / `--eval_limit` row caps for smoke runs.
 
 Do not switch to colocated vLLM unless explicitly requested. Server mode is preferred for this project because it separates rollout memory from training memory.
@@ -207,26 +208,29 @@ Reward Functions
 Reward functions live in: src/nl2sql_gspo/rewards.py
 Supporting SQL/database utilities live in: src/nl2sql_gspo/sql_utils.py
 Supporting schema utilities live in: src/nl2sql_gspo/schema_utils.py
+Dynamic-sampling trainer subclass lives in: src/nl2sql_gspo/dynamic_sampling_trainer.py
 
-Current reward functions include:
+Current reward functions are:
 
-format_reward
-execution_reward
-result_reward
-schema_linking_reward
-ngram_reward
-evidence_utilization_reward
+- `format_reward` (binary): strict `<scratch_pad>...</scratch_pad><final_answer><sql_code>...</sql_code></final_answer>` regex match
+- `execution_reward` (binary): predicted SQL executes without error
+- `result_reward` (binary, BIRD EX): uses official BIRD semantics — `set(predicted_rows) == set(gold_rows)` on RAW rows (no normalization), with a per-query timeout. Implemented via `bird_execute_sql` + `bird_get_gold_rows` (with a per-process gold cache keyed by `(db_id, gold_sql)`) + `bird_result_match` in `src/nl2sql_gspo/sql_utils.py`.
+- `table_linking_reward` (binary): predicted table set == gold table set
+- `column_linking_reward` (continuous): Jaccard of pred vs gold column sets
+- `nonnull_reward` (binary, small): predicted SQL executes AND returns at least one non-null cell
+- `length_penalty_reward` (continuous, ≤ 0): DAPO §3.4 Soft Overlong Punishment. 0 when `len ≤ L_max - L_cache`, linear ramp to -1 within the buffer, saturates at -1 beyond `L_max`. Length is measured in tokens via the trainer's tokenizer when available; falls back to `len(text.split())` otherwise.
 
-The current training recipe reweights these rewards to prioritize exact execution correctness:
+Default reward weights: `[0.2, 0.5, 2.0, 0.5, 0.5, 0.1, 0.1]` (max positive weighted reward = 3.8; length penalty contributes ≤ 0). The old `schema_linking_reward`, `ngram_reward`, and `evidence_utilization_reward` have been removed.
 
-- format: `0.25`
-- execution: `1.0`
-- result: `2.5`
-- schema_linking: `0.5`
-- ngram: `0.5`
-- evidence_utilization: `0.25`
+Reward execution timeouts are configurable via `--exec_timeout_s` (default 60s for both predicted and gold SQL — more permissive than BIRD's 30s default to avoid penalising slow reference queries during training). The Soft Overlong Punishment knobs are `--length_penalty_max` (default 4096, should match `--max_completion_length`) and `--length_penalty_buffer` (default 512, ≈ 12.5% of L_max per the DAPO recipe).
+
+Do NOT change `result_reward` away from BIRD set semantics on raw rows; it must stay aligned with the dev-set evaluator in `scripts/run_inference_bird.py` and the official `AlibabaResearch/DAMO-ConvAI/bird/llm/src/evaluation.py`.
 
 The training script also supports configurable monitoring backends via `--report_to` and writes TensorBoard logs to `--logging_dir` when `tensorboard` is included.
+
+The trainer is `DynamicSamplingGRPOTrainer` from `src/nl2sql_gspo/dynamic_sampling_trainer.py` — a subclass of TRL's `GRPOTrainer` implementing DAPO §3.2 dynamic sampling. After each call to `_generate_and_score_completions`, it identifies groups whose intra-group reward std falls below `--dynamic_sampling_min_std` (i.e. accuracy 0 or 1, no learning signal). With `--dynamic_sampling_max_attempts > 0` it re-runs rollouts on a uniform number of replacement prompts (the per-process max bad-group count, gathered across ranks) drawn from a shuffled backup pool of `train_dataset` indices, then splices the new tensors into the original output dict — this is the true DAPO oversample-and-replace path. With `--dynamic_sampling_max_attempts == 0` it skips resampling and only masks. Any groups still flat after the final attempt have their `completion_mask` zeroed so they contribute zero gradient (DAPO objective constraint `0 < |{correct}| < G`). It logs `dynamic_sampling/zero_std_group_fraction` and `dynamic_sampling/resample_attempts`. By default the heterogeneity check uses the aggregated/normalized advantages; pass `--dynamic_sampling_reward_name <name>` (e.g. `result_reward`) to base the check on a single reward function's per-completion values instead. The trainer prints a one-line config summary on rank 0 at startup and a `[dyn-sampling] step=N masked_groups=X/Y` line each generation.
+
+The training script also supports `--num_iterations` (PPO mu, default `1`; launcher default `2`), `--steps_per_generation`, and `--mask_truncated_completions`. The launcher exposes the full DAPO knob set via env vars: `NUM_ITERATIONS`, `STEPS_PER_GENERATION`, `ENABLE_DYNAMIC_SAMPLING`, `DYNAMIC_SAMPLING_MIN_STD`, `DYNAMIC_SAMPLING_MAX_ATTEMPTS`, `DYNAMIC_SAMPLING_REWARD_NAME`, `MASK_TRUNCATED_COMPLETIONS`, `EXEC_TIMEOUT_S`, `LENGTH_PENALTY_MAX`, `LENGTH_PENALTY_BUFFER`, `REWARD_WEIGHTS`, `SAVE_STEPS`, `EVAL_STEPS`, `LOGGING_STEPS`, `EVAL_LIMIT`. Launcher defaults: `SAVE_STEPS=50`, `EVAL_STEPS=50`, `EVAL_LIMIT=64`, `DYNAMIC_SAMPLING_MAX_ATTEMPTS=0`, `DYNAMIC_SAMPLING_REWARD_NAME=result_reward`. Eval uses the same `num_generations` as training.
 
 Tests
 

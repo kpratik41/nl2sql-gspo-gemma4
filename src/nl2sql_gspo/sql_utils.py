@@ -222,3 +222,117 @@ def result_match(
     gold_rows: Optional[List[Tuple[Any, ...]]],
 ) -> bool:
     return normalize_rows(pred_rows) == normalize_rows(gold_rows)
+
+
+# ---- BIRD-style execution + matching ----
+#
+# The official BIRD evaluator (AlibabaResearch/DAMO-ConvAI/bird/llm/src/evaluation.py)
+# compares results with raw `set(predicted_res) == set(ground_truth_res)` — no
+# normalization of strings, floats, or whitespace, and a per-query timeout.
+#
+# These helpers reproduce that behavior for use inside training rewards.
+
+_BIRD_GOLD_CACHE: Dict[Tuple[str, str], Tuple[bool, Optional[frozenset], str]] = {}
+_BIRD_GOLD_CACHE_LOCK = threading.Lock()
+
+
+def _rows_to_hashable_set(rows: Optional[List[Tuple[Any, ...]]]) -> frozenset:
+    if not rows:
+        return frozenset()
+    hashable: List[Tuple[Any, ...]] = []
+    for row in rows:
+        try:
+            hashable.append(tuple(row))
+        except Exception:
+            hashable.append((repr(row),))
+    try:
+        return frozenset(hashable)
+    except TypeError:
+        # Some cells may be unhashable (rare; e.g. lists). Fall back to repr.
+        return frozenset(tuple(repr(c) for c in row) for row in hashable)
+
+
+def bird_execute_sql(
+    sql: str,
+    db_id: str,
+    database_dir: str,
+    timeout_s: float = 5.0,
+) -> Tuple[bool, Optional[List[Tuple[Any, ...]]], str]:
+    """BIRD-style execution: raw rows (no normalization), per-query timeout.
+
+    Uses a watchdog thread that calls `connection.interrupt()` on timeout, which
+    works from non-main threads (unlike SIGALRM).
+    """
+    if not is_safe_readonly_sql(sql):
+        return False, None, "Unsafe or non-readonly SQL"
+
+    db_path = get_database_path(db_id=db_id, database_dir=database_dir)
+    if not db_path or not os.path.exists(db_path):
+        return False, None, f"Could not connect to DB for db_id={db_id}"
+
+    # BIRD opens a fresh connection per query; we mirror that to keep parity.
+    try:
+        uri = f"file:{db_path}?mode=ro"
+        conn = sqlite3.connect(
+            uri,
+            uri=True,
+            check_same_thread=False,
+            timeout=30,
+        )
+    except Exception as exc:
+        return False, None, f"Could not open DB: {exc}"
+
+    timer = threading.Timer(timeout_s, conn.interrupt)
+    timer.daemon = True
+    try:
+        timer.start()
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+        return True, rows, ""
+    except Exception as exc:
+        return False, None, str(exc)
+    finally:
+        timer.cancel()
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def bird_get_gold_rows(
+    gold_sql: str,
+    db_id: str,
+    database_dir: str,
+    timeout_s: float = 30.0,
+) -> Tuple[bool, Optional[frozenset], str]:
+    """Cache gold-side execution by (db_id, gold_sql) since gold is fixed per
+    training row but we re-evaluate it once per rollout in a group of G.
+    """
+    key = (db_id, gold_sql)
+    with _BIRD_GOLD_CACHE_LOCK:
+        cached = _BIRD_GOLD_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    ok, rows, err = bird_execute_sql(
+        sql=gold_sql,
+        db_id=db_id,
+        database_dir=database_dir,
+        timeout_s=timeout_s,
+    )
+    result = (ok, _rows_to_hashable_set(rows) if ok else None, err)
+
+    with _BIRD_GOLD_CACHE_LOCK:
+        _BIRD_GOLD_CACHE[key] = result
+    return result
+
+
+def bird_result_match(
+    pred_rows: Optional[List[Tuple[Any, ...]]],
+    gold_row_set: Optional[frozenset],
+) -> bool:
+    """Set equality on RAW rows, matching BIRD's `set(pred) == set(gold)`."""
+    if gold_row_set is None:
+        return False
+    return _rows_to_hashable_set(pred_rows) == gold_row_set

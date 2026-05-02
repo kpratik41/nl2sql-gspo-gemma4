@@ -143,6 +143,36 @@ def load_tokenizer(model_name_or_path: str):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    if not getattr(tokenizer, "chat_template", None):
+        # Gemma-4 base ships without a chat template; copy it from the
+        # instruct sibling (e.g. google/gemma-4-31B -> google/gemma-4-31B-it).
+        instruct_source = None
+        if isinstance(tokenizer_source, str) and not tokenizer_source.endswith("-it"):
+            instruct_source = f"{tokenizer_source}-it"
+        if instruct_source:
+            try:
+                instruct_tok = AutoTokenizer.from_pretrained(
+                    instruct_source, trust_remote_code=True
+                )
+                if getattr(instruct_tok, "chat_template", None):
+                    tokenizer.chat_template = instruct_tok.chat_template
+                    print(
+                        f"Loaded chat_template from instruct variant {instruct_source}."
+                    )
+            except Exception as exc:
+                print(
+                    f"Could not load chat_template from {instruct_source}: {exc}"
+                )
+
+    if not getattr(tokenizer, "chat_template", None):
+        # Last-resort plain-text fallback.
+        tokenizer.chat_template = (
+            "{% for message in messages %}"
+            "{{ message['role'] | upper }}: {{ message['content'] }}\n\n"
+            "{% endfor %}"
+            "{% if add_generation_prompt %}ASSISTANT:{% endif %}"
+        )
+
     return tokenizer
 
 
@@ -154,9 +184,9 @@ def load_model_and_tokenizer(model_name_or_path: str):
             model_name_or_path,
             torch_dtype=torch.bfloat16,
             trust_remote_code=True,
-            attn_implementation="flash_attention_2",
+            attn_implementation="sdpa",
         )
-        print("Loaded model with AutoModelForCausalLM.")
+        print("Loaded model with AutoModelForCausalLM (sdpa).")
 
     except Exception as exc:
         if AutoModelForImageTextToText is None:
@@ -172,7 +202,7 @@ def load_model_and_tokenizer(model_name_or_path: str):
             model_name_or_path,
             torch_dtype=torch.bfloat16,
             trust_remote_code=True,
-            attn_implementation="flash_attention_2",
+            attn_implementation="sdpa",
         )
 
         model = freeze_multimodal_modules(model)
@@ -196,24 +226,24 @@ def load_inference_model_and_tokenizer(model_name_or_path: str, device_map=None)
     try:
         model = AutoModelForCausalLM.from_pretrained(
             model_name_or_path,
-            attn_implementation="flash_attention_2",
+            attn_implementation="sdpa",
             **causal_kwargs,
         )
         print(
-            "Loaded inference model with AutoModelForCausalLM using flash_attention_2. "
+            "Loaded inference model with AutoModelForCausalLM using sdpa. "
             f"device_map={device_map!r}"
         )
     except Exception as exc:
-        print("AutoModelForCausalLM with flash_attention_2 failed for inference.")
+        print("AutoModelForCausalLM with sdpa failed for inference.")
         print(f"Original error: {exc}")
         try:
             model = AutoModelForCausalLM.from_pretrained(
                 model_name_or_path,
-                attn_implementation="sdpa",
+                attn_implementation="eager",
                 **causal_kwargs,
             )
             print(
-                "Loaded inference model with AutoModelForCausalLM using sdpa fallback. "
+                "Loaded inference model with AutoModelForCausalLM using eager fallback. "
                 f"device_map={device_map!r}"
             )
         except Exception as sdpa_exc:

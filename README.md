@@ -19,24 +19,42 @@ The launcher now trains from the generated schema-augmented training file and ev
 - `outputs/train-6601-schema-filtered.jsonl`
 - `outputs/dev-20251106-schema.jsonl`
 
-The current training launcher recipe uses `num_generations=16`, `max_prompt_length=16384`, and `max_completion_length=4096` with vLLM server-mode rollouts. The default base model in the launchers is `google/gemma-4-31B`.
+The current training launcher recipe uses `num_generations=16`, `gradient_accumulation_steps=64`, `max_prompt_length=20000`, and `max_completion_length=4096` with vLLM server-mode rollouts (vLLM `max_model_len=24576`). The default base model in the launchers is `google/gemma-4-31B-it`.
+
+The vLLM launcher goes through a local compatibility wrapper at `python -m nl2sql_gspo.vllm_serve_compat` so TRL `0.29.1` can still serve against local vLLM `0.19.x`. This wrapper strips the unsupported `truncate_prompt_tokens` field before constructing vLLM sampling parameters.
 
 The trainer also runs dev evaluation before the first optimizer step via `eval_on_start`, which is useful for capturing a true pre-training baseline on the eval split.
 
-The reward stack is currently weighted to make execution correctness dominate soft shaping signals:
+The reward stack is now binary-heavy with a single continuous shaping signal. `result_reward` uses the **official BIRD execution-accuracy semantics** (`set(predicted_rows) == set(gold_rows)` on raw rows, with a per-query timeout):
 
-- `format_reward`: `0.25`
-- `execution_reward`: `1.0`
-- `result_reward`: `2.5`
-- `schema_linking_reward`: `0.5`
-- `ngram_reward`: `0.5`
-- `evidence_utilization_reward`: `0.25`
+- `format_reward` (binary, 0/1): exact `<scratch_pad>...</scratch_pad><final_answer><sql_code>...</sql_code></final_answer>` shape
+- `execution_reward` (binary): predicted SQL executes without error
+- `result_reward` (binary, BIRD EX): set-equality on raw rows vs gold
+- `table_linking_reward` (binary): predicted table set == gold table set
+- `column_linking_reward` (continuous): Jaccard(pred_columns, gold_columns)
+- `nonnull_reward` (binary, small): predicted SQL executes AND returns at least one non-null cell
+- `length_penalty_reward` (continuous, ≤ 0): DAPO §3.4 Soft Overlong Punishment — 0 when length ≤ `L_max - L_cache`, linear ramp to -1 inside the buffer, saturates at -1 beyond `L_max`
+
+Default weights: `0.2, 0.5, 2.0, 0.5, 0.5, 0.1, 0.1` (max positive weighted reward = 3.8; `length_penalty_reward` only contributes ≤ 0). `result_reward` dominates so the policy is pulled toward execution-equivalent answers; the other rewards keep advantages non-flat whenever `result_reward` collapses to all-0 or all-1 inside a group; the length penalty discourages truncation noise.
 
 To resume training from a saved checkpoint:
 
 ```bash
 RESUME_FROM_CHECKPOINT=outputs/gemma4_31b_gspo_bird/checkpoint-100 bash scripts/launch_train.sh
 ```
+
+### DAPO-style controls
+
+The trainer is `DynamicSamplingGRPOTrainer` (a thin subclass of TRL's `GRPOTrainer`) and supports:
+
+- `--num_iterations` (PPO mu, default `2` in the launcher): multiple optimizer passes per generation buffer. Combined with the GSPO sequence-level importance ratio and the `epsilon=0.2 / epsilon_high=0.28` clip, this roughly doubles sample efficiency since rollouts dominate wall clock.
+- `--enable_dynamic_sampling` (default on in the launcher) + `--dynamic_sampling_max_attempts` (default `0`): true DAPO §3.2 oversample-and-replace. After each rollout call we re-run rollouts on a uniform number of replacement prompts (drawn from a shuffled backup pool of `train_dataset` indices, count synchronized across processes via `accelerator.gather`) for any groups whose reward std falls below `--dynamic_sampling_min_std`, and splice the new tensors into the original output dict. We retry up to `max_attempts` times, then mask any still-flat groups so they contribute zero gradient (`completion_mask = 0`). Setting `max_attempts=0` keeps the pure masking variant (faster, no extra rollouts).
+- `--mask_truncated_completions` (default on): zero `completion_mask` for rollouts that hit `max_completion_length`, as in DAPO overlong filtering.
+- `--length_penalty_max` / `--length_penalty_buffer` (defaults `4096` / `512`): DAPO §3.4 Soft Overlong Punishment. Adds a 7th continuous reward function in `[-1, 0]`: 0 when length ≤ `L_max - L_cache`, linear ramp to -1 within the buffer, saturated at -1 beyond `L_max`. Length is measured in tokens via the trainer's tokenizer.
+- `--exec_timeout_s` (default `60`): per-query SQL execution timeout for both predicted and gold SQL during reward computation. More permissive than BIRD's 30s default to avoid penalising slow gold queries during training.
+- `--steps_per_generation`: optional override for generation cadence.
+
+Launcher env vars: `NUM_ITERATIONS`, `ENABLE_DYNAMIC_SAMPLING` (`0`/`1`), `DYNAMIC_SAMPLING_MIN_STD`, `DYNAMIC_SAMPLING_MAX_ATTEMPTS`, `MASK_TRUNCATED_COMPLETIONS` (`0`/`1`), `STEPS_PER_GENERATION`, `EXEC_TIMEOUT_S`, `LENGTH_PENALTY_MAX`, `LENGTH_PENALTY_BUFFER`, `REWARD_WEIGHTS`, `SAVE_STEPS`, `EVAL_STEPS`, `LOGGING_STEPS`, `EVAL_LIMIT`. Logging defaults: `SAVE_STEPS=25`, `EVAL_STEPS=25`, `LOGGING_STEPS=5`, `EVAL_LIMIT=256`. Trainer logs `dynamic_sampling/zero_std_group_fraction` and `dynamic_sampling/resample_attempts` to W&B/TensorBoard alongside the standard TRL metrics (per-reward mean/std, KL, entropy, clip ratios, completion length).
 
 To limit training or evaluation to a subset of rows for smoke runs:
 

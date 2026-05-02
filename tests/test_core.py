@@ -16,7 +16,16 @@ if str(SRC) not in sys.path:
 from nl2sql_gspo.data import normalize_record
 from nl2sql_gspo.rewards import make_nl2sql_rewards
 from nl2sql_gspo.train_gspo_nl2sql import parse_args
-from nl2sql_gspo.sql_utils import _DB_CONNECTIONS, extract_sql, get_database_path, is_safe_readonly_sql
+from nl2sql_gspo.sql_utils import (
+    _DB_CONNECTIONS,
+    _BIRD_GOLD_CACHE,
+    bird_execute_sql,
+    bird_get_gold_rows,
+    bird_result_match,
+    extract_sql,
+    get_database_path,
+    is_safe_readonly_sql,
+)
 from scripts.run_inference_bird import (
     get_generation_messages,
     plan_transformers_worker_devices,
@@ -114,6 +123,18 @@ class TrainScriptTests(unittest.TestCase):
                 "--eval_on_start",
                 "--resume_from_checkpoint",
                 "outputs/run/checkpoint-100",
+                "--num_iterations",
+                "2",
+                "--enable_dynamic_sampling",
+                "--mask_truncated_completions",
+                "--dynamic_sampling_max_attempts",
+                "3",
+                "--exec_timeout_s",
+                "45",
+                "--length_penalty_max",
+                "4096",
+                "--length_penalty_buffer",
+                "512",
             ]
         )
 
@@ -121,6 +142,13 @@ class TrainScriptTests(unittest.TestCase):
         self.assertEqual(args.train_limit, 123)
         self.assertEqual(args.eval_limit, 45)
         self.assertTrue(args.eval_on_start)
+        self.assertEqual(args.num_iterations, 2)
+        self.assertTrue(args.enable_dynamic_sampling)
+        self.assertTrue(args.mask_truncated_completions)
+        self.assertEqual(args.dynamic_sampling_max_attempts, 3)
+        self.assertEqual(args.exec_timeout_s, 45.0)
+        self.assertEqual(args.length_penalty_max, 4096)
+        self.assertEqual(args.length_penalty_buffer, 512)
 
 
 class InferenceScriptTests(unittest.TestCase):
@@ -193,13 +221,18 @@ class RewardTests(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        self.reward_functions = make_nl2sql_rewards(str(self.database_root))
+        self.reward_functions = make_nl2sql_rewards(
+            str(self.database_root),
+            length_penalty_max=100,
+            length_penalty_buffer=20,
+        )
         self.format_reward = self.reward_functions[0]
         self.execution_reward = self.reward_functions[1]
         self.result_reward = self.reward_functions[2]
-        self.schema_linking_reward = self.reward_functions[3]
-        self.ngram_reward = self.reward_functions[4]
-        self.evidence_utilization_reward = self.reward_functions[5]
+        self.table_linking_reward = self.reward_functions[3]
+        self.column_linking_reward = self.reward_functions[4]
+        self.nonnull_reward = self.reward_functions[5]
+        self.length_penalty_reward = self.reward_functions[6]
 
         self.common_kwargs = {
             "db_id": [self.db_id],
@@ -218,6 +251,7 @@ class RewardTests(unittest.TestCase):
             if connection is not None:
                 connection.close()
         _DB_CONNECTIONS.clear()
+        _BIRD_GOLD_CACHE.clear()
         self.temp_dir.cleanup()
 
     def test_execution_and_result_rewards_distinguish_correctness(self):
@@ -256,37 +290,328 @@ class RewardTests(unittest.TestCase):
     def test_schema_and_ngram_rewards_prefer_closer_sql(self):
         exact_completion = ["SELECT name FROM users WHERE age > 30;"]
         partial_completion = ["SELECT name FROM users;"]
-        unrelated_completion = ["SELECT id FROM users WHERE age < 10;"]
+        unrelated_completion = ["SELECT id FROM orders WHERE age < 10;"]
 
-        exact_schema = self.schema_linking_reward(completions=exact_completion, **self.common_kwargs)[0]
-        partial_schema = self.schema_linking_reward(completions=partial_completion, **self.common_kwargs)[0]
-        unrelated_schema = self.schema_linking_reward(completions=unrelated_completion, **self.common_kwargs)[0]
+        gold_kwargs = {"gold_sql": self.common_kwargs["gold_sql"]}
 
-        exact_ngram = self.ngram_reward(completions=exact_completion, gold_sql=self.common_kwargs["gold_sql"])[0]
-        partial_ngram = self.ngram_reward(completions=partial_completion, gold_sql=self.common_kwargs["gold_sql"])[0]
+        exact_table = self.table_linking_reward(completions=exact_completion, **gold_kwargs)[0]
+        partial_table = self.table_linking_reward(completions=partial_completion, **gold_kwargs)[0]
+        unrelated_table = self.table_linking_reward(completions=unrelated_completion, **gold_kwargs)[0]
 
-        self.assertGreaterEqual(exact_schema, partial_schema)
-        self.assertGreater(partial_schema, unrelated_schema)
-        self.assertGreater(exact_ngram, partial_ngram)
+        exact_col = self.column_linking_reward(completions=exact_completion, **gold_kwargs)[0]
+        partial_col = self.column_linking_reward(completions=partial_completion, **gold_kwargs)[0]
 
-    def test_format_and_evidence_rewards_reward_clean_sql_and_hint_usage(self):
-        clean_completion = "SELECT name FROM users WHERE age > 30;"
-        explained_completion = "Here is the query:\nSELECT name FROM users WHERE age > 30;\nExplanation: filter by age"
-        unrelated_completion = "SELECT name FROM users;"
+        self.assertEqual(exact_table, 1.0)
+        self.assertEqual(partial_table, 1.0)
+        self.assertEqual(unrelated_table, 0.0)
+        self.assertGreater(exact_col, partial_col)
 
-        clean_format = self.format_reward(completions=[clean_completion])[0]
-        explained_format = self.format_reward(completions=[explained_completion])[0]
-        evidence_hit = self.evidence_utilization_reward(
-            completions=[clean_completion],
-            evidence=self.common_kwargs["evidence"],
-        )[0]
-        evidence_miss = self.evidence_utilization_reward(
-            completions=[unrelated_completion],
-            evidence=self.common_kwargs["evidence"],
-        )[0]
+    def test_format_reward_requires_strict_xml_shape(self):
+        good = (
+            "<scratch_pad>reasoning</scratch_pad>\n"
+            "<final_answer>\n<sql_code>SELECT 1</sql_code>\n</final_answer>"
+        )
+        missing_scratch = "<final_answer><sql_code>SELECT 1</sql_code></final_answer>"
+        plain_sql = "SELECT name FROM users WHERE age > 30;"
 
-        self.assertGreater(clean_format, explained_format)
-        self.assertGreater(evidence_hit, evidence_miss)
+        self.assertEqual(self.format_reward(completions=[good])[0], 1.0)
+        self.assertEqual(self.format_reward(completions=[missing_scratch])[0], 0.0)
+        self.assertEqual(self.format_reward(completions=[plain_sql])[0], 0.0)
+
+    def test_nonnull_reward_only_fires_when_results_have_data(self):
+        non_empty = ["SELECT name FROM users WHERE age > 30;"]
+        empty = ["SELECT name FROM users WHERE age > 999;"]
+        bad = ["SELECT missing FROM users;"]
+
+        self.assertEqual(self.nonnull_reward(completions=non_empty, db_id=[self.db_id])[0], 1.0)
+        self.assertEqual(self.nonnull_reward(completions=empty, db_id=[self.db_id])[0], 0.0)
+        self.assertEqual(self.nonnull_reward(completions=bad, db_id=[self.db_id])[0], 0.0)
+
+    def test_bird_result_match_uses_set_semantics_on_raw_rows(self):
+        # Same set of rows but different order and duplicates -> equal under BIRD set match.
+        gold_ok, gold_set, _ = bird_get_gold_rows(
+            gold_sql="SELECT name FROM users WHERE age > 20;",
+            db_id=self.db_id,
+            database_dir=str(self.database_root),
+        )
+        self.assertTrue(gold_ok)
+
+        pred_ok, pred_rows, _ = bird_execute_sql(
+            sql="SELECT name FROM users WHERE age > 20 ORDER BY age DESC;",
+            db_id=self.db_id,
+            database_dir=str(self.database_root),
+        )
+        self.assertTrue(pred_ok)
+        self.assertTrue(bird_result_match(pred_rows, gold_set))
+
+    def test_result_reward_uses_bird_semantics(self):
+        # Reordered duplicate-free results should match.
+        completions = [
+            "SELECT name FROM users WHERE age > 20 ORDER BY age DESC;",
+            "SELECT name FROM users WHERE age > 999;",  # empty -> mismatch
+        ]
+        scores = self.result_reward(
+            completions=completions,
+            db_id=[self.db_id, self.db_id],
+            gold_sql=["SELECT name FROM users WHERE age > 20;"] * 2,
+        )
+        self.assertEqual(scores, [1.0, 0.0])
+
+    def test_length_penalty_implements_dapo_soft_overlong(self):
+        # Configured: length_penalty_max=100, buffer=20 (word-count proxy).
+        short = "word " * 50  # below soft threshold (80) -> 0
+        edge = "word " * 80  # exactly at soft threshold -> 0
+        ramp = "word " * 90  # midway in ramp: (80-90)/20 = -0.5
+        cap = "word " * 100  # at L_max: (80-100)/20 = -1.0
+        over = "word " * 200  # beyond L_max -> -1.0
+
+        scores = self.length_penalty_reward(completions=[short, edge, ramp, cap, over])
+        self.assertEqual(scores[0], 0.0)
+        self.assertEqual(scores[1], 0.0)
+        self.assertAlmostEqual(scores[2], -0.5, places=6)
+        self.assertAlmostEqual(scores[3], -1.0, places=6)
+        self.assertEqual(scores[4], -1.0)
+
+    def test_length_penalty_uses_tokenizer_when_available(self):
+        class FakeTokenizer:
+            def encode(self, text, add_special_tokens=False):
+                # Pretend each char is a token so we can hit ramps deterministically.
+                return list(text)
+
+        rewards = make_nl2sql_rewards(
+            str(self.database_root),
+            tokenizer=FakeTokenizer(),
+            length_penalty_max=10,
+            length_penalty_buffer=5,
+        )
+        length_reward = rewards[6]
+
+        self.assertEqual(length_reward(completions=["abc"])[0], 0.0)  # 3 ≤ 5
+        self.assertAlmostEqual(length_reward(completions=["abcdefgh"])[0], -0.6, places=6)  # 8 -> (5-8)/5
+        self.assertEqual(length_reward(completions=["a" * 20])[0], -1.0)
+
+    def test_execution_cache_dedupes_repeated_predicted_sql(self):
+        from nl2sql_gspo import rewards as rewards_module
+
+        completions = [
+            "SELECT name FROM users WHERE age > 30;",
+            "SELECT name FROM users WHERE age > 30;",  # duplicate -> cache hit
+            "SELECT name FROM users WHERE age > 30;",  # duplicate -> cache hit
+        ]
+        gold_sqls = ["SELECT name FROM users WHERE age > 30;"] * 3
+        db_ids = [self.db_id] * 3
+
+        with mock.patch.object(
+            rewards_module, "bird_execute_sql", wraps=rewards_module.bird_execute_sql
+        ) as spy:
+            # Build a fresh closure so the cache is empty for this assertion.
+            rewards = make_nl2sql_rewards(str(self.database_root))
+            execution_reward = rewards[1]
+            result_reward = rewards[2]
+            nonnull_reward = rewards[5]
+
+            execution_reward(completions=completions, db_id=db_ids)
+            result_reward(completions=completions, db_id=db_ids, gold_sql=gold_sqls)
+            nonnull_reward(completions=completions, db_id=db_ids)
+
+        # Without caching: 3 completions × 3 rewards = 9 predicted-SQL executions.
+        # With caching keyed on (db_id, sql), only the first execution actually
+        # hits the database; the other 8 are cache hits.
+        self.assertEqual(spy.call_count, 1)
+
+    def test_execution_cache_separates_distinct_sql(self):
+        rewards = make_nl2sql_rewards(str(self.database_root))
+        execution_reward = rewards[1]
+
+        scores = execution_reward(
+            completions=[
+                "SELECT name FROM users WHERE age > 30;",
+                "SELECT missing_column FROM users;",
+                "SELECT name FROM users WHERE age > 30;",  # cache hit
+            ],
+            db_id=[self.db_id] * 3,
+        )
+        self.assertEqual(scores, [1.0, 0.0, 1.0])
+
+
+class DynamicSamplingTrainerHelperTests(unittest.TestCase):
+    """Unit-tests for the pure helpers on `DynamicSamplingGRPOTrainer`.
+
+    We avoid TRL's heavyweight `__init__` by constructing instances via
+    `object.__new__` and setting only the attributes the helpers touch.
+    Skipped automatically when TRL or torch isn't installed in the env.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            import torch  # noqa: F401
+            from nl2sql_gspo.dynamic_sampling_trainer import (  # noqa: F401
+                DynamicSamplingGRPOTrainer,
+            )
+        except Exception as exc:  # ModuleNotFoundError or torch import error
+            raise unittest.SkipTest(f"TRL/torch not available: {exc}")
+
+    def _make_bare_trainer(self, num_generations=4, min_std=1e-6, pad_token_id=0):
+        import torch
+        from nl2sql_gspo.dynamic_sampling_trainer import DynamicSamplingGRPOTrainer
+
+        trainer = object.__new__(DynamicSamplingGRPOTrainer)
+        trainer.num_generations = num_generations
+        trainer.dynamic_sampling_min_std = min_std
+        trainer.pad_token_id = pad_token_id
+        trainer.train_dataset = None
+        trainer._dyn_pool_indices = []
+        trainer._dyn_pool_cursor = 0
+        return trainer, torch
+
+    def test_pad_to_width_right_pads_with_value(self):
+        from nl2sql_gspo.dynamic_sampling_trainer import _pad_to_width
+        import torch
+
+        x = torch.tensor([[1, 2, 3], [4, 5, 6]])
+        padded = _pad_to_width(x, target_width=5, pad_value=-1, side="right")
+        self.assertEqual(padded.tolist(), [[1, 2, 3, -1, -1], [4, 5, 6, -1, -1]])
+
+    def test_pad_to_width_left_pads_with_value(self):
+        from nl2sql_gspo.dynamic_sampling_trainer import _pad_to_width
+        import torch
+
+        x = torch.tensor([[1, 2], [3, 4]])
+        padded = _pad_to_width(x, target_width=4, pad_value=9, side="left")
+        self.assertEqual(padded.tolist(), [[9, 9, 1, 2], [9, 9, 3, 4]])
+
+    def test_pad_to_width_noop_when_already_wide(self):
+        from nl2sql_gspo.dynamic_sampling_trainer import _pad_to_width
+        import torch
+
+        x = torch.tensor([[1, 2, 3]])
+        padded = _pad_to_width(x, target_width=2, pad_value=0, side="right")
+        self.assertIs(padded, x)
+
+    def test_zero_std_group_mask_flags_flat_groups_only(self):
+        trainer, torch = self._make_bare_trainer(num_generations=4)
+        # 3 groups of 4 generations:
+        #   group 0: all zeros (flat)
+        #   group 1: nonzero spread
+        #   group 2: all the same nonzero value (still flat -> abs.max - mean -> 0)
+        advantages = torch.tensor(
+            [0.0, 0.0, 0.0, 0.0, 1.0, -1.0, 0.5, -0.5, 0.0, 0.0, 0.0, 0.0]
+        )
+        flat = trainer._zero_std_group_mask(advantages)
+        self.assertEqual(flat.tolist(), [True, False, True])
+
+    def test_zero_std_group_mask_returns_empty_on_unaligned_size(self):
+        trainer, torch = self._make_bare_trainer(num_generations=4)
+        advantages = torch.tensor([0.0, 0.0, 0.0])  # not divisible by 4
+        flat = trainer._zero_std_group_mask(advantages)
+        self.assertEqual(flat.numel(), 0)
+
+    def test_splice_groups_replaces_bad_slots_with_new_rollouts(self):
+        trainer, torch = self._make_bare_trainer(num_generations=2, pad_token_id=0)
+        # 3 groups × 2 generations = 6 rows. Group 1 is the "bad" group.
+        out = {
+            "advantages": torch.tensor([0.5, -0.5, 0.0, 0.0, 0.1, -0.1]),
+            "completion_ids": torch.tensor(
+                [[1, 1], [1, 1], [2, 2], [2, 2], [3, 3], [3, 3]]
+            ),
+            "completion_mask": torch.ones(6, 2, dtype=torch.long),
+        }
+        new_out = {
+            "advantages": torch.tensor([7.0, -7.0]),
+            "completion_ids": torch.tensor([[9, 9, 9], [9, 9, 9]]),  # wider seq dim
+            "completion_mask": torch.ones(2, 3, dtype=torch.long),
+        }
+        bad = torch.tensor([False, True, False])
+        spliced = trainer._splice_groups(out, new_out, bad, n_replace=1)
+
+        # Only group 1 (rows 2,3) should change in advantages.
+        result_adv = spliced["advantages"].tolist()
+        expected_adv = [0.5, -0.5, 7.0, -7.0, 0.1, -0.1]
+        self.assertEqual(len(result_adv), len(expected_adv))
+        for got, want in zip(result_adv, expected_adv):
+            self.assertAlmostEqual(got, want, places=5)
+        # completion_ids should be padded to width 3 and group 1 replaced.
+        expected_ids = [
+            [1, 1, 0],
+            [1, 1, 0],
+            [9, 9, 9],
+            [9, 9, 9],
+            [3, 3, 0],
+            [3, 3, 0],
+        ]
+        self.assertEqual(spliced["completion_ids"].tolist(), expected_ids)
+
+    def test_splice_groups_noop_when_n_replace_zero(self):
+        trainer, torch = self._make_bare_trainer(num_generations=2)
+        out = {"advantages": torch.tensor([1.0, 2.0])}
+        new_out = {"advantages": torch.tensor([9.0, 9.0])}
+        result = trainer._splice_groups(out, new_out, torch.tensor([False]), n_replace=0)
+        self.assertIs(result, out)
+
+    def test_draw_replacement_inputs_pulls_from_train_dataset(self):
+        trainer, _ = self._make_bare_trainer()
+
+        class _FakeState:
+            global_step = 0
+
+        trainer.state = _FakeState()
+        trainer.train_dataset = [{"id": i} for i in range(8)]
+
+        first = trainer._draw_replacement_inputs(3)
+        second = trainer._draw_replacement_inputs(3)
+        self.assertEqual(len(first), 3)
+        self.assertEqual(len(second), 3)
+        # Seeded shuffle of range(8) gives a unique permutation for global_step=0
+        # so first/second should not overlap (they pull a contiguous slice from
+        # the shuffled pool).
+        self.assertEqual(
+            sorted(r["id"] for r in first + second),
+            sorted(set(r["id"] for r in first + second)),
+        )
+
+    def test_draw_replacement_inputs_returns_empty_when_no_dataset(self):
+        trainer, _ = self._make_bare_trainer()
+        self.assertEqual(trainer._draw_replacement_inputs(5), [])
+
+
+class TrainScriptDefaultsTests(unittest.TestCase):
+    def test_default_reward_weights_have_seven_entries(self):
+        from nl2sql_gspo.train_gspo_nl2sql import DEFAULT_REWARD_WEIGHTS
+
+        self.assertEqual(len(DEFAULT_REWARD_WEIGHTS), 7)
+        # length-penalty weight should be small and non-negative (the reward
+        # itself is in [-1, 0], so positive weight gives a non-positive signal).
+        self.assertGreaterEqual(DEFAULT_REWARD_WEIGHTS[6], 0.0)
+
+    def test_parse_reward_weights_rejects_wrong_arity(self):
+        import argparse
+        from nl2sql_gspo.train_gspo_nl2sql import parse_reward_weights
+
+        with self.assertRaises(argparse.ArgumentTypeError):
+            parse_reward_weights("0.1,0.2,0.3")  # too few
+
+    def test_parse_args_defaults_match_dapo_recipe(self):
+        from nl2sql_gspo.train_gspo_nl2sql import parse_args
+
+        args = parse_args(
+            [
+                "--model_name_or_path", "model",
+                "--train_file", "train.jsonl",
+                "--database_dir", "databases",
+                "--output_dir", "out",
+            ]
+        )
+        # DAPO recipe: epsilon_high > epsilon, dapo loss, batch reward scaling.
+        self.assertEqual(args.epsilon, 0.2)
+        self.assertEqual(args.epsilon_high, 0.28)
+        self.assertEqual(args.loss_type, "dapo")
+        self.assertEqual(args.scale_rewards, "batch")
+        self.assertEqual(args.beta, 0.0)
+        self.assertEqual(args.exec_timeout_s, 60.0)
+        self.assertEqual(args.length_penalty_max, 4096)
+        self.assertEqual(args.length_penalty_buffer, 512)
+        self.assertEqual(args.dynamic_sampling_max_attempts, 0)
 
 
 if __name__ == "__main__":
