@@ -127,7 +127,7 @@ class TrainScriptTests(unittest.TestCase):
                 "2",
                 "--enable_dynamic_sampling",
                 "--mask_truncated_completions",
-                "--dynamic_sampling_max_attempts",
+                "--dapo_max_rounds",
                 "3",
                 "--exec_timeout_s",
                 "45",
@@ -145,7 +145,7 @@ class TrainScriptTests(unittest.TestCase):
         self.assertEqual(args.num_iterations, 2)
         self.assertTrue(args.enable_dynamic_sampling)
         self.assertTrue(args.mask_truncated_completions)
-        self.assertEqual(args.dynamic_sampling_max_attempts, 3)
+        self.assertEqual(args.dapo_max_rounds, 3)
         self.assertEqual(args.exec_timeout_s, 45.0)
         self.assertEqual(args.length_penalty_max, 4096)
         self.assertEqual(args.length_penalty_buffer, 512)
@@ -463,6 +463,14 @@ class DynamicSamplingTrainerHelperTests(unittest.TestCase):
         trainer.train_dataset = None
         trainer._dyn_pool_indices = []
         trainer._dyn_pool_cursor = 0
+        trainer._dyn_pool_seed_step = -1
+
+        # Minimal stand-in for self.accelerator with a fixed process_index.
+        class _FakeAccel:
+            process_index = 0
+            is_main_process = True
+
+        trainer.accelerator = _FakeAccel()
         return trainer, torch
 
     def test_pad_to_width_right_pads_with_value(self):
@@ -489,65 +497,69 @@ class DynamicSamplingTrainerHelperTests(unittest.TestCase):
         padded = _pad_to_width(x, target_width=2, pad_value=0, side="right")
         self.assertIs(padded, x)
 
-    def test_zero_std_group_mask_flags_flat_groups_only(self):
-        trainer, torch = self._make_bare_trainer(num_generations=4)
-        # 3 groups of 4 generations:
-        #   group 0: all zeros (flat)
-        #   group 1: nonzero spread
-        #   group 2: all the same nonzero value (still flat -> abs.max - mean -> 0)
-        advantages = torch.tensor(
-            [0.0, 0.0, 0.0, 0.0, 1.0, -1.0, 0.5, -0.5, 0.0, 0.0, 0.0, 0.0]
-        )
-        flat = trainer._zero_std_group_mask(advantages)
-        self.assertEqual(flat.tolist(), [True, False, True])
+    def test_build_round_inputs_replicates_each_prompt_num_generations_times(self):
+        trainer, _ = self._make_bare_trainer(num_generations=3)
+        out = trainer._build_round_inputs([{"id": "a"}, {"id": "b"}])
+        self.assertEqual([r["id"] for r in out], ["a", "a", "a", "b", "b", "b"])
+        # Each replica must be an independent dict so per-row mutation
+        # by reward fns doesn't leak across rollouts.
+        self.assertIsNot(out[0], out[1])
 
-    def test_zero_std_group_mask_returns_empty_on_unaligned_size(self):
-        trainer, torch = self._make_bare_trainer(num_generations=4)
-        advantages = torch.tensor([0.0, 0.0, 0.0])  # not divisible by 4
-        flat = trainer._zero_std_group_mask(advantages)
-        self.assertEqual(flat.numel(), 0)
-
-    def test_splice_groups_replaces_bad_slots_with_new_rollouts(self):
-        trainer, torch = self._make_bare_trainer(num_generations=2, pad_token_id=0)
-        # 3 groups × 2 generations = 6 rows. Group 1 is the "bad" group.
-        out = {
-            "advantages": torch.tensor([0.5, -0.5, 0.0, 0.0, 0.1, -0.1]),
-            "completion_ids": torch.tensor(
-                [[1, 1], [1, 1], [2, 2], [2, 2], [3, 3], [3, 3]]
-            ),
-            "completion_mask": torch.ones(6, 2, dtype=torch.long),
-        }
-        new_out = {
-            "advantages": torch.tensor([7.0, -7.0]),
-            "completion_ids": torch.tensor([[9, 9, 9], [9, 9, 9]]),  # wider seq dim
-            "completion_mask": torch.ones(2, 3, dtype=torch.long),
-        }
-        bad = torch.tensor([False, True, False])
-        spliced = trainer._splice_groups(out, new_out, bad, n_replace=1)
-
-        # Only group 1 (rows 2,3) should change in advantages.
-        result_adv = spliced["advantages"].tolist()
-        expected_adv = [0.5, -0.5, 7.0, -7.0, 0.1, -0.1]
-        self.assertEqual(len(result_adv), len(expected_adv))
-        for got, want in zip(result_adv, expected_adv):
-            self.assertAlmostEqual(got, want, places=5)
-        # completion_ids should be padded to width 3 and group 1 replaced.
-        expected_ids = [
-            [1, 1, 0],
-            [1, 1, 0],
-            [9, 9, 9],
-            [9, 9, 9],
-            [3, 3, 0],
-            [3, 3, 0],
-        ]
-        self.assertEqual(spliced["completion_ids"].tolist(), expected_ids)
-
-    def test_splice_groups_noop_when_n_replace_zero(self):
+    def test_extract_groups_picks_correct_rows_and_carries_through_scalars(self):
         trainer, torch = self._make_bare_trainer(num_generations=2)
-        out = {"advantages": torch.tensor([1.0, 2.0])}
-        new_out = {"advantages": torch.tensor([9.0, 9.0])}
-        result = trainer._splice_groups(out, new_out, torch.tensor([False]), n_replace=0)
-        self.assertIs(result, out)
+        round_out = {
+            "prompt_ids": torch.tensor([[1, 1], [1, 1], [2, 2], [2, 2], [3, 3], [3, 3]]),
+            "advantages": torch.tensor([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]),
+            "completion_mask": torch.ones(6, 4, dtype=torch.long),
+            "num_items_in_batch": 99,
+        }
+        chunk = trainer._extract_groups(round_out, [0, 2])
+        self.assertEqual(chunk["_n_groups"], 2)
+        self.assertEqual(chunk["prompt_ids"].tolist(), [[1, 1], [1, 1], [3, 3], [3, 3]])
+        for got, want in zip(chunk["advantages"].tolist(), [0.1, 0.2, 0.5, 0.6]):
+            self.assertAlmostEqual(got, want, places=5)
+        self.assertEqual(chunk["num_items_in_batch"], 99)
+
+    def test_extract_groups_with_zero_mask_zeros_completion_mask(self):
+        trainer, torch = self._make_bare_trainer(num_generations=2)
+        round_out = {
+            "prompt_ids": torch.tensor([[1, 1], [1, 1], [2, 2], [2, 2]]),
+            "completion_mask": torch.ones(4, 3, dtype=torch.long),
+        }
+        chunk = trainer._extract_groups(round_out, [1], zero_mask=True)
+        self.assertEqual(chunk["completion_mask"].sum().item(), 0)
+        self.assertEqual(chunk["prompt_ids"].tolist(), [[2, 2], [2, 2]])
+
+    def test_extract_groups_returns_none_for_empty_index(self):
+        trainer, _ = self._make_bare_trainer()
+        self.assertIsNone(trainer._extract_groups({"prompt_ids": None}, []))
+
+    def test_concat_chunks_pads_2d_tensors_and_concatenates(self):
+        trainer, torch = self._make_bare_trainer(num_generations=2, pad_token_id=0)
+        c1 = {
+            "_n_groups": 1,
+            "prompt_ids": torch.tensor([[5, 5], [5, 5]]),
+            "completion_ids": torch.tensor([[9, 9], [9, 9]]),
+            "completion_mask": torch.ones(2, 2, dtype=torch.long),
+            "advantages": torch.tensor([0.1, -0.1]),
+        }
+        c2 = {
+            "_n_groups": 1,
+            "prompt_ids": torch.tensor([[6, 6, 6], [6, 6, 6]]),  # wider
+            "completion_ids": torch.tensor([[7, 7, 7], [7, 7, 7]]),
+            "completion_mask": torch.ones(2, 3, dtype=torch.long),
+            "advantages": torch.tensor([0.5, -0.5]),
+        }
+        final = trainer._concat_chunks([c1, c2])
+        # prompt_ids is left-padded with pad_token_id=0
+        self.assertEqual(
+            final["prompt_ids"].tolist(),
+            [[0, 5, 5], [0, 5, 5], [6, 6, 6], [6, 6, 6]],
+        )
+        # completion_ids is right-padded
+        self.assertEqual(final["completion_ids"].tolist(), [[9, 9, 0], [9, 9, 0], [7, 7, 7], [7, 7, 7]])
+        for got, want in zip(final["advantages"].tolist(), [0.1, -0.1, 0.5, -0.5]):
+            self.assertAlmostEqual(got, want, places=5)
 
     def test_draw_replacement_inputs_pulls_from_train_dataset(self):
         trainer, _ = self._make_bare_trainer()
@@ -562,9 +574,9 @@ class DynamicSamplingTrainerHelperTests(unittest.TestCase):
         second = trainer._draw_replacement_inputs(3)
         self.assertEqual(len(first), 3)
         self.assertEqual(len(second), 3)
-        # Seeded shuffle of range(8) gives a unique permutation for global_step=0
-        # so first/second should not overlap (they pull a contiguous slice from
-        # the shuffled pool).
+        # Seeded shuffle of range(8) gives a unique permutation for
+        # (global_step=0, process_index=0); the two contiguous slices
+        # therefore should not overlap.
         self.assertEqual(
             sorted(r["id"] for r in first + second),
             sorted(set(r["id"] for r in first + second)),
@@ -611,7 +623,7 @@ class TrainScriptDefaultsTests(unittest.TestCase):
         self.assertEqual(args.exec_timeout_s, 60.0)
         self.assertEqual(args.length_penalty_max, 4096)
         self.assertEqual(args.length_penalty_buffer, 512)
-        self.assertEqual(args.dynamic_sampling_max_attempts, 0)
+        self.assertEqual(args.dapo_max_rounds, 6)
 
 
 if __name__ == "__main__":

@@ -59,12 +59,15 @@ else
   EVAL_ON_START_ARG=""
 fi
 
-# DAPO-style controls. Defaults match a strong base model where format
-# collapse is unlikely; flip ENABLE_DYNAMIC_SAMPLING=0 to turn off.
-NUM_ITERATIONS="${NUM_ITERATIONS:-2}"
+# DAPO oversample-and-replace controls. Each optimizer step keeps
+# exactly G heterogeneous groups (G = world_size * per_device_batch *
+# steps_per_generation). With per_device_batch=1, world=6, steps_per_gen=1
+# this is G=6 heterogeneous prompts per step. Set ENABLE_DYNAMIC_SAMPLING=0
+# to skip filtering entirely.
+NUM_ITERATIONS="${NUM_ITERATIONS:-1}"
 ENABLE_DYNAMIC_SAMPLING="${ENABLE_DYNAMIC_SAMPLING:-1}"
 DYNAMIC_SAMPLING_MIN_STD="${DYNAMIC_SAMPLING_MIN_STD:-1e-6}"
-DYNAMIC_SAMPLING_MAX_ATTEMPTS="${DYNAMIC_SAMPLING_MAX_ATTEMPTS:-0}"  # 0 = mask flat groups; >0 = oversample-and-replace
+DAPO_MAX_ROUNDS="${DAPO_MAX_ROUNDS:-6}"  # max rollout rounds per step (1 = no resampling)
 # Optional: judge group heterogeneity by a single reward function (e.g.
 # result_reward) instead of the aggregated/normalized advantages. Leave
 # unset to use total advantages.
@@ -80,7 +83,7 @@ REWARD_WEIGHTS="${REWARD_WEIGHTS:-0.2,0.5,2.0,0.5,0.5,0.1,0.1}"
 DAPO_ARGS=(
   --num_iterations "${NUM_ITERATIONS}"
   --dynamic_sampling_min_std "${DYNAMIC_SAMPLING_MIN_STD}"
-  --dynamic_sampling_max_attempts "${DYNAMIC_SAMPLING_MAX_ATTEMPTS}"
+  --dapo_max_rounds "${DAPO_MAX_ROUNDS}"
   --exec_timeout_s "${EXEC_TIMEOUT_S}"
   --length_penalty_max "${LENGTH_PENALTY_MAX}"
   --length_penalty_buffer "${LENGTH_PENALTY_BUFFER}"
@@ -114,7 +117,7 @@ accelerate launch \
   --max_completion_length 4096 \
   --num_generations 16 \
   --per_device_train_batch_size 1 \
-  --gradient_accumulation_steps 64 \
+  --gradient_accumulation_steps 16 \
   --learning_rate 5e-7 \
   --num_train_epochs 1 \
   --reward_weights "${REWARD_WEIGHTS}" \

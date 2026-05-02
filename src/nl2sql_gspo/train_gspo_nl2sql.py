@@ -114,12 +114,14 @@ def parse_args(argv=None):
         help="Threshold below which a group is considered to have no learning signal.",
     )
     parser.add_argument(
-        "--dynamic_sampling_max_attempts",
+        "--dapo_max_rounds",
         type=int,
-        default=0,
+        default=6,
         help=(
-            "Number of oversample-and-replace attempts before falling back to masking. "
-            "0 = pure masking variant. >0 enables true DAPO-style resampling."
+            "Maximum number of rollout rounds per optimizer step in DAPO "
+            "oversample-and-replace mode (round 1 = the dataloader's own "
+            "prompts; subsequent rounds draw from a per-rank backup pool). "
+            "Set to 1 to effectively disable resampling (only zero-mask flat groups)."
         ),
     )
     parser.add_argument(
@@ -353,7 +355,7 @@ def main():
         reward_funcs=reward_functions,
         enable_dynamic_sampling=args.enable_dynamic_sampling,
         dynamic_sampling_min_std=args.dynamic_sampling_min_std,
-        dynamic_sampling_max_attempts=args.dynamic_sampling_max_attempts,
+        dapo_max_rounds=args.dapo_max_rounds,
         dynamic_sampling_reward_name=args.dynamic_sampling_reward_name,
     )
 
