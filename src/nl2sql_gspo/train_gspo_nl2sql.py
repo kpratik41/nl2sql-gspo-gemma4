@@ -79,11 +79,6 @@ def parse_args(argv=None):
 
     parser.add_argument("--logging_steps", type=int, default=5)
     parser.add_argument("--save_steps", type=int, default=100)
-    parser.add_argument(
-        "--save_only_model",
-        action="store_true",
-        help="Save only HF model weights/config at checkpoints; skip optimizer, scheduler, scaler, and RNG state.",
-    )
     parser.add_argument("--eval_steps", type=int, default=100)
     parser.add_argument("--eval_on_start", action="store_true")
     parser.add_argument("--log_completions", action="store_true")
@@ -216,31 +211,6 @@ def filter_by_prompt_length(dataset, tokenizer, max_prompt_length: int, split_na
     if max_prompt_length is None or max_prompt_length <= 0:
         return dataset
 
-    def _tokenized_length(tokenized) -> int:
-        encodings = getattr(tokenized, "encodings", None)
-        if encodings:
-            return sum(_tokenized_length(encoding) for encoding in encodings)
-
-        if hasattr(tokenized, "num_tokens"):
-            return int(tokenized.num_tokens)
-
-        if hasattr(tokenized, "ids"):
-            return len(tokenized.ids)
-
-        try:
-            input_ids = tokenized["input_ids"]
-        except Exception:
-            input_ids = None
-        if input_ids is not None:
-            return _tokenized_length(input_ids)
-
-        if isinstance(tokenized, (list, tuple)):
-            if tokenized and all(hasattr(item, "num_tokens") for item in tokenized):
-                return sum(int(item.num_tokens) for item in tokenized)
-            return len(tokenized)
-
-        return len(tokenized)
-
     def _is_short(example):
         prompt = example.get("prompt") or example.get("messages")
         if not prompt:
@@ -254,7 +224,7 @@ def filter_by_prompt_length(dataset, tokenizer, max_prompt_length: int, split_na
                 prompt, tokenize=False, add_generation_prompt=True
             )
             ids = tokenizer.encode(text, add_special_tokens=False)
-        return _tokenized_length(ids) <= max_prompt_length
+        return len(ids) <= max_prompt_length
 
     before = len(dataset)
     filtered = dataset.filter(_is_short, desc=f"Filtering {split_name} by prompt length")
@@ -387,7 +357,6 @@ def main():
         logging_steps=args.logging_steps,
         logging_dir=logging_dir,
         save_steps=args.save_steps,
-        save_only_model=args.save_only_model,
         eval_strategy="steps" if eval_dataset is not None else "no",
         eval_steps=args.eval_steps if eval_dataset is not None else None,
         eval_on_start=args.eval_on_start if eval_dataset is not None else False,

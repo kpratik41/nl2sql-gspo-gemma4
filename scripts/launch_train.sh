@@ -48,8 +48,10 @@ LOGGING_DIR="${LOGGING_DIR:-outputs/gemma4_31b_gspo_bird/tb/${RUN_TIMESTAMP}}"
 TRAIN_LIMIT="${TRAIN_LIMIT:--1}"
 EVAL_LIMIT="${EVAL_LIMIT:-64}"
 MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-16000}"
+GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-16}"
 
-MODEL_NAME="google/gemma-4-31B-it"
+MODEL_NAME="${MODEL_NAME:-google/gemma-4-31B-it}"
+OUTPUT_DIR="${OUTPUT_DIR:-outputs/gemma4_31b_gspo_bird}"
 VLLM_GROUP_PORT="${VLLM_GROUP_PORT:-29600}"
 RESUME_ARGS=()
 
@@ -135,14 +137,14 @@ accelerate launch \
   --train_limit "${TRAIN_LIMIT}" \
   --eval_limit "${EVAL_LIMIT}" \
   --database_dir databases \
-  --output_dir outputs/gemma4_31b_gspo_bird \
+  --output_dir "${OUTPUT_DIR}" \
   --vllm_server_base_url http://127.0.0.1:8000 \
   --vllm_group_port "${VLLM_GROUP_PORT}" \
   --max_prompt_length "${MAX_PROMPT_LENGTH}" \
   --max_completion_length 4096 \
   --num_generations 16 \
   --per_device_train_batch_size 1 \
-  --gradient_accumulation_steps 16 \
+  --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS}" \
   --learning_rate 5e-7 \
   --num_train_epochs 1 \
   --reward_weights "${REWARD_WEIGHTS}" \

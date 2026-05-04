@@ -19,9 +19,11 @@ The launcher now trains from the generated schema-augmented training file and ev
 - `outputs/train-6601-schema-filtered.jsonl`
 - `outputs/dev-20251106-schema.jsonl`
 
-The current training launcher recipe uses `num_generations=16`, `gradient_accumulation_steps=16`, `max_prompt_length=16000`, and `max_completion_length=4096` with vLLM server-mode rollouts (vLLM `max_model_len=24576`). Override the prompt filter with `MAX_PROMPT_LENGTH` when launching. The default base model in the launchers is `google/gemma-4-31B-it`.
+The current training launcher recipe uses `num_generations=16`, `gradient_accumulation_steps=16`, `max_prompt_length=16000`, and `max_completion_length=4096` with vLLM server-mode rollouts (vLLM `max_model_len=24576`). Override the prompt filter with `MAX_PROMPT_LENGTH` and gradient accumulation with `GRADIENT_ACCUMULATION_STEPS` when launching. The default base model in the launchers is `google/gemma-4-31B-it`.
 
 The training launcher defaults to model-only checkpoints (`SAVE_ONLY_MODEL=1`), which writes HF model weights/config and trainer state but skips DeepSpeed optimizer/scheduler/scaler/RNG state. Set `SAVE_ONLY_MODEL=0` only when you need a full optimizer-state checkpoint for exact training resume.
+
+For model-only checkpoints, restart from the saved weights by setting `MODEL_NAME` to the checkpoint path and leaving `RESUME_FROM_CHECKPOINT` unset. Use a fresh `OUTPUT_DIR` if you want to preserve the previous checkpoint directory.
 
 The vLLM launcher goes through a local compatibility wrapper at `python -m nl2sql_gspo.vllm_serve_compat` so TRL `0.29.1` can still serve against local vLLM `0.19.x`. This wrapper strips the unsupported `truncate_prompt_tokens` field before constructing vLLM sampling parameters.
 
