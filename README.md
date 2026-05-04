@@ -19,11 +19,13 @@ The launcher now trains from the generated schema-augmented training file and ev
 - `outputs/train-6601-schema-filtered.jsonl`
 - `outputs/dev-20251106-schema.jsonl`
 
-The current training launcher recipe uses `num_generations=16`, `gradient_accumulation_steps=64`, `max_prompt_length=20000`, and `max_completion_length=4096` with vLLM server-mode rollouts (vLLM `max_model_len=24576`). The default base model in the launchers is `google/gemma-4-31B-it`.
+The current training launcher recipe uses `num_generations=16`, `gradient_accumulation_steps=16`, `max_prompt_length=16000`, and `max_completion_length=4096` with vLLM server-mode rollouts (vLLM `max_model_len=24576`). Override the prompt filter with `MAX_PROMPT_LENGTH` when launching. The default base model in the launchers is `google/gemma-4-31B-it`.
+
+The training launcher defaults to model-only checkpoints (`SAVE_ONLY_MODEL=1`), which writes HF model weights/config and trainer state but skips DeepSpeed optimizer/scheduler/scaler/RNG state. Set `SAVE_ONLY_MODEL=0` only when you need a full optimizer-state checkpoint for exact training resume.
 
 The vLLM launcher goes through a local compatibility wrapper at `python -m nl2sql_gspo.vllm_serve_compat` so TRL `0.29.1` can still serve against local vLLM `0.19.x`. This wrapper strips the unsupported `truncate_prompt_tokens` field before constructing vLLM sampling parameters.
 
-The trainer also runs dev evaluation before the first optimizer step via `eval_on_start`, which is useful for capturing a true pre-training baseline on the eval split.
+The training launcher skips dev evaluation before the first optimizer step by default. Set `EVAL_ON_START=1` to opt into the pre-training dev baseline.
 
 The reward stack is now binary-heavy with a single continuous shaping signal. `result_reward` uses the **official BIRD execution-accuracy semantics** (`set(predicted_rows) == set(gold_rows)` on raw rows, with a per-query timeout):
 
@@ -47,14 +49,14 @@ RESUME_FROM_CHECKPOINT=outputs/gemma4_31b_gspo_bird/checkpoint-100 bash scripts/
 
 The trainer is `DynamicSamplingGRPOTrainer` (a thin subclass of TRL's `GRPOTrainer`) and supports:
 
-- `--num_iterations` (PPO mu, default `2` in the launcher): multiple optimizer passes per generation buffer. Combined with the GSPO sequence-level importance ratio and the `epsilon=0.2 / epsilon_high=0.28` clip, this roughly doubles sample efficiency since rollouts dominate wall clock.
-- `--enable_dynamic_sampling` (default on in the launcher) + `--dynamic_sampling_max_attempts` (default `0`): true DAPO §3.2 oversample-and-replace. After each rollout call we re-run rollouts on a uniform number of replacement prompts (drawn from a shuffled backup pool of `train_dataset` indices, count synchronized across processes via `accelerator.gather`) for any groups whose reward std falls below `--dynamic_sampling_min_std`, and splice the new tensors into the original output dict. We retry up to `max_attempts` times, then mask any still-flat groups so they contribute zero gradient (`completion_mask = 0`). Setting `max_attempts=0` keeps the pure masking variant (faster, no extra rollouts).
-- `--mask_truncated_completions` (default on): zero `completion_mask` for rollouts that hit `max_completion_length`, as in DAPO overlong filtering.
+- `--num_iterations` (PPO mu, default `1` in the launcher): optimizer passes per generation buffer, with GSPO sequence-level importance sampling and `epsilon=0.2 / epsilon_high=0.28` clipping.
+- `--enable_dynamic_sampling` (default on in the launcher) + `--dapo_oversample_factor` (default `8`): DAPO §3.2 single-shot oversample-and-replace. Each rank generates `K * target_local_groups` prompt groups in one rollout round, drawing backup prompts from a shared shuffled tail queue over `train_dataset`, then keeps the first heterogeneous groups whose reward std passes `--dynamic_sampling_min_std`. Candidate rewards are filtered before policy old-logprob correction, so the expensive trainer-side logprob pass is run only for kept/padded groups. Any remaining slots are filled with non-heterogeneous groups whose `completion_mask` is zeroed. If every final slot is zero-masked, the trainer returns a zero policy loss after input preparation instead of running a full DeepSpeed forward/backward.
+- `--mask_truncated_completions` (default off in the launcher): optional DAPO overlong masking for rollouts that reach `max_completion_length` without EOS/PAD. The normal NL2SQL launcher path filters over-length prompts up front and does not apply completion-side overlong masking unless `MASK_TRUNCATED_COMPLETIONS=1` is set.
 - `--length_penalty_max` / `--length_penalty_buffer` (defaults `4096` / `512`): DAPO §3.4 Soft Overlong Punishment. Adds a 7th continuous reward function in `[-1, 0]`: 0 when length ≤ `L_max - L_cache`, linear ramp to -1 within the buffer, saturated at -1 beyond `L_max`. Length is measured in tokens via the trainer's tokenizer.
 - `--exec_timeout_s` (default `60`): per-query SQL execution timeout for both predicted and gold SQL during reward computation. More permissive than BIRD's 30s default to avoid penalising slow gold queries during training.
 - `--steps_per_generation`: optional override for generation cadence.
 
-Launcher env vars: `NUM_ITERATIONS`, `ENABLE_DYNAMIC_SAMPLING` (`0`/`1`), `DYNAMIC_SAMPLING_MIN_STD`, `DYNAMIC_SAMPLING_MAX_ATTEMPTS`, `MASK_TRUNCATED_COMPLETIONS` (`0`/`1`), `STEPS_PER_GENERATION`, `EXEC_TIMEOUT_S`, `LENGTH_PENALTY_MAX`, `LENGTH_PENALTY_BUFFER`, `REWARD_WEIGHTS`, `SAVE_STEPS`, `EVAL_STEPS`, `LOGGING_STEPS`, `EVAL_LIMIT`. Logging defaults: `SAVE_STEPS=25`, `EVAL_STEPS=25`, `LOGGING_STEPS=5`, `EVAL_LIMIT=256`. Trainer logs `dynamic_sampling/zero_std_group_fraction` and `dynamic_sampling/resample_attempts` to W&B/TensorBoard alongside the standard TRL metrics (per-reward mean/std, KL, entropy, clip ratios, completion length).
+Launcher env vars: `NUM_ITERATIONS`, `ENABLE_DYNAMIC_SAMPLING` (`0`/`1`), `DYNAMIC_SAMPLING_MIN_STD`, `DAPO_MAX_ROUNDS`, `DAPO_OVERSAMPLE_FACTOR`, `DYNAMIC_SAMPLING_REWARD_NAME`, `MASK_TRUNCATED_COMPLETIONS` (`0`/`1`), `STEPS_PER_GENERATION`, `EVAL_ON_START` (`0`/`1`), `EXEC_TIMEOUT_S`, `LENGTH_PENALTY_MAX`, `LENGTH_PENALTY_BUFFER`, `REWARD_WEIGHTS`, `VLLM_GROUP_PORT`, `SAVE_STEPS`, `EVAL_STEPS`, `LOGGING_STEPS`, `LOG_COMPLETIONS`, `NUM_COMPLETIONS_TO_PRINT`, `EVAL_LIMIT`. Logging defaults: `SAVE_STEPS=25`, `EVAL_STEPS=25`, `LOGGING_STEPS=5`, `LOG_COMPLETIONS=0`, `EVAL_LIMIT=64`, `MASK_TRUNCATED_COMPLETIONS=0`; `DAPO_OVERSAMPLE_FACTOR` defaults to `8`. `VLLM_GROUP_PORT` defaults to `29600` to avoid OS ephemeral-port collisions during vLLM weight updates.
 
 To limit training or evaluation to a subset of rows for smoke runs:
 
@@ -115,15 +117,15 @@ The local EX scorer intentionally follows the official BIRD dev evaluation seman
 
 ## Monitoring
 
-The trainer logs online RL metrics such as reward means, reward std, KL, entropy, clipping ratios, completion lengths, and the trainer loss. With `--eval_file` enabled, evaluation runs once before training starts and then every `eval_steps`, emitting `eval_*` metrics through the same reporting backend.
+The trainer logs online RL metrics such as reward means, reward std, DAPO candidate heterogeneity counts, selected/padded group counts, KL, entropy, clipping ratios, completion lengths, and the trainer loss. With `--eval_file` enabled, evaluation runs every `eval_steps` and emits `eval_*` metrics through the same reporting backend. Set `EVAL_ON_START=1` only when you want an additional pre-training baseline. Prompt/completion sample tables are disabled in the terminal by default; set `LOG_COMPLETIONS=1` to print them.
 
-The launcher defaults to Weights & Biases because it exports `WANDB_PROJECT`. On AWS you can also enable TensorBoard event files by setting `REPORT_TO=wandb,tensorboard` before launching training.
+The launcher defaults to Weights & Biases because it exports `WANDB_PROJECT` and defaults `REPORT_TO=wandb`. Console logs, W&B run names, and TensorBoard logging directories are timestamped by default. On AWS you can also enable TensorBoard event files by setting `REPORT_TO=wandb,tensorboard` before launching training.
 
 ```bash
 REPORT_TO=wandb,tensorboard RUN_NAME=nl2sql-gspo-aws bash scripts/launch_train.sh
 ```
 
-TensorBoard logs are written under `outputs/gemma4_31b_gspo_bird/tb` by default and can be forwarded from a head node or synced to shared storage for remote monitoring.
+Terminal logs are written under `logs/train_<timestamp>.log` and `logs/vllm_<timestamp>.log`. TensorBoard logs are written under `outputs/gemma4_31b_gspo_bird/tb/<timestamp>` by default and can be forwarded from a head node or synced to shared storage for remote monitoring.
 
 ## Data Generation
 

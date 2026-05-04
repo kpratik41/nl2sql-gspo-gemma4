@@ -29,6 +29,13 @@ export TORCH_NCCL_TIMEOUT_MS="${TORCH_NCCL_TIMEOUT_MS:-3600000}"
 # Disable async-error tear-downs so that one slow rank doesn't take the whole job.
 export TORCH_NCCL_ASYNC_ERROR_HANDLING="${TORCH_NCCL_ASYNC_ERROR_HANDLING:-0}"
 
+RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d_%H%M%S)}"
+LOG_DIR="${LOG_DIR:-logs}"
+mkdir -p "${LOG_DIR}"
+TRAIN_LOG_FILE="${TRAIN_LOG_FILE:-${LOG_DIR}/train_${RUN_TIMESTAMP}.log}"
+echo "[launch_train] writing launcher log to ${TRAIN_LOG_FILE}"
+exec > >(tee -a "${TRAIN_LOG_FILE}") 2>&1
+
 # DeepSpeed JIT-compiles ops at import time; needs CUDA_HOME with nvcc.
 if [[ -z "${CUDA_HOME:-}" && -n "${CONDA_PREFIX:-}" && -x "${CONDA_PREFIX}/bin/nvcc" ]]; then
   export CUDA_HOME="${CONDA_PREFIX}"
@@ -36,12 +43,14 @@ fi
 
 export WANDB_PROJECT=gemma4-31b-bird-gspo
 REPORT_TO="${REPORT_TO:-wandb}"
-RUN_NAME="${RUN_NAME:-gemma4-31b-gspo-bird}"
-LOGGING_DIR="${LOGGING_DIR:-outputs/gemma4_31b_gspo_bird/tb}"
+RUN_NAME="${RUN_NAME:-gemma4-31b-gspo-bird-${RUN_TIMESTAMP}}"
+LOGGING_DIR="${LOGGING_DIR:-outputs/gemma4_31b_gspo_bird/tb/${RUN_TIMESTAMP}}"
 TRAIN_LIMIT="${TRAIN_LIMIT:--1}"
 EVAL_LIMIT="${EVAL_LIMIT:-64}"
+MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-16000}"
 
 MODEL_NAME="google/gemma-4-31B-it"
+VLLM_GROUP_PORT="${VLLM_GROUP_PORT:-29600}"
 RESUME_ARGS=()
 
 if [[ -n "${RESUME_FROM_CHECKPOINT:-}" ]]; then
@@ -50,13 +59,26 @@ fi
 
 # Logging cadence.
 SAVE_STEPS="${SAVE_STEPS:-25}"
+SAVE_ONLY_MODEL="${SAVE_ONLY_MODEL:-1}"
 EVAL_STEPS="${EVAL_STEPS:-25}"
 LOGGING_STEPS="${LOGGING_STEPS:-5}"
-# Set EVAL_ON_START=0 to skip the pre-training dev baseline (saves ~10min on first step).
-if [[ "${EVAL_ON_START:-1}" == "1" ]]; then
+LOG_COMPLETIONS="${LOG_COMPLETIONS:-0}"
+NUM_COMPLETIONS_TO_PRINT="${NUM_COMPLETIONS_TO_PRINT:-2}"
+# Set EVAL_ON_START=1 to run the pre-training dev baseline.
+if [[ "${EVAL_ON_START:-0}" == "1" ]]; then
   EVAL_ON_START_ARG="--eval_on_start"
 else
   EVAL_ON_START_ARG=""
+fi
+if [[ "${LOG_COMPLETIONS}" == "1" ]]; then
+  LOG_COMPLETIONS_ARGS=(--log_completions --num_completions_to_print "${NUM_COMPLETIONS_TO_PRINT}")
+else
+  LOG_COMPLETIONS_ARGS=()
+fi
+if [[ "${SAVE_ONLY_MODEL}" == "1" ]]; then
+  SAVE_ONLY_MODEL_ARGS=(--save_only_model)
+else
+  SAVE_ONLY_MODEL_ARGS=()
 fi
 
 # DAPO oversample-and-replace controls. Each optimizer step keeps
@@ -68,12 +90,12 @@ NUM_ITERATIONS="${NUM_ITERATIONS:-1}"
 ENABLE_DYNAMIC_SAMPLING="${ENABLE_DYNAMIC_SAMPLING:-1}"
 DYNAMIC_SAMPLING_MIN_STD="${DYNAMIC_SAMPLING_MIN_STD:-1e-6}"
 DAPO_MAX_ROUNDS="${DAPO_MAX_ROUNDS:-1}"  # max rollout rounds per step (1 = no resampling)
-DAPO_OVERSAMPLE_FACTOR="${DAPO_OVERSAMPLE_FACTOR:-4}"  # K: single-shot oversample multiplier (>1 enables single-shot path)
+DAPO_OVERSAMPLE_FACTOR="${DAPO_OVERSAMPLE_FACTOR:-16}"  # K: single-shot oversample multiplier (>1 enables single-shot path)
 # Optional: judge group heterogeneity by a single reward function (e.g.
 # result_reward) instead of the aggregated/normalized advantages. Leave
 # unset to use total advantages.
 DYNAMIC_SAMPLING_REWARD_NAME="${DYNAMIC_SAMPLING_REWARD_NAME:-result_reward}"
-MASK_TRUNCATED_COMPLETIONS="${MASK_TRUNCATED_COMPLETIONS:-1}"
+MASK_TRUNCATED_COMPLETIONS="${MASK_TRUNCATED_COMPLETIONS:-0}"
 
 # Reward shaping.
 EXEC_TIMEOUT_S="${EXEC_TIMEOUT_S:-60}"
@@ -115,7 +137,8 @@ accelerate launch \
   --database_dir databases \
   --output_dir outputs/gemma4_31b_gspo_bird \
   --vllm_server_base_url http://127.0.0.1:8000 \
-  --max_prompt_length 20000 \
+  --vllm_group_port "${VLLM_GROUP_PORT}" \
+  --max_prompt_length "${MAX_PROMPT_LENGTH}" \
   --max_completion_length 4096 \
   --num_generations 16 \
   --per_device_train_batch_size 1 \
@@ -129,8 +152,10 @@ accelerate launch \
   --deepspeed configs/ds_zero3_bf16.json \
   --logging_steps "${LOGGING_STEPS}" \
   --save_steps "${SAVE_STEPS}" \
+  "${SAVE_ONLY_MODEL_ARGS[@]}" \
   --eval_steps "${EVAL_STEPS}" \
   ${EVAL_ON_START_ARG:+$EVAL_ON_START_ARG} \
+  "${LOG_COMPLETIONS_ARGS[@]}" \
   --loss_type dapo \
   --scale_rewards batch \
   --beta 0.0 \

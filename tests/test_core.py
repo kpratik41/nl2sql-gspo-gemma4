@@ -14,8 +14,9 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from nl2sql_gspo.data import normalize_record
+from nl2sql_gspo.dynamic_sampling_trainer import _is_truncated_completion
 from nl2sql_gspo.rewards import make_nl2sql_rewards
-from nl2sql_gspo.train_gspo_nl2sql import parse_args
+from nl2sql_gspo.train_gspo_nl2sql import filter_by_prompt_length, parse_args
 from nl2sql_gspo.sql_utils import (
     _DB_CONNECTIONS,
     _BIRD_GOLD_CACHE,
@@ -103,6 +104,43 @@ class SqlUtilsTests(unittest.TestCase):
 
 
 class TrainScriptTests(unittest.TestCase):
+    def test_prompt_filter_counts_tokenizer_encoding_objects(self):
+        from datasets import Dataset
+
+        class FakeEncoding:
+            def __init__(self, token_count):
+                self.ids = list(range(token_count))
+
+        class FakeBatchEncoding:
+            def __init__(self, token_count):
+                self.encodings = [FakeEncoding(token_count)]
+
+            def __len__(self):
+                return 2
+
+        class FakeTokenizer:
+            def apply_chat_template(self, prompt, tokenize=True, add_generation_prompt=True):
+                return FakeBatchEncoding(prompt[0]["tokens"])
+
+        dataset = Dataset.from_list(
+            [
+                {"prompt": [{"role": "user", "content": "short", "tokens": 10}]},
+                {"prompt": [{"role": "user", "content": "long", "tokens": 30}]},
+            ]
+        )
+
+        filtered = filter_by_prompt_length(dataset, FakeTokenizer(), 20, "test")
+
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0]["prompt"][0]["content"], "short")
+
+    def test_truncation_mask_only_flags_completions_at_max_length(self):
+        eos_and_pad = [1, 0]
+
+        self.assertFalse(_is_truncated_completion([10, 11, 12], eos_and_pad, 4096))
+        self.assertFalse(_is_truncated_completion([10, 11, 1], eos_and_pad, 3))
+        self.assertTrue(_is_truncated_completion([10, 11, 12], eos_and_pad, 3))
+
     def test_parse_args_accepts_resume_checkpoint_and_limits(self):
         args = parse_args(
             [
@@ -121,6 +159,7 @@ class TrainScriptTests(unittest.TestCase):
                 "--output_dir",
                 "outputs/run",
                 "--eval_on_start",
+                "--save_only_model",
                 "--resume_from_checkpoint",
                 "outputs/run/checkpoint-100",
                 "--num_iterations",
@@ -142,6 +181,7 @@ class TrainScriptTests(unittest.TestCase):
         self.assertEqual(args.train_limit, 123)
         self.assertEqual(args.eval_limit, 45)
         self.assertTrue(args.eval_on_start)
+        self.assertTrue(args.save_only_model)
         self.assertEqual(args.num_iterations, 2)
         self.assertTrue(args.enable_dynamic_sampling)
         self.assertTrue(args.mask_truncated_completions)
@@ -452,25 +492,43 @@ class DynamicSamplingTrainerHelperTests(unittest.TestCase):
         except Exception as exc:  # ModuleNotFoundError or torch import error
             raise unittest.SkipTest(f"TRL/torch not available: {exc}")
 
-    def _make_bare_trainer(self, num_generations=4, min_std=1e-6, pad_token_id=0):
+    def _make_bare_trainer(
+        self,
+        num_generations=4,
+        min_std=1e-6,
+        pad_token_id=0,
+        process_index=0,
+        num_processes=1,
+    ):
         import torch
         from nl2sql_gspo.dynamic_sampling_trainer import DynamicSamplingGRPOTrainer
 
         trainer = object.__new__(DynamicSamplingGRPOTrainer)
         trainer.num_generations = num_generations
         trainer.dynamic_sampling_min_std = min_std
+        trainer.dynamic_sampling_reward_name = None
+        trainer._dyn_reward_idx = None
         trainer.pad_token_id = pad_token_id
         trainer.train_dataset = None
         trainer._dyn_pool_indices = []
         trainer._dyn_pool_cursor = 0
-        trainer._dyn_pool_seed_step = -1
+        trainer._dyn_pool_pass = 0
+
+        class _FakeArgs:
+            seed = 0
+
+        trainer.args = _FakeArgs()
 
         # Minimal stand-in for self.accelerator with a fixed process_index.
-        class _FakeAccel:
-            process_index = 0
-            is_main_process = True
-
-        trainer.accelerator = _FakeAccel()
+        trainer.accelerator = type(
+            "_FakeAccel",
+            (),
+            {
+                "process_index": process_index,
+                "num_processes": num_processes,
+                "is_main_process": True,
+            },
+        )()
         return trainer, torch
 
     def test_pad_to_width_right_pads_with_value(self):
@@ -561,30 +619,121 @@ class DynamicSamplingTrainerHelperTests(unittest.TestCase):
         for got, want in zip(final["advantages"].tolist(), [0.1, -0.1, 0.5, -0.5]):
             self.assertAlmostEqual(got, want, places=5)
 
-    def test_draw_replacement_inputs_pulls_from_train_dataset(self):
+    def test_draw_replacement_inputs_uses_shared_tail_queue(self):
         trainer, _ = self._make_bare_trainer()
-
-        class _FakeState:
-            global_step = 0
-
-        trainer.state = _FakeState()
         trainer.train_dataset = [{"id": i} for i in range(8)]
+        trainer._dyn_pool_indices = list(range(8))
+        trainer._dyn_pool_cursor = 8
 
         first = trainer._draw_replacement_inputs(3)
         second = trainer._draw_replacement_inputs(3)
-        self.assertEqual(len(first), 3)
-        self.assertEqual(len(second), 3)
-        # Seeded shuffle of range(8) gives a unique permutation for
-        # (global_step=0, process_index=0); the two contiguous slices
-        # therefore should not overlap.
+
+        self.assertEqual([r["id"] for r in first], [7, 6, 5])
+        self.assertEqual([r["id"] for r in second], [4, 3, 2])
+        self.assertEqual(trainer._dyn_pool_cursor, 2)
+
+    def test_draw_replacement_inputs_skips_other_ranks_consumed_tail_slices(self):
+        trainer, _ = self._make_bare_trainer(process_index=0, num_processes=6)
+        trainer.train_dataset = [{"id": i} for i in range(20)]
+        trainer._dyn_pool_indices = list(range(20))
+        trainer._dyn_pool_cursor = 20
+
+        first = trainer._draw_replacement_inputs(2)
+        second = trainer._draw_replacement_inputs(2)
+
+        self.assertEqual([r["id"] for r in first], [19, 18])
+        self.assertEqual([r["id"] for r in second], [7, 6])
+        self.assertEqual(trainer._dyn_pool_cursor, 16)
+
+        rank1, _ = self._make_bare_trainer(process_index=1, num_processes=6)
+        rank1.train_dataset = [{"id": i} for i in range(20)]
+        rank1._dyn_pool_indices = list(range(20))
+        rank1._dyn_pool_cursor = 20
         self.assertEqual(
-            sorted(r["id"] for r in first + second),
-            sorted(set(r["id"] for r in first + second)),
+            [r["id"] for r in rank1._draw_replacement_inputs(2)],
+            [17, 16],
         )
+
+    def test_draw_replacement_inputs_wraps_only_after_tail_exhaustion(self):
+        trainer, _ = self._make_bare_trainer()
+        trainer.train_dataset = [{"id": i} for i in range(4)]
+        trainer._dyn_pool_indices = list(range(4))
+        trainer._dyn_pool_cursor = 2
+        trainer._dyn_pool_pass = 99
+
+        out = trainer._draw_replacement_inputs(3)
+
+        self.assertEqual([r["id"] for r in out[:2]], [1, 0])
+        self.assertEqual(len(out), 3)
+        self.assertEqual(trainer._dyn_pool_pass, 100)
 
     def test_draw_replacement_inputs_returns_empty_when_no_dataset(self):
         trainer, _ = self._make_bare_trainer()
         self.assertEqual(trainer._draw_replacement_inputs(5), [])
+
+    def test_add_policy_logps_skips_all_zero_policy_batches(self):
+        trainer, torch = self._make_bare_trainer()
+        trainer.use_vllm = True
+        trainer.vllm_importance_sampling_correction = True
+        trainer._get_per_token_logps_and_entropies = mock.Mock(
+            side_effect=AssertionError("policy logps should be skipped")
+        )
+        output = {
+            "completion_mask": torch.zeros(4, 3, dtype=torch.long),
+            "_skip_policy_loss": torch.ones(4, dtype=torch.bool),
+        }
+
+        returned = trainer._add_policy_logps_for_kept(output)
+
+        self.assertIs(returned, output)
+        self.assertEqual(returned["importance_sampling_ratio"].tolist(), [[1.0] * 3] * 4)
+        trainer._get_per_token_logps_and_entropies.assert_not_called()
+
+    def test_iterative_dapo_uses_candidate_generation_before_policy_logps(self):
+        from collections import defaultdict
+
+        trainer, torch = self._make_bare_trainer(num_generations=2)
+        trainer.enable_dynamic_sampling = True
+        trainer.dapo_oversample_factor = 1
+        trainer.dapo_max_rounds = 1
+        trainer.model = type("_FakeModel", (), {"training": True})()
+        trainer.use_vllm = True
+        trainer.vllm_importance_sampling_correction = True
+        trainer._metrics = {"train": defaultdict(list)}
+        trainer.state = type("_FakeState", (), {"global_step": 0})()
+
+        class _FakeAccel:
+            process_index = 0
+            num_processes = 1
+            is_main_process = False
+            device = torch.device("cpu")
+
+            @staticmethod
+            def gather(value):
+                return value
+
+        trainer.accelerator = _FakeAccel()
+        trainer._get_per_token_logps_and_entropies = mock.Mock(
+            side_effect=AssertionError("policy logps should be skipped for all-padded iterative batches")
+        )
+        round_out = {
+            "prompt_ids": torch.tensor([[1, 1], [1, 1]]),
+            "prompt_mask": torch.ones(2, 2, dtype=torch.long),
+            "completion_ids": torch.tensor([[2, 3, 0], [2, 4, 0]]),
+            "completion_mask": torch.ones(2, 3, dtype=torch.long),
+            "advantages": torch.zeros(2),
+            "sampling_per_token_logps": torch.zeros(2, 3),
+            "num_items_in_batch": torch.tensor(6),
+        }
+        trainer._generate_and_score_candidates_no_policy_logps = mock.Mock(return_value=round_out)
+
+        out = trainer._generate_and_score_completions([{"prompt": []}, {"prompt": []}])
+
+        trainer._generate_and_score_candidates_no_policy_logps.assert_called_once()
+        trainer._get_per_token_logps_and_entropies.assert_not_called()
+        self.assertEqual(out["completion_mask"].sum().item(), 0)
+        self.assertTrue(out["_skip_policy_loss"].all().item())
+        self.assertEqual(out["importance_sampling_ratio"].tolist(), [[1.0] * 3] * 2)
 
 
 class TrainScriptDefaultsTests(unittest.TestCase):

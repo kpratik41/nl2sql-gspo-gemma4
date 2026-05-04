@@ -15,6 +15,13 @@ export CUDA_VISIBLE_DEVICES=6,7
 export VLLM_ATTENTION_BACKEND=FLASH_ATTN
 export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
 
+RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d_%H%M%S)}"
+LOG_DIR="${LOG_DIR:-logs}"
+mkdir -p "${LOG_DIR}"
+VLLM_LOG_FILE="${VLLM_LOG_FILE:-${LOG_DIR}/vllm_${RUN_TIMESTAMP}.log}"
+echo "[launch_vllm] writing launcher log to ${VLLM_LOG_FILE}"
+exec > >(tee -a "${VLLM_LOG_FILE}") 2>&1
+
 MODEL_NAME="google/gemma-4-31B-it"
 
 python -m nl2sql_gspo.vllm_serve_compat \
