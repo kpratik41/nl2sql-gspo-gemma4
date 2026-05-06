@@ -79,6 +79,7 @@ def parse_args(argv=None):
 
     parser.add_argument("--logging_steps", type=int, default=5)
     parser.add_argument("--save_steps", type=int, default=100)
+    parser.add_argument("--save_only_model", action="store_true")
     parser.add_argument("--eval_steps", type=int, default=100)
     parser.add_argument("--eval_on_start", action="store_true")
     parser.add_argument("--log_completions", action="store_true")
@@ -164,6 +165,12 @@ def parse_args(argv=None):
         help="Per-query SQL execution timeout for predicted and gold SQL during reward computation.",
     )
     parser.add_argument(
+        "--reward_workers",
+        type=int,
+        default=1,
+        help="Number of thread workers per rank for DB-backed reward functions such as result_reward.",
+    )
+    parser.add_argument(
         "--length_penalty_max",
         type=int,
         default=4096,
@@ -211,6 +218,17 @@ def filter_by_prompt_length(dataset, tokenizer, max_prompt_length: int, split_na
     if max_prompt_length is None or max_prompt_length <= 0:
         return dataset
 
+    def _token_count(tokenized):
+        if hasattr(tokenized, "input_ids"):
+            return len(tokenized.input_ids)
+        if isinstance(tokenized, dict) and "input_ids" in tokenized:
+            return len(tokenized["input_ids"])
+        if hasattr(tokenized, "ids"):
+            return len(tokenized.ids)
+        if hasattr(tokenized, "encodings") and tokenized.encodings:
+            return len(tokenized.encodings[0].ids)
+        return len(tokenized)
+
     def _is_short(example):
         prompt = example.get("prompt") or example.get("messages")
         if not prompt:
@@ -224,7 +242,7 @@ def filter_by_prompt_length(dataset, tokenizer, max_prompt_length: int, split_na
                 prompt, tokenize=False, add_generation_prompt=True
             )
             ids = tokenizer.encode(text, add_special_tokens=False)
-        return len(ids) <= max_prompt_length
+        return _token_count(ids) <= max_prompt_length
 
     before = len(dataset)
     filtered = dataset.filter(_is_short, desc=f"Filtering {split_name} by prompt length")
@@ -300,6 +318,7 @@ def main():
         database_dir=args.database_dir,
         exec_timeout_s=args.exec_timeout_s,
         gold_timeout_s=args.exec_timeout_s,
+        reward_workers=args.reward_workers,
         tokenizer=tokenizer,
         length_penalty_max=args.length_penalty_max,
         length_penalty_buffer=args.length_penalty_buffer,
@@ -357,6 +376,7 @@ def main():
         logging_steps=args.logging_steps,
         logging_dir=logging_dir,
         save_steps=args.save_steps,
+        save_only_model=args.save_only_model,
         eval_strategy="steps" if eval_dataset is not None else "no",
         eval_steps=args.eval_steps if eval_dataset is not None else None,
         eval_on_start=args.eval_on_start if eval_dataset is not None else False,

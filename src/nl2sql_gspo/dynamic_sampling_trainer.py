@@ -74,7 +74,7 @@ def _is_truncated_completion(ids: List[int], eos_and_pad: List[int], max_complet
 
 
 # Pad value/side for known 2D output keys. ``prompt_ids`` and
-# ``completion_ids`` use ``self.pad_token_id`` so they're handled inline.
+# ``completion_ids`` use the trainer tokenizer pad token, so they're handled inline.
 _PAD_SPEC: Dict[str, tuple] = {
     "prompt_mask": (0, "left"),
     "completion_mask": (0, "right"),
@@ -304,9 +304,9 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 continue
             if v0.dim() == 2:
                 if k == "prompt_ids":
-                    pad_val, side = self.pad_token_id, "left"
+                    pad_val, side = self._tokenizer.pad_token_id, "left"
                 elif k == "completion_ids":
-                    pad_val, side = self.pad_token_id, "right"
+                    pad_val, side = self._tokenizer.pad_token_id, "right"
                 else:
                     pad_val, side = _PAD_SPEC.get(k, (0, "right"))
                 max_w = max(t.size(1) for t in vals)
@@ -365,6 +365,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 for prompt, image_list in zip(prompts, images, strict=True)
             ]
 
+        generated = self._generate(prompts)
         (
             prompt_ids_list,
             completion_ids_list,
@@ -373,15 +374,16 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             num_items_in_batch,
             sampling_per_token_logps_list,
             extra_fields,
-        ) = self._generate(prompts)
+            *_,
+        ) = generated
 
         prompt_ids = [torch.tensor(ids, device=device) for ids in prompt_ids_list]
         prompt_mask = [torch.ones_like(ids, dtype=torch.long) for ids in prompt_ids]
-        prompt_ids = pad(prompt_ids, padding_value=self.pad_token_id, padding_side="left")
+        prompt_ids = pad(prompt_ids, padding_value=self._tokenizer.pad_token_id, padding_side="left")
         prompt_mask = pad(prompt_mask, padding_value=0, padding_side="left")
         completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids_list]
         completion_mask = [torch.ones_like(ids, dtype=torch.long) for ids in completion_ids]
-        completion_ids = pad(completion_ids, padding_value=self.pad_token_id, padding_side="right")
+        completion_ids = pad(completion_ids, padding_value=self._tokenizer.pad_token_id, padding_side="right")
         completion_mask = pad(completion_mask, padding_value=0, padding_side="right")
         if sampling_per_token_logps_list is not None:
             sampling_per_token_logps = [torch.tensor(logps, device=device) for logps in sampling_per_token_logps_list]
@@ -395,7 +397,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             tool_mask = None
 
         if self.mask_truncated_completions:
-            eos_and_pad = [self.eos_token_id, self.pad_token_id]
+            eos_and_pad = [self._tokenizer.eos_token_id, self._tokenizer.pad_token_id]
             is_truncated = torch.tensor(
                 [
                     _is_truncated_completion(ids, eos_and_pad, self.max_completion_length)

@@ -1,4 +1,6 @@
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
 from nl2sql_gspo.sql_utils import (
@@ -47,6 +49,7 @@ def make_nl2sql_rewards(
     database_dir: str,
     exec_timeout_s: float = 60.0,
     gold_timeout_s: float = 60.0,
+    reward_workers: int = 1,
     tokenizer=None,
     length_penalty_max: int = 4096,
     length_penalty_buffer: int = 512,
@@ -78,10 +81,20 @@ def make_nl2sql_rewards(
     # FIFO via dict insertion order.
     _exec_cache: dict = {}
     _EXEC_CACHE_MAX = 8192
+    _exec_cache_lock = threading.Lock()
+
+    reward_workers = max(int(reward_workers or 1), 1)
+
+    def _parallel_map(fn, items):
+        if reward_workers <= 1 or len(items) <= 1:
+            return [fn(item) for item in items]
+        with ThreadPoolExecutor(max_workers=reward_workers) as executor:
+            return list(executor.map(fn, items))
 
     def _cached_bird_execute(sql: str, db_id: str):
         key = (db_id, sql)
-        cached = _exec_cache.get(key)
+        with _exec_cache_lock:
+            cached = _exec_cache.get(key)
         if cached is not None:
             return cached
         ok, rows, err = bird_execute_sql(
@@ -90,14 +103,41 @@ def make_nl2sql_rewards(
             database_dir=database_dir,
             timeout_s=exec_timeout_s,
         )
-        if len(_exec_cache) >= _EXEC_CACHE_MAX:
-            # Drop oldest entry (FIFO).
-            try:
-                _exec_cache.pop(next(iter(_exec_cache)))
-            except StopIteration:
-                pass
-        _exec_cache[key] = (ok, rows, err)
+        with _exec_cache_lock:
+            if len(_exec_cache) >= _EXEC_CACHE_MAX:
+                # Drop oldest entry (FIFO).
+                try:
+                    _exec_cache.pop(next(iter(_exec_cache)))
+                except StopIteration:
+                    pass
+            _exec_cache[key] = (ok, rows, err)
         return ok, rows, err
+
+    def _execution_reward_one(item) -> float:
+        completion, current_db_id = item
+        sql = extract_sql(completion)
+        ok, _, _ = _cached_bird_execute(sql, current_db_id)
+        return 1.0 if ok else 0.0
+
+    def _result_reward_one(item) -> float:
+        completion, current_db_id, current_gold_sql = item
+        pred_sql = extract_sql(completion)
+        gold_sql_text = extract_sql(current_gold_sql)
+
+        pred_ok, pred_rows, _ = _cached_bird_execute(pred_sql, current_db_id)
+        gold_ok, gold_row_set, _ = bird_get_gold_rows(
+            gold_sql=gold_sql_text,
+            db_id=current_db_id,
+            database_dir=database_dir,
+            timeout_s=gold_timeout_s,
+        )
+        return 1.0 if pred_ok and gold_ok and bird_result_match(pred_rows, gold_row_set) else 0.0
+
+    def _nonnull_reward_one(item) -> float:
+        completion, current_db_id = item
+        sql = extract_sql(completion)
+        ok, rows, _ = _cached_bird_execute(sql, current_db_id)
+        return 1.0 if ok and _has_any_nonnull(rows) else 0.0
 
     def format_reward(completions, **kwargs) -> List[float]:
         rewards = []
@@ -108,34 +148,13 @@ def make_nl2sql_rewards(
 
     def execution_reward(completions, db_id=None, **kwargs) -> List[float]:
         db_ids = db_id or kwargs.get("db_ids") or [""] * len(completions)
-        rewards = []
-        for completion, current_db_id in zip(completions, db_ids):
-            sql = extract_sql(completion)
-            ok, _, _ = _cached_bird_execute(sql, current_db_id)
-            rewards.append(1.0 if ok else 0.0)
-        return rewards
+        return _parallel_map(_execution_reward_one, list(zip(completions, db_ids)))
 
     def result_reward(completions, db_id=None, gold_sql=None, **kwargs) -> List[float]:
         db_ids = db_id or kwargs.get("db_ids") or [""] * len(completions)
         gold_sqls = gold_sql or kwargs.get("query") or kwargs.get("sql") or [""] * len(completions)
-        rewards = []
-        for completion, current_db_id, current_gold_sql in zip(completions, db_ids, gold_sqls):
-            pred_sql = extract_sql(completion)
-            gold_sql_text = extract_sql(current_gold_sql)
-
-            pred_ok, pred_rows, _ = _cached_bird_execute(pred_sql, current_db_id)
-            gold_ok, gold_row_set, _ = bird_get_gold_rows(
-                gold_sql=gold_sql_text,
-                db_id=current_db_id,
-                database_dir=database_dir,
-                timeout_s=gold_timeout_s,
-            )
-
-            if pred_ok and gold_ok and bird_result_match(pred_rows, gold_row_set):
-                rewards.append(1.0)
-            else:
-                rewards.append(0.0)
-        return rewards
+        items = list(zip(completions, db_ids, gold_sqls))
+        return _parallel_map(_result_reward_one, items)
 
     def table_linking_reward(completions, gold_sql=None, **kwargs) -> List[float]:
         gold_sqls = gold_sql or kwargs.get("query") or kwargs.get("sql") or [""] * len(completions)
@@ -163,12 +182,7 @@ def make_nl2sql_rewards(
 
     def nonnull_reward(completions, db_id=None, **kwargs) -> List[float]:
         db_ids = db_id or kwargs.get("db_ids") or [""] * len(completions)
-        rewards = []
-        for completion, current_db_id in zip(completions, db_ids):
-            sql = extract_sql(completion)
-            ok, rows, _ = _cached_bird_execute(sql, current_db_id)
-            rewards.append(1.0 if ok and _has_any_nonnull(rows) else 0.0)
-        return rewards
+        return _parallel_map(_nonnull_reward_one, list(zip(completions, db_ids)))
 
     def length_penalty_reward(completions, **kwargs) -> List[float]:
         """Soft Overlong Punishment (DAPO, Eq. 13).

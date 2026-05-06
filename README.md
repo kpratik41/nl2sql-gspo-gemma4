@@ -17,15 +17,17 @@ bash scripts/launch_train.sh
 The launcher now trains from the generated schema-augmented training file and evaluates on the generated dev schema file:
 
 - `outputs/train-6601-schema-filtered.jsonl`
-- `outputs/dev-20251106-schema.jsonl`
+- `outputs/dev-20251106-schema-256.jsonl`
 
-The current training launcher recipe uses `num_generations=16`, `gradient_accumulation_steps=16`, `max_prompt_length=16000`, and `max_completion_length=4096` with vLLM server-mode rollouts (vLLM `max_model_len=24576`). Override the prompt filter with `MAX_PROMPT_LENGTH` and gradient accumulation with `GRADIENT_ACCUMULATION_STEPS` when launching. The default base model in the launchers is `google/gemma-4-31B-it`.
+The current training launcher recipe uses `num_generations=16`, `gradient_accumulation_steps=16`, `max_prompt_length=16000`, and `max_completion_length=4096` with vLLM server-mode rollouts (vLLM `max_model_len=24576`). Override the prompt filter with `MAX_PROMPT_LENGTH`, gradient accumulation with `GRADIENT_ACCUMULATION_STEPS`, short smoke-run length with `MAX_STEPS`, and DB-backed reward parallelism with `REWARD_WORKERS` when launching. The default base model in the launchers is `google/gemma-4-31B-it`, and the default eval file is `outputs/dev-20251106-schema-256.jsonl`.
 
 The training launcher defaults to model-only checkpoints (`SAVE_ONLY_MODEL=1`), which writes HF model weights/config and trainer state but skips DeepSpeed optimizer/scheduler/scaler/RNG state. Set `SAVE_ONLY_MODEL=0` only when you need a full optimizer-state checkpoint for exact training resume.
 
 For model-only checkpoints, restart from the saved weights by setting `MODEL_NAME` to the checkpoint path and leaving `RESUME_FROM_CHECKPOINT` unset. Use a fresh `OUTPUT_DIR` if you want to preserve the previous checkpoint directory.
 
-The vLLM launcher goes through a local compatibility wrapper at `python -m nl2sql_gspo.vllm_serve_compat` so TRL `0.29.1` can still serve against local vLLM `0.19.x`. This wrapper strips the unsupported `truncate_prompt_tokens` field before constructing vLLM sampling parameters.
+The vLLM launcher goes through a local wrapper at `python -m nl2sql_gspo.vllm_serve_compat`, which delegates to TRL's shipped vLLM server entrypoint from the local repo package.
+
+For `google/gemma-4-31B-it`, leave `VLLM_ATTENTION_BACKEND` unset unless you are intentionally overriding vLLM's model-aware backend selection. In vLLM `0.19.x+`, Gemma 4 detects heterogeneous `head_dim` / `global_head_dim` and forces `TRITON_ATTN` when `global_head_dim=512`; setting `VLLM_ATTENTION_BACKEND=TORCH_SDPA` bypasses that safeguard and fails for this model.
 
 The training launcher skips dev evaluation before the first optimizer step by default. Set `EVAL_ON_START=1` to opt into the pre-training dev baseline.
 
@@ -58,7 +60,7 @@ The trainer is `DynamicSamplingGRPOTrainer` (a thin subclass of TRL's `GRPOTrain
 - `--exec_timeout_s` (default `60`): per-query SQL execution timeout for both predicted and gold SQL during reward computation. More permissive than BIRD's 30s default to avoid penalising slow gold queries during training.
 - `--steps_per_generation`: optional override for generation cadence.
 
-Launcher env vars: `NUM_ITERATIONS`, `ENABLE_DYNAMIC_SAMPLING` (`0`/`1`), `DYNAMIC_SAMPLING_MIN_STD`, `DAPO_MAX_ROUNDS`, `DAPO_OVERSAMPLE_FACTOR`, `DYNAMIC_SAMPLING_REWARD_NAME`, `MASK_TRUNCATED_COMPLETIONS` (`0`/`1`), `STEPS_PER_GENERATION`, `EVAL_ON_START` (`0`/`1`), `EXEC_TIMEOUT_S`, `LENGTH_PENALTY_MAX`, `LENGTH_PENALTY_BUFFER`, `REWARD_WEIGHTS`, `VLLM_GROUP_PORT`, `SAVE_STEPS`, `EVAL_STEPS`, `LOGGING_STEPS`, `LOG_COMPLETIONS`, `NUM_COMPLETIONS_TO_PRINT`, `EVAL_LIMIT`. Logging defaults: `SAVE_STEPS=25`, `EVAL_STEPS=25`, `LOGGING_STEPS=5`, `LOG_COMPLETIONS=0`, `EVAL_LIMIT=64`, `MASK_TRUNCATED_COMPLETIONS=0`; `DAPO_OVERSAMPLE_FACTOR` defaults to `8`. `VLLM_GROUP_PORT` defaults to `29600` to avoid OS ephemeral-port collisions during vLLM weight updates.
+Launcher env vars: `NUM_ITERATIONS`, `ENABLE_DYNAMIC_SAMPLING` (`0`/`1`), `DYNAMIC_SAMPLING_MIN_STD`, `DAPO_MAX_ROUNDS`, `DAPO_OVERSAMPLE_FACTOR`, `DYNAMIC_SAMPLING_REWARD_NAME`, `MASK_TRUNCATED_COMPLETIONS` (`0`/`1`), `STEPS_PER_GENERATION`, `EVAL_ON_START` (`0`/`1`), `EXEC_TIMEOUT_S`, `REWARD_WORKERS`, `LENGTH_PENALTY_MAX`, `LENGTH_PENALTY_BUFFER`, `REWARD_WEIGHTS`, `VLLM_GROUP_PORT`, `SAVE_STEPS`, `EVAL_STEPS`, `LOGGING_STEPS`, `LOG_COMPLETIONS`, `NUM_COMPLETIONS_TO_PRINT`, `EVAL_LIMIT`. Logging defaults: `SAVE_STEPS=25`, `EVAL_STEPS=25`, `LOGGING_STEPS=5`, `LOG_COMPLETIONS=0`, `EVAL_LIMIT=64`, `MASK_TRUNCATED_COMPLETIONS=0`; `DAPO_OVERSAMPLE_FACTOR` defaults to `8`. `REWARD_WORKERS=1` keeps training reward execution serial per rank, while higher values parallelize DB-backed rewards like `result_reward`. Eval uses the same `num_generations` setting as training. `VLLM_GROUP_PORT` defaults to `29600` to avoid OS ephemeral-port collisions during vLLM weight updates.
 
 To limit training or evaluation to a subset of rows for smoke runs:
 

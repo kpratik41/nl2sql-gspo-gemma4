@@ -1,17 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if ! command -v accelerate >/dev/null 2>&1; then
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -z "${ACCELERATE_BIN:-}" && -x "${REPO_ROOT}/.conda/nl2sql312/bin/accelerate" ]]; then
+  ACCELERATE_BIN="${REPO_ROOT}/.conda/nl2sql312/bin/accelerate"
+fi
+
+ACCELERATE_BIN="${ACCELERATE_BIN:-accelerate}"
+if ! command -v "${ACCELERATE_BIN}" >/dev/null 2>&1 && [[ ! -x "${ACCELERATE_BIN}" ]]; then
   if [[ -f "$HOME/miniforge3/etc/profile.d/conda.sh" ]]; then
     set +u
     # shellcheck disable=SC1091
     source "$HOME/miniforge3/etc/profile.d/conda.sh"
     conda activate nl2sql312
     set -u
+  elif [[ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]]; then
+    set +u
+    # shellcheck disable=SC1091
+    source "$HOME/miniconda3/etc/profile.d/conda.sh"
+    conda activate nl2sql312
+    set -u
   fi
 fi
 
-if ! command -v accelerate >/dev/null 2>&1; then
+if ! command -v "${ACCELERATE_BIN}" >/dev/null 2>&1 && [[ ! -x "${ACCELERATE_BIN}" ]]; then
   echo "accelerate not found on PATH. Activate nl2sql312 before running this launcher." >&2
   exit 1
 fi
@@ -20,6 +32,7 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5
 export TOKENIZERS_PARALLELISM=false
 export NCCL_DEBUG=WARN
 export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 # Long collective windows: ZeRO-3 forward over 20K-token prompts can take >>8 min
 # on the very first step (cold caches) which would otherwise trigger the default
@@ -41,21 +54,48 @@ if [[ -z "${CUDA_HOME:-}" && -n "${CONDA_PREFIX:-}" && -x "${CONDA_PREFIX}/bin/n
   export CUDA_HOME="${CONDA_PREFIX}"
 fi
 
+# Some environments ship PyTorch + CUDA runtime without nvcc. In that case,
+# DeepSpeed's op compatibility probe can fail during import before training
+# starts. Disable optional op builds unless the caller explicitly overrides it.
+if [[ -z "${CUDA_HOME:-}" && -z "${DS_BUILD_OPS:-}" ]]; then
+  export DS_BUILD_OPS=0
+fi
+if [[ -z "${CUDA_HOME:-}" && -z "${DS_IGNORE_CUDA_DETECTION:-}" ]]; then
+  export DS_IGNORE_CUDA_DETECTION=1
+fi
+
 export WANDB_PROJECT=gemma4-31b-bird-gspo
 REPORT_TO="${REPORT_TO:-wandb}"
 RUN_NAME="${RUN_NAME:-gemma4-31b-gspo-bird-${RUN_TIMESTAMP}}"
 LOGGING_DIR="${LOGGING_DIR:-outputs/gemma4_31b_gspo_bird/tb/${RUN_TIMESTAMP}}"
 TRAIN_LIMIT="${TRAIN_LIMIT:--1}"
-EVAL_LIMIT="${EVAL_LIMIT:-64}"
+EVAL_LIMIT="${EVAL_LIMIT:--1}"
 MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-16000}"
+MAX_COMPLETION_LENGTH="${MAX_COMPLETION_LENGTH:-4096}"
+NUM_GENERATIONS="${NUM_GENERATIONS:-16}"
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-16}"
+MAX_STEPS="${MAX_STEPS:--1}"
 
 MODEL_NAME="${MODEL_NAME:-google/gemma-4-31B-it}"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/gemma4_31b_gspo_bird}"
 VLLM_GROUP_PORT="${VLLM_GROUP_PORT:-29600}"
 RESUME_ARGS=()
 
+is_model_only_checkpoint() {
+  local checkpoint_dir="$1"
+  [[ -d "$checkpoint_dir" ]] || return 1
+  [[ -f "$checkpoint_dir/trainer_state.json" ]] || return 1
+  [[ -f "$checkpoint_dir/model.safetensors.index.json" || -f "$checkpoint_dir/model-00001-of-00002.safetensors" || -f "$checkpoint_dir/pytorch_model.bin" ]] || return 1
+  [[ -f "$checkpoint_dir/optimizer.pt" || -d "$checkpoint_dir/global_step1" || -f "$checkpoint_dir/zero_to_fp32.py" ]] && return 1
+  return 0
+}
+
 if [[ -n "${RESUME_FROM_CHECKPOINT:-}" ]]; then
+  if is_model_only_checkpoint "${RESUME_FROM_CHECKPOINT}"; then
+    echo "RESUME_FROM_CHECKPOINT=${RESUME_FROM_CHECKPOINT} looks like a model-only checkpoint without DeepSpeed optimizer state." >&2
+    echo "For model-only continuation, set MODEL_NAME=${RESUME_FROM_CHECKPOINT} and leave RESUME_FROM_CHECKPOINT unset." >&2
+    exit 1
+  fi
   RESUME_ARGS+=(--resume_from_checkpoint "$RESUME_FROM_CHECKPOINT")
 fi
 
@@ -101,6 +141,7 @@ MASK_TRUNCATED_COMPLETIONS="${MASK_TRUNCATED_COMPLETIONS:-0}"
 
 # Reward shaping.
 EXEC_TIMEOUT_S="${EXEC_TIMEOUT_S:-60}"
+REWARD_WORKERS="${REWARD_WORKERS:-1}"
 LENGTH_PENALTY_MAX="${LENGTH_PENALTY_MAX:-4096}"
 LENGTH_PENALTY_BUFFER="${LENGTH_PENALTY_BUFFER:-512}"
 REWARD_WEIGHTS="${REWARD_WEIGHTS:-0.2,0.5,2.0,0.5,0.5,0.1,0.1}"
@@ -111,6 +152,7 @@ DAPO_ARGS=(
   --dapo_max_rounds "${DAPO_MAX_ROUNDS}"
   --dapo_oversample_factor "${DAPO_OVERSAMPLE_FACTOR}"
   --exec_timeout_s "${EXEC_TIMEOUT_S}"
+  --reward_workers "${REWARD_WORKERS}"
   --length_penalty_max "${LENGTH_PENALTY_MAX}"
   --length_penalty_buffer "${LENGTH_PENALTY_BUFFER}"
 )
@@ -127,13 +169,13 @@ if [[ -n "${DYNAMIC_SAMPLING_REWARD_NAME:-}" ]]; then
   DAPO_ARGS+=(--dynamic_sampling_reward_name "${DYNAMIC_SAMPLING_REWARD_NAME}")
 fi
 
-accelerate launch \
+"${ACCELERATE_BIN}" launch \
   --num_processes 6 \
   --mixed_precision bf16 \
   src/nl2sql_gspo/train_gspo_nl2sql.py \
   --model_name_or_path "${MODEL_NAME}" \
   --train_file outputs/train-6601-schema-filtered.jsonl \
-  --eval_file outputs/dev-20251106-schema.jsonl \
+  --eval_file outputs/dev-20251106-schema-256.jsonl \
   --train_limit "${TRAIN_LIMIT}" \
   --eval_limit "${EVAL_LIMIT}" \
   --database_dir databases \
@@ -141,12 +183,13 @@ accelerate launch \
   --vllm_server_base_url http://127.0.0.1:8000 \
   --vllm_group_port "${VLLM_GROUP_PORT}" \
   --max_prompt_length "${MAX_PROMPT_LENGTH}" \
-  --max_completion_length 4096 \
-  --num_generations 16 \
+  --max_completion_length "${MAX_COMPLETION_LENGTH}" \
+  --num_generations "${NUM_GENERATIONS}" \
   --per_device_train_batch_size 1 \
   --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS}" \
   --learning_rate 5e-7 \
   --num_train_epochs 1 \
+  --max_steps "${MAX_STEPS}" \
   --reward_weights "${REWARD_WEIGHTS}" \
   --report_to "${REPORT_TO}" \
   --run_name "${RUN_NAME}" \

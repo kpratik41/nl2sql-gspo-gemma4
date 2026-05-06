@@ -4,7 +4,7 @@ datasets
 accelerate
 deepspeed
 trl
-vllm
+vllm==0.19.1
 wandb
 sentencepiece
 protobuf
