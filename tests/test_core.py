@@ -33,6 +33,7 @@ from scripts.run_inference_bird import (
     plan_vllm_device_groups,
     shard_rows_for_data_parallel,
 )
+from scripts.run_self_consistency_bird import choose_majority_vote_candidate, rows_to_vote_signature
 
 
 class NormalizeRecordTests(unittest.TestCase):
@@ -241,6 +242,65 @@ class InferenceScriptTests(unittest.TestCase):
 
         self.assertEqual([row["source_idx"] for row in shards[0]], [0, 2, 4])
         self.assertEqual([row["source_idx"] for row in shards[1]], [1, 3])
+
+
+class SelfConsistencyScriptTests(unittest.TestCase):
+    def test_rows_to_vote_signature_hashes_rows_as_unordered_set(self):
+        rows_a = [(1, "A"), (2, "B")]
+        rows_b = [(2, "B"), (1, "A")]
+
+        self.assertEqual(rows_to_vote_signature(rows_a), rows_to_vote_signature(rows_b))
+
+    def test_choose_majority_vote_candidate_ignores_empty_results(self):
+        candidates = [
+            {
+                "sample_idx": 0,
+                "pred_sql": "SELECT 1;",
+                "pred_executed": True,
+                "pred_rows": [],
+            },
+            {
+                "sample_idx": 1,
+                "pred_sql": "SELECT name FROM users;",
+                "pred_executed": True,
+                "pred_rows": [("alice",)],
+            },
+            {
+                "sample_idx": 2,
+                "pred_sql": "SELECT username FROM users;",
+                "pred_executed": True,
+                "pred_rows": [("alice",)],
+            },
+        ]
+
+        winner, meta = choose_majority_vote_candidate(candidates)
+
+        self.assertIsNotNone(winner)
+        self.assertEqual(winner["sample_idx"], 1)
+        self.assertEqual(meta["ignored_empty_results"], 1)
+        self.assertEqual(meta["winning_vote_count"], 2)
+
+    def test_choose_majority_vote_candidate_returns_none_without_valid_votes(self):
+        candidates = [
+            {
+                "sample_idx": 0,
+                "pred_sql": "SELECT 1;",
+                "pred_executed": False,
+                "pred_rows": None,
+            },
+            {
+                "sample_idx": 1,
+                "pred_sql": "SELECT 2;",
+                "pred_executed": True,
+                "pred_rows": [],
+            },
+        ]
+
+        winner, meta = choose_majority_vote_candidate(candidates)
+
+        self.assertIsNone(winner)
+        self.assertEqual(meta["num_valid_votes"], 0)
+        self.assertEqual(meta["ignored_empty_results"], 1)
 
 
 class RewardTests(unittest.TestCase):

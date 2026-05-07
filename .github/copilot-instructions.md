@@ -279,8 +279,12 @@ The repository now includes:
 
 - `scripts/run_inference_bird.py`: generates SQL from a trained checkpoint on schema-augmented dev data and evaluates it locally.
 - `scripts/launch_inference.sh`: launcher for post-training or separate-node inference.
+- `scripts/run_passk_bird.py`: generates `k` sampled candidates per example and reports pass@k from prefixes of the same sampled set.
+- `scripts/run_self_consistency_bird.py`: generates `k` sampled candidates per example, ignores candidates that execute to empty result sets, then majority-votes over the remaining raw execution-result sets to produce one self-consistent SQL choice per example.
 
 Standalone inference supports a backend switch via `--inference_backend transformers|vllm`. The launcher mirrors this through `INFERENCE_BACKEND` and forwards `MAX_PROMPT_LENGTH`, `MAX_NEW_TOKENS`, `VLLM_TENSOR_PARALLEL_SIZE`, `VLLM_DATA_PARALLEL_SIZE`, `VLLM_GPU_MEMORY_UTILIZATION`, and `VLLM_MAX_MODEL_LEN`.
+
+For self-consistency runs, keep `--num_generations` explicit and treat `--temperature` as a search knob rather than reusing the greedy-ish pass@k default blindly. For NL2SQL, a moderate temperature such as `0.5-0.8` is the recommended starting range because it adds enough diversity for useful voting without collapsing execution validity.
 
 The launcher also forwards `TRANSFORMERS_DEVICE_MAP` and `TRANSFORMERS_DATA_PARALLEL_SIZE` for the local `transformers` backend.
 
@@ -288,7 +292,7 @@ The inference launcher now appends a `YYYYMMDD_HHMMSS` suffix to `OUTPUT_DIR` by
 
 Standalone inference defaults to `max_prompt_length=30000` and `max_new_tokens=4096`, and filters out prompts longer than that limit instead of truncating them. Filtered prompts are printed during the run and written to `filtered_examples.jsonl` in the output directory.
 
-The local BIRD evaluator defaults to `eval_timeout=120` seconds per example and `eval_workers=16` concurrent evaluation workers.
+The local BIRD evaluator defaults to `eval_timeout=60` seconds per example and `eval_workers=16` concurrent evaluation workers.
 
 For the local `transformers` backend, standalone inference now defaults to explicit multi-process data parallel with `device_map` disabled. This is intended for models that fit on a single GPU. To shard one model across the visible GPUs instead, opt in with `TRANSFORMERS_DEVICE_MAP=auto`.
 
@@ -305,6 +309,7 @@ The local BIRD execution-accuracy scorer should follow the official dev-set sema
 - execute predicted SQL and gold SQL on the target SQLite database
 - compare results using `set(predicted_rows) == set(gold_rows)`
 - report simple/moderate/challenging/total accuracy using the `difficulty` field from the dev JSON
+- standalone inference post-processing should use the shared `bird_execute_sql` / `bird_result_match` helpers directly for both predicted and gold SQL evaluation; avoid the legacy spawned pair-executor path because it can drop results as `no result` under concurrent load
 
 If changing distributed training settings, update:
 scripts/launch_train.sh

@@ -86,7 +86,7 @@ Standalone inference defaults to `max_prompt_length=30000` and `max_new_tokens=4
 
 Standalone inference now uses the normalized `prompt` field when it is present. For older schema-built files that only contain `messages`, it strips any `assistant` turns before rendering the generation prompt so gold SQL is not leaked into the input context.
 
-The local BIRD evaluator now defaults to `eval_timeout=120` seconds per example and `eval_workers=16` concurrent evaluation workers.
+The local BIRD evaluator now defaults to `eval_timeout=60` seconds per example and `eval_workers=16` concurrent evaluation workers.
 
 The `transformers` backend now defaults to explicit multi-process data parallel instead of `device_map=auto`. By default it starts one worker per visible GPU and each worker loads its own model replica, so this mode is intended for models that fit on a single GPU. To shard one model across the visible GPUs instead, set `TRANSFORMERS_DEVICE_MAP=auto`.
 
@@ -118,6 +118,26 @@ Inference outputs are written under the timestamped output directory selected by
 - `eval_summary_by_db.csv`: CSV summary by database
 
 The local EX scorer intentionally follows the official BIRD dev evaluation semantics from `AlibabaResearch/DAMO-ConvAI/bird/llm/src/evaluation.py`: it executes predicted and gold SQL on SQLite and checks whether `set(pred_rows) == set(gold_rows)`.
+
+The repository also includes `scripts/run_passk_bird.py` for pass@k evaluation and `scripts/run_self_consistency_bird.py` for self-consistency evaluation. The self-consistency script generates `k` candidates per example, executes them on SQLite, discards candidates whose execution result is empty, and then majority-votes over the remaining raw result sets. Ties break by earliest sample index and then shorter SQL. Recommended starting settings are `--num_generations 16` and `--temperature 0.7`; for NL2SQL, lower temperatures such as `0.1` usually improve top-1 accuracy but often reduce vote diversity, so self-consistency tends to benefit from a moderate temperature instead of the near-greedy setting used for pass@k.
+
+Example self-consistency run:
+
+```bash
+python scripts/run_self_consistency_bird.py \
+	--model_name_or_path outputs/gemma4_31b_gspo_bird/checkpoint-30 \
+	--input_file outputs/dev-20251106-schema.jsonl \
+	--database_dir databases/dev_databases \
+	--diff_json_path data/bird_dev_data/raw/dev_20251106.json \
+	--output_dir outputs/self_consistency_temp07/checkpoint-30 \
+	--num_generations 16 \
+	--temperature 0.7 \
+	--eval_timeout 60 \
+	--eval_workers 8 \
+	--vllm_tensor_parallel_size 4 \
+	--vllm_data_parallel_size 2 \
+	--overwrite
+```
 
 ## Monitoring
 

@@ -18,14 +18,14 @@ htmlcov/
 .vscode/
 .idea/
 .conda/
-outputs/gemma4_31b_gspo_bird/
-outputs/train-6601-schema.jsonl
-outputs/train-6601-schema-filtered.jsonl
+outputs/
 
 wandb/
 databases/
 logs/
 runs/
+
+data/
 
 data/*/processed/
 

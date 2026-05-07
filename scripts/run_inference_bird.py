@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from nl2sql_gspo.data import normalize_record
-from nl2sql_gspo.sql_utils import extract_sql, get_database_path
+from nl2sql_gspo.sql_utils import bird_execute_sql, bird_get_gold_rows, bird_result_match, extract_sql, get_database_path
 
 
 BIRD_SPLIT_MARKER = "\t----- bird -----\t"
@@ -61,6 +61,30 @@ def print_run_configuration(args: argparse.Namespace, output_dir: Path) -> None:
         print(f"[run] vllm_max_model_len={args.vllm_max_model_len}")
 
 
+def resolve_vllm_tokenizer_source(model_name_or_path: str) -> str:
+    model_path = Path(model_name_or_path)
+    if not model_path.is_dir():
+        return model_name_or_path
+
+    if (model_path / "processor_config.json").exists() or (model_path / "preprocessor_config.json").exists():
+        return model_name_or_path
+
+    tokenizer_config_path = model_path / "tokenizer_config.json"
+    if tokenizer_config_path.exists():
+        with tokenizer_config_path.open("r", encoding="utf-8") as handle:
+            tokenizer_config = json.load(handle)
+
+        if tokenizer_config.get("processor_class") == "Gemma4Processor":
+            fallback_source = "google/gemma-4-31B-it"
+            print(
+                f"[inference] local checkpoint {model_name_or_path} is missing Gemma 4 processor files; "
+                f"loading processor/tokenizer from {fallback_source} instead."
+            )
+            return fallback_source
+
+    return model_name_or_path
+
+
 def load_diff_rows(diff_json_path: str) -> List[Dict[str, Any]]:
     with open(diff_json_path, "r", encoding="utf-8") as handle:
         loaded = json.load(handle)
@@ -81,7 +105,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top_p", type=float, default=1.0)
     parser.add_argument("--num_examples", type=int, default=-1)
-    parser.add_argument("--eval_timeout", type=float, default=120.0)
+    parser.add_argument("--eval_timeout", type=float, default=60.0)
     parser.add_argument("--eval_workers", type=int, default=16)
     parser.add_argument("--transformers_device_map", type=str, choices=["none", "auto"], default="none")
     parser.add_argument("--transformers_data_parallel_size", type=int, default=0)
@@ -478,7 +502,7 @@ def _vllm_generate_worker(
 
         llm = LLM(
             model=llm_config["model_name_or_path"],
-            tokenizer=llm_config["model_name_or_path"],
+            tokenizer=llm_config["tokenizer_name_or_path"],
             trust_remote_code=True,
             tensor_parallel_size=llm_config["tensor_parallel_size"],
             distributed_executor_backend="mp",
@@ -538,6 +562,7 @@ def generate_predictions_with_vllm_data_parallel(
 
     llm_config = {
         "model_name_or_path": args.model_name_or_path,
+        "tokenizer_name_or_path": resolve_vllm_tokenizer_source(args.model_name_or_path),
         "tensor_parallel_size": tensor_parallel_size,
         "gpu_memory_utilization": args.vllm_gpu_memory_utilization,
         "max_model_len": vllm_max_model_len,
@@ -772,7 +797,7 @@ def generate_predictions_with_vllm(rows: List[Dict[str, Any]], args: argparse.Na
 
     llm = LLM(
         model=args.model_name_or_path,
-        tokenizer=args.model_name_or_path,
+        tokenizer=resolve_vllm_tokenizer_source(args.model_name_or_path),
         trust_remote_code=True,
         tensor_parallel_size=tensor_parallel_size,
         distributed_executor_backend="mp",
@@ -956,26 +981,49 @@ def evaluate_one(predicted_sql: str, ground_sql: str, db_path: str, timeout_s: f
     }
 
 
-def build_execution_stats(results: List[Dict[str, Any]]) -> Dict[str, int]:
-    total_count = len(results)
-    pred_sql_extracted = sum(int(result["pred_sql_extracted"]) for result in results)
-    gold_sql_extracted = sum(int(result["gold_sql_extracted"]) for result in results)
-    pred_sql_executed = sum(int(result["pred_executed"]) for result in results)
-    gold_sql_executed = sum(int(result["gold_executed"]) for result in results)
-    both_sql_executed = sum(int(result["pred_executed"] and result["gold_executed"]) for result in results)
+def evaluate_one_bird(
+    predicted_sql: str,
+    db_id: str,
+    database_dir: str,
+    timeout_s: float,
+    gold_executed: bool,
+    gold_row_set: Optional[frozenset],
+    gold_error: str,
+) -> Dict[str, Any]:
+    pred_rows = None
+    pred_executed = False
+    pred_error = ""
+
+    if has_sql_content(predicted_sql):
+        pred_executed, pred_rows, pred_error = bird_execute_sql(
+            sql=predicted_sql,
+            db_id=db_id,
+            database_dir=database_dir,
+            timeout_s=timeout_s,
+        )
+    else:
+        pred_error = "empty sql"
+
+    if pred_executed and gold_executed:
+        status = "ok"
+        result = int(bird_result_match(pred_rows, gold_row_set))
+    else:
+        parts = []
+        if pred_error:
+            parts.append(f"pred_error: {pred_error}")
+        if gold_error:
+            parts.append(f"gold_error: {gold_error}")
+        status = "; ".join(parts) if parts else "error: execution failed"
+        result = 0
 
     return {
-        "pred_sql_extracted": pred_sql_extracted,
-        "pred_sql_missing": total_count - pred_sql_extracted,
-        "gold_sql_extracted": gold_sql_extracted,
-        "gold_sql_missing": total_count - gold_sql_extracted,
-        "pred_sql_executed": pred_sql_executed,
-        "pred_sql_execution_failed": total_count - pred_sql_executed,
-        "gold_sql_executed": gold_sql_executed,
-        "gold_sql_execution_failed": total_count - gold_sql_executed,
-        "both_sql_executed": both_sql_executed,
+        "res": result,
+        "status": status,
+        "pred_executed": pred_executed,
+        "gold_executed": gold_executed,
+        "pred_error": pred_error,
+        "gold_error": gold_error,
     }
-
 
 def build_group_summary(
     results: List[Dict[str, Any]],
@@ -1010,6 +1058,27 @@ def build_group_summary(
         ordered_summary[group_value] = values
 
     return ordered_summary
+
+
+def build_execution_stats(results: List[Dict[str, Any]]) -> Dict[str, int]:
+    total_count = len(results)
+    pred_sql_extracted = sum(int(result["pred_sql_extracted"]) for result in results)
+    gold_sql_extracted = sum(int(result["gold_sql_extracted"]) for result in results)
+    pred_sql_executed = sum(int(result["pred_executed"]) for result in results)
+    gold_sql_executed = sum(int(result["gold_executed"]) for result in results)
+    both_sql_executed = sum(int(result["pred_executed"] and result["gold_executed"]) for result in results)
+
+    return {
+        "pred_sql_extracted": pred_sql_extracted,
+        "pred_sql_missing": total_count - pred_sql_extracted,
+        "gold_sql_extracted": gold_sql_extracted,
+        "gold_sql_missing": total_count - gold_sql_extracted,
+        "pred_sql_executed": pred_sql_executed,
+        "pred_sql_execution_failed": total_count - pred_sql_executed,
+        "gold_sql_executed": gold_sql_executed,
+        "gold_sql_execution_failed": total_count - gold_sql_executed,
+        "both_sql_executed": both_sql_executed,
+    }
 
 
 def build_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -1169,21 +1238,41 @@ def evaluate_predictions(
     worker_count = max(1, eval_workers)
     eval_results: List[Dict[str, Any]] = [None] * len(prepared_examples)
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        ordered_results = executor.map(
-            lambda example: evaluate_one(
-                example["predicted_sql"],
-                example["gold_sql"],
-                example["db_path"],
-                timeout_s,
-            ),
-            prepared_examples,
+        gold_eval_results = list(
+            executor.map(
+                lambda example: bird_get_gold_rows(
+                    example["gold_sql"],
+                    example["db_id"],
+                    database_dir,
+                    timeout_s,
+                )
+                if example["gold_sql_extracted"]
+                else (False, None, "empty sql"),
+                prepared_examples,
+            )
         )
 
-        for example, eval_result in zip(prepared_examples, ordered_results):
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        ordered_results = executor.map(
+            lambda item: evaluate_one_bird(
+                item[0]["predicted_sql"],
+                item[0]["db_id"],
+                database_dir,
+                timeout_s,
+                item[1][0],
+                item[1][1],
+                item[1][2],
+            ),
+            zip(prepared_examples, gold_eval_results),
+        )
+
+        for example, gold_eval_result, eval_result in zip(prepared_examples, gold_eval_results, ordered_results):
             idx = example["idx"]
             source_idx = example["source_idx"]
             db_id = example["db_id"]
             difficulty = example["difficulty"]
+            gold_executed = bool(gold_eval_result[0])
+            gold_error = gold_eval_result[2]
 
             if log_each_example:
                 print(
@@ -1202,9 +1291,9 @@ def evaluate_predictions(
                 "res": int(eval_result["res"]),
                 "status": eval_result["status"],
                 "pred_executed": bool(eval_result["pred_executed"]),
-                "gold_executed": bool(eval_result["gold_executed"]),
+                "gold_executed": gold_executed,
                 "pred_error": eval_result["pred_error"],
-                "gold_error": eval_result["gold_error"],
+                "gold_error": gold_error,
             }
 
             if log_each_example:

@@ -3,6 +3,7 @@ import csv
 import json
 import multiprocessing as mp
 import os
+import re
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -14,11 +15,15 @@ from scripts.run_inference_bird import (
     load_rows,
     plan_vllm_device_groups,
     prepare_rows_for_generation,
+    resolve_vllm_tokenizer_source,
     shard_rows_for_data_parallel,
     should_log_progress_tick,
 )
 from nl2sql_gspo.model_utils import load_tokenizer
 from nl2sql_gspo.sql_utils import bird_execute_sql, bird_get_gold_rows, bird_result_match
+
+
+QUESTION_RE = re.compile(r"\n---\nQuestion:\s*(.*?)\nEvidence:", re.S)
 
 
 def should_log_passk_progress_tick(current_index: int, total_count: int) -> bool:
@@ -45,7 +50,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--top_p", type=float, default=1.0)
     parser.add_argument("--num_generations", type=int, default=16)
-    parser.add_argument("--eval_timeout", type=float, default=120.0)
+    parser.add_argument("--eval_timeout", type=float, default=60.0)
     parser.add_argument("--eval_workers", type=int, default=32)
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=4)
     parser.add_argument("--vllm_data_parallel_size", type=int, default=2)
@@ -84,6 +89,47 @@ def print_passk_configuration(args: argparse.Namespace, output_dir: Path) -> Non
     print(f"[run] vllm_max_model_len={args.vllm_max_model_len}")
 
 
+def align_rows_with_raw_references(rows: List[Dict[str, Any]], diff_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    raw_map: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for item in diff_rows:
+        key = (item.get("db_id", ""), (item.get("question") or "").strip())
+        raw_map.setdefault(key, []).append(item)
+
+    aligned_rows: List[Dict[str, Any]] = []
+    for idx, row in enumerate(rows):
+        user_text = ""
+        for message in row.get("messages", []):
+            if message.get("role") == "user":
+                user_text = message.get("content", "")
+                break
+
+        match = QUESTION_RE.search(user_text)
+        if not match:
+            raise ValueError(f"Could not parse Question field for row {idx}")
+
+        question = match.group(1).strip()
+        key = (row.get("db_id", ""), question)
+        candidates = raw_map.get(key, [])
+        if not candidates:
+            raise ValueError(f"No raw dev reference match for row {idx} db_id={key[0]!r} question={question!r}")
+
+        chosen = candidates[0]
+        if len(candidates) > 1:
+            embedded_gold = row.get("gold_sql", "") or ""
+            for candidate in candidates:
+                candidate_sql = candidate.get("SQL") or candidate.get("gold_sql") or ""
+                if candidate_sql and candidate_sql in embedded_gold:
+                    chosen = candidate
+                    break
+
+        aligned_row = dict(row)
+        aligned_row["gold_sql"] = chosen.get("SQL") or chosen.get("gold_sql") or ""
+        aligned_row["difficulty"] = chosen.get("difficulty", "unknown")
+        aligned_rows.append(aligned_row)
+
+    return aligned_rows
+
+
 def _vllm_generate_passk_worker(
     queue,
     shard_id: int,
@@ -98,7 +144,7 @@ def _vllm_generate_passk_worker(
 
         llm = LLM(
             model=llm_config["model_name_or_path"],
-            tokenizer=llm_config["model_name_or_path"],
+            tokenizer=llm_config["tokenizer_name_or_path"],
             trust_remote_code=True,
             tensor_parallel_size=llm_config["tensor_parallel_size"],
             distributed_executor_backend="mp",
@@ -134,6 +180,7 @@ def _vllm_generate_passk_worker(
                 {
                     "idx": row.get("source_idx", -1),
                     "db_id": row.get("db_id", ""),
+                    "difficulty": row.get("difficulty", "unknown"),
                     "gold_sql": extract_sql(row.get("gold_sql", "")),
                     "prompt_tokens": int(row["prompt_tokens"]),
                     "generations": generations,
@@ -176,6 +223,7 @@ def generate_predictions_with_vllm_n(
 
         llm_config = {
             "model_name_or_path": args.model_name_or_path,
+            "tokenizer_name_or_path": resolve_vllm_tokenizer_source(args.model_name_or_path),
             "tensor_parallel_size": tensor_parallel_size,
             "gpu_memory_utilization": args.vllm_gpu_memory_utilization,
             "max_model_len": vllm_max_model_len,
@@ -242,7 +290,7 @@ def generate_predictions_with_vllm_n(
     )
     llm = LLM(
         model=args.model_name_or_path,
-        tokenizer=args.model_name_or_path,
+        tokenizer=resolve_vllm_tokenizer_source(args.model_name_or_path),
         trust_remote_code=True,
         tensor_parallel_size=tensor_parallel_size,
         distributed_executor_backend="mp",
@@ -277,6 +325,7 @@ def generate_predictions_with_vllm_n(
             {
                 "idx": row.get("source_idx", idx),
                 "db_id": row.get("db_id", ""),
+                "difficulty": row.get("difficulty", "unknown"),
                 "gold_sql": extract_sql(row.get("gold_sql", "")),
                 "prompt_tokens": int(row["prompt_tokens"]),
                 "generations": generations,
@@ -348,7 +397,7 @@ def evaluate_passk(
     # final pass@k prefix aggregation step.
     prepared_jobs: List[Tuple[int, int, Dict[str, Any], str]] = []
     for row_idx, row in enumerate(prediction_rows):
-        difficulty = diff_rows[row["idx"]].get("difficulty", "unknown") if row["idx"] < len(diff_rows) else "unknown"
+        difficulty = row.get("difficulty", "unknown")
         for generation in row["generations"]:
             prepared_jobs.append((row_idx, row["idx"], row, difficulty, generation))
 
@@ -402,7 +451,7 @@ def evaluate_passk(
                 {
                     "idx": row["idx"],
                     "db_id": row["db_id"],
-                    "difficulty": diff_rows[row["idx"]].get("difficulty", "unknown") if row["idx"] < len(diff_rows) else "unknown",
+                    "difficulty": row.get("difficulty", "unknown"),
                     "res": int(matched),
                     "pred_sql_extracted": any(item["pred_sql_extracted"] for item in row_results),
                     "gold_sql_extracted": any(item["gold_sql_extracted"] for item in row_results),
@@ -515,6 +564,7 @@ def main() -> None:
     print(f"[run] loaded {len(rows)} input rows")
     diff_rows = load_diff_rows(args.diff_json_path)
     print(f"[run] loaded {len(diff_rows)} diff rows")
+    rows = align_rows_with_raw_references(rows, diff_rows)
 
     prediction_rows, skipped_rows = generate_predictions_with_vllm_n(rows, args)
     if skipped_rows:
