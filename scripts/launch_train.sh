@@ -70,10 +70,16 @@ RUN_NAME="${RUN_NAME:-gemma4-31b-gspo-bird-${RUN_TIMESTAMP}}"
 LOGGING_DIR="${LOGGING_DIR:-outputs/gemma4_31b_gspo_bird/tb/${RUN_TIMESTAMP}}"
 TRAIN_LIMIT="${TRAIN_LIMIT:--1}"
 EVAL_LIMIT="${EVAL_LIMIT:--1}"
+TRAIN_FILE="${TRAIN_FILE:-outputs/train-6601-schema-filtered.jsonl}"
+EVAL_FILE="${EVAL_FILE:-outputs/dev-20251106-schema-256.jsonl}"
 MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-16000}"
 MAX_COMPLETION_LENGTH="${MAX_COMPLETION_LENGTH:-4096}"
 NUM_GENERATIONS="${NUM_GENERATIONS:-16}"
+TEMPERATURE="${TEMPERATURE:-0.8}"
+TOP_P="${TOP_P:-0.95}"
+PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-1}"
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-16}"
+LEARNING_RATE="${LEARNING_RATE:-${LR:-5e-7}}"
 MAX_STEPS="${MAX_STEPS:--1}"
 
 MODEL_NAME="${MODEL_NAME:-google/gemma-4-31B-it}"
@@ -86,7 +92,8 @@ is_model_only_checkpoint() {
   [[ -d "$checkpoint_dir" ]] || return 1
   [[ -f "$checkpoint_dir/trainer_state.json" ]] || return 1
   [[ -f "$checkpoint_dir/model.safetensors.index.json" || -f "$checkpoint_dir/model-00001-of-00002.safetensors" || -f "$checkpoint_dir/pytorch_model.bin" ]] || return 1
-  [[ -f "$checkpoint_dir/optimizer.pt" || -d "$checkpoint_dir/global_step1" || -f "$checkpoint_dir/zero_to_fp32.py" ]] && return 1
+  [[ -f "$checkpoint_dir/optimizer.pt" || -f "$checkpoint_dir/zero_to_fp32.py" || -f "$checkpoint_dir/latest" ]] && return 1
+  compgen -G "$checkpoint_dir/global_step*" >/dev/null && return 1
   return 0
 }
 
@@ -101,7 +108,10 @@ fi
 
 # Logging cadence.
 SAVE_STEPS="${SAVE_STEPS:-25}"
+SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-3}"
 SAVE_ONLY_MODEL="${SAVE_ONLY_MODEL:-1}"
+SAVE_LATEST_FULL_CHECKPOINT="${SAVE_LATEST_FULL_CHECKPOINT:-1}"
+LATEST_FULL_CHECKPOINT_DIR_NAME="${LATEST_FULL_CHECKPOINT_DIR_NAME:-latest-full-checkpoint}"
 EVAL_STEPS="${EVAL_STEPS:-25}"
 LOGGING_STEPS="${LOGGING_STEPS:-5}"
 LOG_COMPLETIONS="${LOG_COMPLETIONS:-0}"
@@ -121,6 +131,14 @@ if [[ "${SAVE_ONLY_MODEL}" == "1" ]]; then
   SAVE_ONLY_MODEL_ARGS=(--save_only_model)
 else
   SAVE_ONLY_MODEL_ARGS=()
+fi
+if [[ "${SAVE_LATEST_FULL_CHECKPOINT}" == "1" ]]; then
+  SAVE_LATEST_FULL_CHECKPOINT_ARGS=(
+    --save_latest_full_checkpoint
+    --latest_full_checkpoint_dir_name "${LATEST_FULL_CHECKPOINT_DIR_NAME}"
+  )
+else
+  SAVE_LATEST_FULL_CHECKPOINT_ARGS=()
 fi
 
 # DAPO oversample-and-replace controls. Each optimizer step keeps
@@ -174,8 +192,8 @@ fi
   --mixed_precision bf16 \
   src/nl2sql_gspo/train_gspo_nl2sql.py \
   --model_name_or_path "${MODEL_NAME}" \
-  --train_file outputs/train-6601-schema-filtered.jsonl \
-  --eval_file outputs/dev-20251106-schema-256.jsonl \
+  --train_file "${TRAIN_FILE}" \
+  --eval_file "${EVAL_FILE}" \
   --train_limit "${TRAIN_LIMIT}" \
   --eval_limit "${EVAL_LIMIT}" \
   --database_dir databases \
@@ -185,9 +203,11 @@ fi
   --max_prompt_length "${MAX_PROMPT_LENGTH}" \
   --max_completion_length "${MAX_COMPLETION_LENGTH}" \
   --num_generations "${NUM_GENERATIONS}" \
-  --per_device_train_batch_size 1 \
+  --temperature "${TEMPERATURE}" \
+  --top_p "${TOP_P}" \
+  --per_device_train_batch_size "${PER_DEVICE_TRAIN_BATCH_SIZE}" \
   --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS}" \
-  --learning_rate 5e-7 \
+  --learning_rate "${LEARNING_RATE}" \
   --num_train_epochs 1 \
   --max_steps "${MAX_STEPS}" \
   --reward_weights "${REWARD_WEIGHTS}" \
@@ -197,7 +217,9 @@ fi
   --deepspeed configs/ds_zero3_bf16.json \
   --logging_steps "${LOGGING_STEPS}" \
   --save_steps "${SAVE_STEPS}" \
+  --save_total_limit "${SAVE_TOTAL_LIMIT}" \
   "${SAVE_ONLY_MODEL_ARGS[@]}" \
+  "${SAVE_LATEST_FULL_CHECKPOINT_ARGS[@]}" \
   --eval_steps "${EVAL_STEPS}" \
   ${EVAL_ON_START_ARG:+$EVAL_ON_START_ARG} \
   "${LOG_COMPLETIONS_ARGS[@]}" \

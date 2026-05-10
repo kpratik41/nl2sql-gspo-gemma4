@@ -14,6 +14,15 @@ Then launch training:
 bash scripts/launch_train.sh
 ```
 
+Override the learning rate for one-off runs with `LEARNING_RATE` or `LR`:
+
+```bash
+MODEL_NAME=outputs/gemma4_31b_gspo_bird/checkpoint-70 \
+OUTPUT_DIR=outputs/gemma4_31b_gspo_bird_ckpt70_lr1e6_<timestamp> \
+LEARNING_RATE=1e-6 \
+bash scripts/launch_train.sh
+```
+
 The launcher now trains from the generated schema-augmented training file and evaluates on the generated dev schema file:
 
 - `outputs/train-6601-schema-filtered.jsonl`
@@ -21,9 +30,9 @@ The launcher now trains from the generated schema-augmented training file and ev
 
 The current training launcher recipe uses `num_generations=16`, `gradient_accumulation_steps=16`, `max_prompt_length=16000`, and `max_completion_length=4096` with vLLM server-mode rollouts (vLLM `max_model_len=24576`). Override the prompt filter with `MAX_PROMPT_LENGTH`, gradient accumulation with `GRADIENT_ACCUMULATION_STEPS`, short smoke-run length with `MAX_STEPS`, and DB-backed reward parallelism with `REWARD_WORKERS` when launching. The default base model in the launchers is `google/gemma-4-31B-it`, and the default eval file is `outputs/dev-20251106-schema-256.jsonl`.
 
-The training launcher defaults to model-only checkpoints (`SAVE_ONLY_MODEL=1`), which writes HF model weights/config and trainer state but skips DeepSpeed optimizer/scheduler/scaler/RNG state. Set `SAVE_ONLY_MODEL=0` only when you need a full optimizer-state checkpoint for exact training resume.
+The training launcher defaults to model-only checkpoints (`SAVE_ONLY_MODEL=1`) and keeps the rotating `checkpoint-*` folders trimmed to `SAVE_TOTAL_LIMIT=3`. Those rotating checkpoints write HF model weights/config and trainer state but skip DeepSpeed optimizer/scheduler/scaler/RNG state.
 
-For model-only checkpoints, restart from the saved weights by setting `MODEL_NAME` to the checkpoint path and leaving `RESUME_FROM_CHECKPOINT` unset. Use a fresh `OUTPUT_DIR` if you want to preserve the previous checkpoint directory.
+In addition, the launcher now defaults `SAVE_LATEST_FULL_CHECKPOINT=1`, which refreshes `OUTPUT_DIR/latest-full-checkpoint` on every save with a full DeepSpeed resume checkpoint containing optimizer/scheduler/RNG state. Use `RESUME_FROM_CHECKPOINT=.../latest-full-checkpoint` for an exact restart, or set `MODEL_NAME` to one of the rotating model-only `checkpoint-*` directories and leave `RESUME_FROM_CHECKPOINT` unset for model-only continuation.
 
 The vLLM launcher goes through a local wrapper at `python -m nl2sql_gspo.vllm_serve_compat`, which delegates to TRL's shipped vLLM server entrypoint from the local repo package.
 
@@ -43,10 +52,18 @@ The reward stack is now binary-heavy with a single continuous shaping signal. `r
 
 Default weights: `0.2, 0.5, 2.0, 0.5, 0.5, 0.1, 0.1` (max positive weighted reward = 3.8; `length_penalty_reward` only contributes ≤ 0). `result_reward` dominates so the policy is pulled toward execution-equivalent answers; the other rewards keep advantages non-flat whenever `result_reward` collapses to all-0 or all-1 inside a group; the length penalty discourages truncation noise.
 
-To resume training from a saved checkpoint:
+To resume training from the most recent full restartable checkpoint:
 
 ```bash
-RESUME_FROM_CHECKPOINT=outputs/gemma4_31b_gspo_bird/checkpoint-100 bash scripts/launch_train.sh
+RESUME_FROM_CHECKPOINT=outputs/gemma4_31b_gspo_bird/latest-full-checkpoint bash scripts/launch_train.sh
+```
+
+To continue from a model-only checkpoint instead:
+
+```bash
+MODEL_NAME=outputs/gemma4_31b_gspo_bird/checkpoint-100 \
+OUTPUT_DIR=outputs/gemma4_31b_gspo_bird_restart \
+bash scripts/launch_train.sh
 ```
 
 ### DAPO-style controls
@@ -61,6 +78,13 @@ The trainer is `DynamicSamplingGRPOTrainer` (a thin subclass of TRL's `GRPOTrain
 - `--steps_per_generation`: optional override for generation cadence.
 
 Launcher env vars: `NUM_ITERATIONS`, `ENABLE_DYNAMIC_SAMPLING` (`0`/`1`), `DYNAMIC_SAMPLING_MIN_STD`, `DAPO_MAX_ROUNDS`, `DAPO_OVERSAMPLE_FACTOR`, `DYNAMIC_SAMPLING_REWARD_NAME`, `MASK_TRUNCATED_COMPLETIONS` (`0`/`1`), `STEPS_PER_GENERATION`, `EVAL_ON_START` (`0`/`1`), `EXEC_TIMEOUT_S`, `REWARD_WORKERS`, `LENGTH_PENALTY_MAX`, `LENGTH_PENALTY_BUFFER`, `REWARD_WEIGHTS`, `VLLM_GROUP_PORT`, `SAVE_STEPS`, `EVAL_STEPS`, `LOGGING_STEPS`, `LOG_COMPLETIONS`, `NUM_COMPLETIONS_TO_PRINT`, `EVAL_LIMIT`. Logging defaults: `SAVE_STEPS=25`, `EVAL_STEPS=25`, `LOGGING_STEPS=5`, `LOG_COMPLETIONS=0`, `EVAL_LIMIT=64`, `MASK_TRUNCATED_COMPLETIONS=0`; `DAPO_OVERSAMPLE_FACTOR` defaults to `8`. `REWARD_WORKERS=1` keeps training reward execution serial per rank, while higher values parallelize DB-backed rewards like `result_reward`. Eval uses the same `num_generations` setting as training. `VLLM_GROUP_PORT` defaults to `29600` to avoid OS ephemeral-port collisions during vLLM weight updates.
+
+Use `scripts/check_cluster_health.py` before a long run when you want a quick local sanity check for GPU visibility, peer access, `nvidia-smi` topology, and a real NCCL collective smoke test across the currently visible GPUs:
+
+```bash
+.conda/nl2sql312/bin/python scripts/check_cluster_health.py
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5 .conda/nl2sql312/bin/python scripts/check_cluster_health.py
+```
 
 To limit training or evaluation to a subset of rows for smoke runs:
 
@@ -120,6 +144,25 @@ Inference outputs are written under the timestamped output directory selected by
 The local EX scorer intentionally follows the official BIRD dev evaluation semantics from `AlibabaResearch/DAMO-ConvAI/bird/llm/src/evaluation.py`: it executes predicted and gold SQL on SQLite and checks whether `set(pred_rows) == set(gold_rows)`.
 
 The repository also includes `scripts/run_passk_bird.py` for pass@k evaluation and `scripts/run_self_consistency_bird.py` for self-consistency evaluation. The self-consistency script generates `k` candidates per example, executes them on SQLite, discards candidates whose execution result is empty, and then majority-votes over the remaining raw result sets. Ties break by earliest sample index and then shorter SQL. Recommended starting settings are `--num_generations 16` and `--temperature 0.7`; for NL2SQL, lower temperatures such as `0.1` usually improve top-1 accuracy but often reduce vote diversity, so self-consistency tends to benefit from a moderate temperature instead of the near-greedy setting used for pass@k.
+
+For train-set failure analysis, `scripts/generate_failure_instructions.py` samples prompts from the schema-built training file, runs `n` sampled vLLM generations per prompt, scores every candidate with BIRD EX accuracy, keeps only heterogeneous prompts (neither all-correct nor all-wrong), mines common mistake heuristics from the wrong generations, and writes prompt-ready instruction candidates to `failure_instruction_rules.md`.
+
+Example failure-instruction mining run:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python scripts/generate_failure_instructions.py \
+	--model_name_or_path outputs/gemma4_31b_gspo_bird/checkpoint-70 \
+	--input_file outputs/train-6601-schema-filtered.jsonl \
+	--database_dir databases/train_databases \
+	--output_dir outputs/train_failure_instructions_ckpt70 \
+	--sample_size 1000 \
+	--num_generations 16 \
+	--temperature 0.8 \
+	--top_p 0.95 \
+	--vllm_tensor_parallel_size 4 \
+	--vllm_data_parallel_size 2 \
+	--overwrite
+```
 
 Example self-consistency run:
 

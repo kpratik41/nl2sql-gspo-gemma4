@@ -32,6 +32,8 @@ nl2sql-gspo-gemma4/
 │   ├── launch_vllm.sh
 │   ├── launch_train.sh
 │   ├── launch_inference.sh
+│   ├── check_cluster_health.py
+│   ├── generate_failure_instructions.py
 │   ├── run_inference_bird.py
 │   ├── smoke_test_rewards.py
 │   ├── inspect_jsonl.py
@@ -131,7 +133,7 @@ Utility scripts under `scripts/data_generation/` may need to support both raw JS
 
 The `scripts/data_generation/few_shot_bm25.py` utility generates both inference and training few-shot files. For dev/inference data, each example receives top-k few-shot examples retrieved from the train file. For train data, each example receives top-k few-shot examples retrieved from the train file while excluding examples from the same `db_id`.
 
-The `scripts/data_generation/schema_build.py` utility supports both train and dev splits. It should be able to consume JSONL or JSON inputs, default to the split-specific few-shot file and column-meaning file in `data/bird_<split>_data/raw/`, read schemas from `databases/<split>_databases/`, and emit chat-format JSONL under `outputs/`. It also renders compact schema statistics such as table row/column counts and per-column null/distinct/min/max summaries.
+The `scripts/data_generation/schema_build.py` utility supports both train and dev splits. It should be able to consume JSONL or JSON inputs, default to the split-specific few-shot file and column-meaning file in `data/bird_<split>_data/raw/`, read schemas from `databases/<split>_databases/`, and emit chat-format JSONL under `outputs/`. It also renders compact schema statistics such as table row/column counts and per-column null/distinct/min/max summaries. `Examples:` should show the top occurring concrete values for numeric, date, and text columns rather than summary stats, and any rendered example longer than 50 characters should be truncated with `...`. The renderer also supports `--no-nullability` to omit `Nullable` / `Not Null` labels when a leaner schema prompt is needed. When invoked with `--no-fewshots`, it should omit the few-shot preamble entirely so the user prompt starts at `<question>` rather than leaving a placeholder block.
 
 Schema-built JSONL should include top-level `db_id`, `gold_sql`, `evidence`, and `question` fields in addition to `messages`. The shared normalizer also recovers `db_id` and `evidence` from older message-only schema-built prompts that embed `<db_id>` and `<hint>` tags.
 
@@ -189,9 +191,13 @@ The training script also accepts an optional `--resume_from_checkpoint` argument
 The current launcher recipe trains from `outputs/train-6601-schema-filtered.jsonl` and evaluates on `outputs/dev-20251106-schema-256.jsonl`.
 It currently uses `num_generations=16`, launcher default `gradient_accumulation_steps=16` (override via `GRADIENT_ACCUMULATION_STEPS`), launcher default `max_prompt_length=16000` (override via `MAX_PROMPT_LENGTH`), and `max_completion_length=4096` with vLLM server mode (vLLM `max_model_len=24576`), and the launcher defaults to `google/gemma-4-31B-it`.
 The training launcher also supports `MAX_STEPS` for short smoke runs while keeping the normal epoch-based recipe as the default.
-The training launcher defaults to model-only checkpoints (`SAVE_ONLY_MODEL=1`), which writes HF model weights/config and trainer state while skipping DeepSpeed optimizer/scheduler/scaler/RNG state. Set `SAVE_ONLY_MODEL=0` only for exact optimizer-state resume checkpoints.
-For model-only checkpoints, continue training by setting `MODEL_NAME` to the checkpoint directory and leaving `RESUME_FROM_CHECKPOINT` unset; exact `RESUME_FROM_CHECKPOINT` requires full DeepSpeed optimizer-state checkpoints.
+The training launcher accepts `LEARNING_RATE` or `LR` env overrides for one-off runs without editing the script.
+The training launcher defaults to model-only rotating checkpoints (`SAVE_ONLY_MODEL=1`, `SAVE_TOTAL_LIMIT=3`), which write HF model weights/config and trainer state while skipping DeepSpeed optimizer/scheduler/scaler/RNG state.
+The launcher also defaults `SAVE_LATEST_FULL_CHECKPOINT=1`, which refreshes `OUTPUT_DIR/latest-full-checkpoint` on every save with a full DeepSpeed resume checkpoint containing optimizer/scheduler/RNG state.
+For model-only checkpoints, continue training by setting `MODEL_NAME` to the checkpoint directory and leaving `RESUME_FROM_CHECKPOINT` unset. For exact resume, set `RESUME_FROM_CHECKPOINT` to `OUTPUT_DIR/latest-full-checkpoint`.
 The vLLM launcher routes through `python -m nl2sql_gspo.vllm_serve_compat`, a local wrapper around TRL's server entrypoint.
+The local `nl2sql_gspo.vllm_serve_compat` wrapper also installs a weight-sync diagnostic around TRL's `WeightSyncWorkerExtension.update_named_param`, so server logs include the parameter name, dtype, shape, approximate GiB size, and elapsed time for each incoming weight update, plus the same metadata on exceptions/timeouts.
+The repository also includes `scripts/check_cluster_health.py`, a local health-check utility that reports GPU inventory, `nvidia-smi` topology, peer-access status, NCCL-related env vars, and runs a small NCCL all-reduce/broadcast/all-gather smoke test across the currently visible GPUs.
 For `google/gemma-4-31B-it`, leave `VLLM_ATTENTION_BACKEND` unset by default. vLLM `0.19.x+` contains a Gemma 4 config hook that detects heterogeneous `head_dim` / `global_head_dim` and forces `TRITON_ATTN` when `global_head_dim > 256`; explicitly setting `VLLM_ATTENTION_BACKEND=TORCH_SDPA` bypasses that safeguard and breaks this model family.
 The training launcher skips eval-on-start by default; set `EVAL_ON_START=1` to run a pre-training dev baseline. It also supports optional `--train_limit` / `--eval_limit` row caps for smoke runs.
 
@@ -281,6 +287,7 @@ The repository now includes:
 - `scripts/launch_inference.sh`: launcher for post-training or separate-node inference.
 - `scripts/run_passk_bird.py`: generates `k` sampled candidates per example and reports pass@k from prefixes of the same sampled set.
 - `scripts/run_self_consistency_bird.py`: generates `k` sampled candidates per example, ignores candidates that execute to empty result sets, then majority-votes over the remaining raw execution-result sets to produce one self-consistent SQL choice per example.
+- `scripts/generate_failure_instructions.py`: samples schema-built training prompts, runs sampled vLLM generations, filters to heterogeneous prompts using BIRD EX accuracy, mines common failure heuristics from wrong generations, and writes candidate instruction rules to Markdown/JSON artifacts.
 
 Standalone inference supports a backend switch via `--inference_backend transformers|vllm`. The launcher mirrors this through `INFERENCE_BACKEND` and forwards `MAX_PROMPT_LENGTH`, `MAX_NEW_TOKENS`, `VLLM_TENSOR_PARALLEL_SIZE`, `VLLM_DATA_PARALLEL_SIZE`, `VLLM_GPU_MEMORY_UTILIZATION`, and `VLLM_MAX_MODEL_LEN`.
 

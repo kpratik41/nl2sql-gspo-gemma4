@@ -50,6 +50,8 @@ def parse_args(argv=None):
     parser.add_argument("--max_completion_length", type=int, default=4096)
 
     parser.add_argument("--num_generations", type=int, default=16)
+    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--top_p", type=float, default=0.95)
     parser.add_argument("--per_device_train_batch_size", type=int, default=1)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=64)
 
@@ -79,7 +81,18 @@ def parse_args(argv=None):
 
     parser.add_argument("--logging_steps", type=int, default=5)
     parser.add_argument("--save_steps", type=int, default=100)
+    parser.add_argument("--save_total_limit", type=int, default=3)
     parser.add_argument("--save_only_model", action="store_true")
+    parser.add_argument("--save_latest_full_checkpoint", action="store_true")
+    parser.add_argument(
+        "--latest_full_checkpoint_dir_name",
+        type=str,
+        default="latest-full-checkpoint",
+        help=(
+            "Stable directory name under output_dir for the most recent full "
+            "optimizer-state checkpoint used for exact resume."
+        ),
+    )
     parser.add_argument("--eval_steps", type=int, default=100)
     parser.add_argument("--eval_on_start", action="store_true")
     parser.add_argument("--log_completions", action="store_true")
@@ -346,8 +359,8 @@ def main():
         # Rollout sampling
         num_generations=args.num_generations,
         max_completion_length=args.max_completion_length,
-        temperature=0.8,
-        top_p=0.95,
+        temperature=args.temperature,
+        top_p=args.top_p,
 
         # vLLM server mode
         use_vllm=True,
@@ -380,7 +393,7 @@ def main():
         eval_strategy="steps" if eval_dataset is not None else "no",
         eval_steps=args.eval_steps if eval_dataset is not None else None,
         eval_on_start=args.eval_on_start if eval_dataset is not None else False,
-        save_total_limit=3,
+        save_total_limit=args.save_total_limit,
         report_to=report_to,
         run_name=args.run_name,
         log_completions=args.log_completions,
@@ -401,6 +414,8 @@ def main():
         dapo_max_rounds=args.dapo_max_rounds,
         dapo_oversample_factor=args.dapo_oversample_factor,
         dynamic_sampling_reward_name=args.dynamic_sampling_reward_name,
+        save_latest_full_checkpoint=args.save_latest_full_checkpoint,
+        latest_full_checkpoint_dir_name=args.latest_full_checkpoint_dir_name,
     )
 
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)

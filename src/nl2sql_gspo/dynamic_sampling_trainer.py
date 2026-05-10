@@ -42,7 +42,9 @@ Key invariants
 
 from __future__ import annotations
 
+import os
 import random
+import shutil
 import time
 from typing import Any, Dict, List, Optional
 
@@ -104,6 +106,8 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         dapo_max_rounds: int = 6,
         dapo_oversample_factor: int = 1,
         dynamic_sampling_reward_name: Optional[str] = None,
+        save_latest_full_checkpoint: bool = False,
+        latest_full_checkpoint_dir_name: str = "latest-full-checkpoint",
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -113,6 +117,10 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         self.dapo_oversample_factor = max(1, int(dapo_oversample_factor))
         self.dynamic_sampling_reward_name = (
             dynamic_sampling_reward_name if dynamic_sampling_reward_name else None
+        )
+        self.save_latest_full_checkpoint = bool(save_latest_full_checkpoint)
+        self.latest_full_checkpoint_dir_name = (
+            latest_full_checkpoint_dir_name.strip() or "latest-full-checkpoint"
         )
         self._dyn_pool_indices: List[int] = []
         self._dyn_pool_cursor: int = 0
@@ -151,6 +159,35 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 f"max_rounds={self.dapo_max_rounds} | min_std={self.dynamic_sampling_min_std} | "
                 f"criterion={criterion} | num_generations={self.num_generations}"
             )
+
+    def _wait_for_everyone(self) -> None:
+        wait_for_everyone = getattr(self.accelerator, "wait_for_everyone", None)
+        if callable(wait_for_everyone):
+            wait_for_everyone()
+
+    def _latest_full_checkpoint_dir(self, trial=None) -> str:
+        run_dir = self._get_output_dir(trial=trial)
+        return os.path.join(run_dir, self.latest_full_checkpoint_dir_name)
+
+    def _save_latest_restart_checkpoint(self, trial=None) -> None:
+        output_dir = self._latest_full_checkpoint_dir(trial=trial)
+        if self.is_world_process_zero() and os.path.isdir(output_dir):
+            shutil.rmtree(output_dir)
+        self._wait_for_everyone()
+
+        self.save_model(output_dir, _internal_call=True)
+        self._save_optimizer_and_scheduler(output_dir)
+        self._save_scaler(output_dir)
+        self._save_rng_state(output_dir)
+
+        if self.args.should_save:
+            self.state.save_to_json(os.path.join(output_dir, "trainer_state.json"))
+        self._wait_for_everyone()
+
+    def _save_checkpoint(self, model, trial) -> None:
+        super()._save_checkpoint(model, trial)
+        if self.save_latest_full_checkpoint:
+            self._save_latest_restart_checkpoint(trial=trial)
 
     # ------------------------------------------------------------------ #
     # Backup pool of replacement prompts (shared shuffled tail queue)
@@ -247,6 +284,27 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         # Fallback: aggregated advantages — non-zero somewhere in the group.
         adv_grouped = advantages.view(-1, num_generations)
         return adv_grouped.abs().max(dim=1).values >= self.dynamic_sampling_min_std
+
+    def _group_reward_bucket_counts(self, round_out: Dict[str, torch.Tensor]):
+        """Per-rank counts of all-correct and all-wrong groups for the dyn reward."""
+        advantages = round_out["advantages"]
+        local_n = advantages.shape[0]
+        num_generations = self.num_generations
+        if local_n == 0 or local_n % num_generations != 0:
+            return None
+        if self._dyn_reward_idx is None or self._last_rewards_per_func is None:
+            return None
+
+        rpf = self._last_rewards_per_func
+        start = self.accelerator.process_index * local_n
+        local_rewards = rpf[start : start + local_n, self._dyn_reward_idx]
+        grouped = local_rewards.view(-1, num_generations).float().to(advantages.device)
+        group_min = grouped.min(dim=1).values
+        group_max = grouped.max(dim=1).values
+        return (
+            int((group_min >= 1.0 - 1e-6).long().sum().item()),
+            int((group_max <= 1e-6).long().sum().item()),
+        )
 
     # ------------------------------------------------------------------ #
     # Group extraction / concat
@@ -807,8 +865,11 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         # Logging
         try:
             local_candidate_het = int(het.long().sum().item())
+            reward_bucket_counts = self._group_reward_bucket_counts(round_out)
+            local_all_correct = reward_bucket_counts[0] if reward_bucket_counts is not None else -1
+            local_all_wrong = reward_bucket_counts[1] if reward_bucket_counts is not None else -1
             counters = torch.tensor(
-                [local_groups, local_candidate_het, len(take_het), n_padded_local],
+                [local_groups, local_candidate_het, len(take_het), n_padded_local, local_all_correct, local_all_wrong],
                 device=device,
                 dtype=torch.long,
             )
@@ -817,11 +878,16 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             g_candidate_het = int(gathered[:, 1].sum().item())
             g_kept = int(gathered[:, 2].sum().item())
             g_padded = int(gathered[:, 3].sum().item())
+            g_all_correct = None if (gathered[:, 4] < 0).any() else int(gathered[:, 4].sum().item())
+            g_all_wrong = None if (gathered[:, 5] < 0).any() else int(gathered[:, 5].sum().item())
         except Exception:
             g_attempted = local_groups
             g_candidate_het = int(het.long().sum().item())
             g_kept = len(take_het)
             g_padded = n_padded_local
+            reward_bucket_counts = self._group_reward_bucket_counts(round_out)
+            g_all_correct = reward_bucket_counts[0] if reward_bucket_counts is not None else None
+            g_all_wrong = reward_bucket_counts[1] if reward_bucket_counts is not None else None
 
         candidate_het_rate = (g_candidate_het / g_attempted) if g_attempted > 0 else 0.0
         fill_rate = (g_kept / (g_kept + g_padded)) if (g_kept + g_padded) > 0 else 0.0
@@ -842,12 +908,15 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 if values:
                     reward_bits.append(f"{reward_name}={values[-1]:.4g}")
             reward_suffix = " " + " ".join(reward_bits) if reward_bits else ""
+            bucket_suffix = ""
+            if g_all_correct is not None and g_all_wrong is not None:
+                bucket_suffix = f" all_correct={g_all_correct} all_wrong={g_all_wrong}"
             print(
                 f"[dapo] step={step} mode=oversample K={K} "
                 f"attempted={g_attempted} candidate_het={g_candidate_het} "
                 f"candidate_het_rate={candidate_het_rate:.2%} "
                 f"selected={g_kept}/{g_kept + g_padded} padded={g_padded} "
-                f"fill_rate={fill_rate:.2%}{reward_suffix}"
+                f"fill_rate={fill_rate:.2%}{bucket_suffix}{reward_suffix}"
             )
         return self._add_policy_logps_for_kept(out)
 
@@ -950,6 +1019,9 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
 
         # Logging
         try:
+            reward_bucket_counts = self._group_reward_bucket_counts(last_round_out) if last_round_out is not None else None
+            local_all_correct = reward_bucket_counts[0] if reward_bucket_counts is not None else -1
+            local_all_wrong = reward_bucket_counts[1] if reward_bucket_counts is not None else -1
             counters = torch.tensor(
                 [
                     rounds_used,
@@ -957,6 +1029,8 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                     total_groups_heterogeneous,
                     total_groups_kept,
                     padded_groups,
+                    local_all_correct,
+                    local_all_wrong,
                 ],
                 device=device,
                 dtype=torch.long,
@@ -967,12 +1041,17 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             g_candidate_het = int(gathered[:, 2].sum().item())
             g_kept = int(gathered[:, 3].sum().item())
             g_padded = int(gathered[:, 4].sum().item())
+            g_all_correct = None if (gathered[:, 5] < 0).any() else int(gathered[:, 5].sum().item())
+            g_all_wrong = None if (gathered[:, 6] < 0).any() else int(gathered[:, 6].sum().item())
         except Exception:
             g_rounds_max = rounds_used
             g_attempted = total_groups_attempted
             g_candidate_het = total_groups_heterogeneous
             g_kept = total_groups_kept
             g_padded = padded_groups
+            reward_bucket_counts = self._group_reward_bucket_counts(last_round_out) if last_round_out is not None else None
+            g_all_correct = reward_bucket_counts[0] if reward_bucket_counts is not None else None
+            g_all_wrong = reward_bucket_counts[1] if reward_bucket_counts is not None else None
 
         candidate_het_rate = (g_candidate_het / g_attempted) if g_attempted > 0 else 0.0
         fill_rate = (g_kept / (g_kept + g_padded)) if (g_kept + g_padded) > 0 else 0.0
@@ -986,12 +1065,15 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
 
         if getattr(self.accelerator, "is_main_process", True):
             step = int(getattr(self.state, "global_step", 0))
+            bucket_suffix = ""
+            if g_all_correct is not None and g_all_wrong is not None:
+                bucket_suffix = f" all_correct={g_all_correct} all_wrong={g_all_wrong}"
             print(
                 f"[dapo] step={step} rounds={g_rounds_max}/{self.dapo_max_rounds} "
                 f"attempted={g_attempted} candidate_het={g_candidate_het} "
                 f"candidate_het_rate={candidate_het_rate:.2%} "
                 f"selected={g_kept}/{g_kept + g_padded} padded={g_padded} "
-                f"fill_rate={fill_rate:.2%}"
+                f"fill_rate={fill_rate:.2%}{bucket_suffix}"
             )
 
         return self._add_policy_logps_for_kept(out)

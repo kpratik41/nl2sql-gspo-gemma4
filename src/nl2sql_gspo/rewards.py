@@ -1,5 +1,6 @@
 import re
 import threading
+import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
@@ -10,6 +11,37 @@ from nl2sql_gspo.sql_utils import (
     bird_get_gold_rows,
     bird_result_match,
 )
+
+
+# Hard wall-clock buffer added on top of the SQLite-internal interrupt
+# timeout. Some SQLite queries (large joins, certain PRAGMAs, NFS-stalled
+# reads) do not honor ``connection.interrupt()`` and would otherwise block
+# the rank's main thread indefinitely, causing other ranks to time out at
+# the next NCCL collective. The buffer gives the internal timer a chance
+# to fire cleanly before we abandon the worker thread.
+_HARD_TIMEOUT_BUFFER_S: float = 15.0
+
+
+def _run_with_hard_timeout(fn, *args, soft_timeout_s: float, **kwargs):
+    """Run ``fn(*args, **kwargs)`` with a hard wall-clock timeout.
+
+    Uses a fresh single-thread executor per call so a leaked (still-running)
+    worker thread cannot block subsequent calls. If the hard timeout fires we
+    return ``None`` to signal failure to the caller; the caller is responsible
+    for translating that into a domain-specific failure tuple.
+    """
+    hard_timeout_s = float(soft_timeout_s) + _HARD_TIMEOUT_BUFFER_S
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        future = executor.submit(fn, *args, **kwargs)
+        try:
+            return future.result(timeout=hard_timeout_s)
+        except concurrent.futures.TimeoutError:
+            return None
+    finally:
+        # Do NOT wait on a hung worker thread; let it leak so this rank
+        # can keep up with the others at the next NCCL collective.
+        executor.shutdown(wait=False, cancel_futures=True)
 
 from nl2sql_gspo.schema_utils import (
     extract_tables_from_sql,
@@ -97,12 +129,22 @@ def make_nl2sql_rewards(
             cached = _exec_cache.get(key)
         if cached is not None:
             return cached
-        ok, rows, err = bird_execute_sql(
+        result = _run_with_hard_timeout(
+            bird_execute_sql,
             sql=sql,
             db_id=db_id,
             database_dir=database_dir,
             timeout_s=exec_timeout_s,
+            soft_timeout_s=exec_timeout_s,
         )
+        if result is None:
+            ok, rows, err = (
+                False,
+                None,
+                f"hard-timeout after {exec_timeout_s + _HARD_TIMEOUT_BUFFER_S:.1f}s",
+            )
+        else:
+            ok, rows, err = result
         with _exec_cache_lock:
             if len(_exec_cache) >= _EXEC_CACHE_MAX:
                 # Drop oldest entry (FIFO).
@@ -125,12 +167,18 @@ def make_nl2sql_rewards(
         gold_sql_text = extract_sql(current_gold_sql)
 
         pred_ok, pred_rows, _ = _cached_bird_execute(pred_sql, current_db_id)
-        gold_ok, gold_row_set, _ = bird_get_gold_rows(
+        gold_result = _run_with_hard_timeout(
+            bird_get_gold_rows,
             gold_sql=gold_sql_text,
             db_id=current_db_id,
             database_dir=database_dir,
             timeout_s=gold_timeout_s,
+            soft_timeout_s=gold_timeout_s,
         )
+        if gold_result is None:
+            gold_ok, gold_row_set = False, None
+        else:
+            gold_ok, gold_row_set, _ = gold_result
         return 1.0 if pred_ok and gold_ok and bird_result_match(pred_rows, gold_row_set) else 0.0
 
     def _nonnull_reward_one(item) -> float:

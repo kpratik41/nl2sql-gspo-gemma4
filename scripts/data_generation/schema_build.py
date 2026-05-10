@@ -61,7 +61,20 @@ def truncate_values(values: List[Any], max_items: int = 3, max_length: int = 50)
     rendered = [format_stat_value(value) for value in values if value is not None]
     if max_items > 0:
         rendered = rendered[:max_items]
-    return [value for value in rendered if len(value) <= max_length]
+    if max_length <= 0:
+        return rendered
+    if max_length <= 3:
+        return [value[:max_length] for value in rendered]
+    return [value if len(value) <= max_length else value[: max_length - 3] + "..." for value in rendered]
+
+
+def get_top_occurring_values(cur, table: str, col_name: str, limit: int = 5) -> List[Any]:
+    cur.execute(
+        f"SELECT `{col_name}`, COUNT(*) AS cnt FROM `{table}` "
+        f"WHERE `{col_name}` IS NOT NULL "
+        f"GROUP BY `{col_name}` ORDER BY cnt DESC, `{col_name}` ASC LIMIT {int(limit)};"
+    )
+    return [row[0] for row in cur.fetchall()]
 
 
 def resolve_default_paths(base_dir: Optional[str], split: str) -> Dict[str, str]:
@@ -147,7 +160,8 @@ class MSchema:
     def single_table_mschema(self, table_name: str,
                              selected_columns: List = None,
                              example_num: int = 3,
-                             show_type_detail: bool = False) -> str:
+                             show_type_detail: bool = False,
+                             include_nullability: bool = True) -> str:
         table_info = self.tables.get(table_name, {})
         output = []
 
@@ -186,7 +200,8 @@ class MSchema:
             if field_info.get("primary_key", False):
                 details.append("Primary Key")
 
-            details.append("Nullable" if field_info.get("nullable", True) else "Not Null")
+            if include_nullability:
+                details.append("Nullable" if field_info.get("nullable", True) else "Not Null")
 
             default = field_info.get("default")
             if default is not None:
@@ -218,22 +233,14 @@ class MSchema:
             # -- examples -----------------------------------------------------
             if example_num > 0 and len(field_info.get("examples", [])) > 0:
                 examples = [s for s in field_info["examples"] if s is not None]
-                examples = examples_to_str(examples)
-                if len(examples) > example_num:
-                    examples = examples[:example_num]
-
-                if raw_type.upper() in ("DATE", "TIME", "DATETIME", "TIMESTAMP"):
-                    examples = examples[:1]
-                elif examples and max(len(s) for s in examples) > 20:
-                    examples = [] if max(len(s) for s in examples) > 50 else examples[:1]
+                examples = truncate_values(examples_to_str(examples), max_items=example_num, max_length=50)
 
                 if examples:
                     details.append(f"Examples: [{', '.join(examples)}]")
 
             if details:
                 field_line += ", " + ", ".join(details)
-
-            field_line += ")"
+                field_line += ")"
             field_lines.append(field_line)
 
         output.append("[")
@@ -242,7 +249,8 @@ class MSchema:
         return "\n".join(output)
 
     def to_mschema(self, selected_tables: List = None, selected_columns: List = None,
-                   example_num: int = 3, show_type_detail: bool = False) -> str:
+                   example_num: int = 3, show_type_detail: bool = False,
+                   include_nullability: bool = True) -> str:
         output = [f"`{self.db_id}`", "【Schema】"]
 
         if selected_tables is not None:
@@ -260,7 +268,8 @@ class MSchema:
                     if selected_columns is not None else None
                 )
                 output.append(self.single_table_mschema(table_name, cur_selected,
-                                                       example_num, show_type_detail))
+                                                       example_num, show_type_detail,
+                                                       include_nullability=include_nullability))
 
         if self.foreign_keys:
             output.append("【Foreign keys】")
@@ -398,7 +407,8 @@ def build_mschema_from_db(db_path: str, db_id: str,
 
             # Compute lightweight descriptive stats directly from SQLite so prompt
             # quality improves without requiring a separate profiling pipeline.
-            # Numeric/date columns get extrema; text columns get frequent values.
+            # Summary stats stay type-specific, while examples always show the
+            # most frequent concrete values seen in the column.
             # The output intentionally stays small enough to fit prompt budgets.
             # -- compute examples / stats ------------------------------------
             examples: list = []
@@ -421,7 +431,7 @@ def build_mschema_from_db(db_path: str, db_id: str,
                         if row_count is not None and non_null_count is not None:
                             null_count = row_count - non_null_count
                         if non_null_count:
-                            examples = [min_value, round(avg_value, 4) if avg_value is not None else avg_value, max_value]
+                            examples = get_top_occurring_values(cur, table, col_name)
 
                     elif kind == "DATE":
                         cur.execute(
@@ -433,7 +443,7 @@ def build_mschema_from_db(db_path: str, db_id: str,
                         if row_count is not None and non_null_count is not None:
                             null_count = row_count - non_null_count
                         if non_null_count:
-                            examples = [min_value, max_value]
+                            examples = get_top_occurring_values(cur, table, col_name)
 
                     else:  # TEXT
                         cur.execute(
@@ -443,12 +453,7 @@ def build_mschema_from_db(db_path: str, db_id: str,
                         non_null_count, distinct_count = cur.fetchone()
                         if row_count is not None and non_null_count is not None:
                             null_count = row_count - non_null_count
-                        cur.execute(
-                            f"SELECT `{col_name}`, COUNT(*) AS cnt FROM `{table}` "
-                            f"WHERE `{col_name}` IS NOT NULL "
-                            f"GROUP BY `{col_name}` ORDER BY cnt DESC LIMIT 5;"
-                        )
-                        top_values = [r[0] for r in cur.fetchall()]
+                        top_values = get_top_occurring_values(cur, table, col_name)
                         examples = top_values[:]
                 except Exception:
                     examples = samples[:3]
@@ -551,6 +556,27 @@ Evidence: {HINT}
 """
 
 
+USER_TEMPLATE_NO_FEWSHOTS = """
+<question>
+{QUESTION}
+</question>
+
+<hint>
+{HINT}
+</hint>
+
+<database_schema>
+{DBSCHEMA}
+</database_schema>
+
+<db_id>{DBID}</db_id>
+
+---
+Question: {QUESTION}
+Evidence: {HINT}
+"""
+
+
 # ================================================================
 # 6. FORMATTERS
 # ================================================================
@@ -573,6 +599,50 @@ def format_assistant(sql: str) -> str:
         "<scratch_pad>\nGold reference SQL.\n</scratch_pad>\n"
         f"<final_answer>\n<sql_code>{sql}</sql_code>\n</final_answer>"
     )
+
+
+def format_user_prompt(
+    question: str,
+    hint: str,
+    db_schema: str,
+    db_id: str,
+    few_shot_examples: list,
+    include_fewshots: bool = True,
+) -> str:
+    template = USER_TEMPLATE if include_fewshots else USER_TEMPLATE_NO_FEWSHOTS
+    values = {
+        "QUESTION": question,
+        "HINT": hint,
+        "DBSCHEMA": db_schema,
+        "DBID": db_id,
+    }
+    if include_fewshots:
+        values["FEWSHOTS"] = format_fewshots(few_shot_examples, enabled=True)
+    return template.format(**values)
+
+
+def build_output_entry(
+    db_id: str,
+    gold_sql: str,
+    hint: str,
+    question: str,
+    user_msg: str,
+    messages_only: bool = False,
+) -> Dict[str, Any]:
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_msg},
+        {"role": "assistant", "content": format_assistant(gold_sql)},
+    ]
+    if messages_only:
+        return {"messages": messages}
+    return {
+        "db_id": db_id,
+        "gold_sql": gold_sql,
+        "evidence": hint,
+        "question": question,
+        "messages": messages,
+    }
 
 
 # ================================================================
@@ -629,8 +699,16 @@ def parse_args():
         help="Disable column stats / examples in MSchema",
     )
     parser.add_argument(
+        "--no-nullability", action="store_true",
+        help="Disable Nullable / Not Null labels in rendered schema output.",
+    )
+    parser.add_argument(
         "--log-every", type=int, default=50,
         help="Print progress every N records (default: 50). Use 0 to disable interval logging.",
+    )
+    parser.add_argument(
+        "--messages-only", action="store_true",
+        help="Emit legacy message-only JSONL rows without top-level db_id/gold_sql/evidence/question fields.",
     )
     return parser.parse_args()
 
@@ -682,7 +760,10 @@ def main():
                 example_num  = args.example_num,
                 include_stats= not args.no_stats,
             )
-            schema_cache[db_id] = ms.to_mschema(example_num=args.example_num)
+            schema_cache[db_id] = ms.to_mschema(
+                example_num=args.example_num,
+                include_nullability=not args.no_nullability,
+            )
         return schema_cache[db_id]
 
     # -- write JSONL -----------------------------------------------------
@@ -708,25 +789,23 @@ def main():
 
             db_schema = get_mschema_str(db_id)
 
-            user_msg = USER_TEMPLATE.format(
-                FEWSHOTS = format_fewshots(fewshots, enabled=not args.no_fewshots),
-                QUESTION = question,
-                HINT     = hint,
-                DBSCHEMA = db_schema,
-                DBID     = db_id,
+            user_msg = format_user_prompt(
+                question=question,
+                hint=hint,
+                db_schema=db_schema,
+                db_id=db_id,
+                few_shot_examples=fewshots,
+                include_fewshots=not args.no_fewshots,
             )
 
-            entry = {
-                "db_id": db_id,
-                "gold_sql": gold_sql,
-                "evidence": hint,
-                "question": question,
-                "messages": [
-                    {"role": "system",    "content": SYSTEM_PROMPT},
-                    {"role": "user",      "content": user_msg},
-                    {"role": "assistant", "content": format_assistant(gold_sql)},
-                ]
-            }
+            entry = build_output_entry(
+                db_id=db_id,
+                gold_sql=gold_sql,
+                hint=hint,
+                question=question,
+                user_msg=user_msg,
+                messages_only=args.messages_only,
+            )
 
             out_f.write(json.dumps(entry, ensure_ascii=False) + "\n")
             if should_log:

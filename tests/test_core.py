@@ -33,6 +33,7 @@ from scripts.run_inference_bird import (
     plan_vllm_device_groups,
     shard_rows_for_data_parallel,
 )
+from scripts.data_generation.schema_build import MSchema, build_mschema_from_db, build_output_entry, format_user_prompt
 from scripts.run_self_consistency_bird import choose_majority_vote_candidate, rows_to_vote_signature
 
 
@@ -190,6 +191,31 @@ class TrainScriptTests(unittest.TestCase):
         self.assertEqual(args.exec_timeout_s, 45.0)
         self.assertEqual(args.length_penalty_max, 4096)
         self.assertEqual(args.length_penalty_buffer, 512)
+        self.assertEqual(args.save_total_limit, 3)
+        self.assertFalse(args.save_latest_full_checkpoint)
+
+    def test_parse_args_accepts_latest_full_checkpoint_options(self):
+        args = parse_args(
+            [
+                "--model_name_or_path",
+                "model",
+                "--train_file",
+                "train.jsonl",
+                "--database_dir",
+                "databases",
+                "--output_dir",
+                "outputs/run",
+                "--save_total_limit",
+                "5",
+                "--save_latest_full_checkpoint",
+                "--latest_full_checkpoint_dir_name",
+                "resume-latest",
+            ]
+        )
+
+        self.assertEqual(args.save_total_limit, 5)
+        self.assertTrue(args.save_latest_full_checkpoint)
+        self.assertEqual(args.latest_full_checkpoint_dir_name, "resume-latest")
 
 
 class InferenceScriptTests(unittest.TestCase):
@@ -234,6 +260,80 @@ class InferenceScriptTests(unittest.TestCase):
             devices = plan_transformers_worker_devices(data_parallel_size=0)
 
         self.assertEqual(devices, ["0", "1", "2", "3"])
+
+
+class SchemaBuildTests(unittest.TestCase):
+    def test_format_user_prompt_omits_fewshot_preamble_when_disabled(self):
+        prompt = format_user_prompt(
+            question="Count rows.",
+            hint="use COUNT(*)",
+            db_schema="`db`\n【Schema】\n# Table: t\n[(id:NUMERIC), Primary Key]",
+            db_id="db",
+            few_shot_examples=[
+                {"db_id": "x", "question": "q", "evidence": "h", "SQL": "SELECT 1"}
+            ],
+            include_fewshots=False,
+        )
+
+        self.assertTrue(prompt.startswith("\n<question>\nCount rows."))
+        self.assertNotIn("Use the examples only", prompt)
+        self.assertNotIn("- Example 1", prompt)
+        self.assertIn("<hint>\nuse COUNT(*)\n</hint>", prompt)
+        self.assertIn("<database_schema>", prompt)
+        self.assertIn("<db_id>db</db_id>", prompt)
+
+    def test_build_mschema_examples_use_frequent_values_and_truncate_long_strings(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "toy.sqlite"
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            cur.execute("CREATE TABLE demo (num INTEGER, day TEXT, note TEXT)")
+            long_note = "L" * 60
+            rows = [
+                (1, "2024-01-02", long_note),
+                (1, "2024-01-02", long_note),
+                (1, "2024-01-02", long_note),
+                (2, "2024-01-01", "short"),
+                (2, "2024-01-01", "short"),
+                (3, "2024-01-03", "medium"),
+            ]
+            cur.executemany("INSERT INTO demo VALUES (?, ?, ?)", rows)
+            conn.commit()
+            conn.close()
+
+            ms = build_mschema_from_db(str(db_path), "toy", meanings={}, example_num=3, include_stats=True)
+            rendered = ms.to_mschema(example_num=3)
+
+        self.assertIn("(num:NUMERIC), Nullable, Stats:", rendered)
+        self.assertIn("Examples: [1, 2, 3]", rendered)
+        self.assertNotIn("Examples: [1, 1.5, 3]", rendered)
+        self.assertIn("Examples: [2024-01-02, 2024-01-01, 2024-01-03]", rendered)
+        self.assertIn("Examples: [LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL..., short, medium]", rendered)
+
+    def test_build_output_entry_supports_messages_only_rows(self):
+        entry = build_output_entry(
+            db_id="toy",
+            gold_sql="SELECT 1",
+            hint="hint",
+            question="question",
+            user_msg="<question>question</question>",
+            messages_only=True,
+        )
+
+        self.assertEqual(sorted(entry.keys()), ["messages"])
+        self.assertEqual([message["role"] for message in entry["messages"]], ["system", "user", "assistant"])
+
+    def test_to_mschema_can_omit_nullability_labels(self):
+        ms = MSchema(db_id="toy")
+        ms.add_table("demo")
+        ms.add_field("demo", "id", field_type="NUMERIC", primary_key=True, nullable=False)
+        ms.add_field("demo", "name", field_type="TEXT", nullable=True)
+
+        rendered = ms.to_mschema(example_num=0, include_nullability=False)
+
+        self.assertNotIn("Nullable", rendered)
+        self.assertNotIn("Not Null", rendered)
+        self.assertIn("(id:NUMERIC), Primary Key)", rendered)
 
     def test_shard_rows_for_data_parallel_round_robins_rows(self):
         rows = [{"source_idx": idx} for idx in range(5)]
@@ -794,6 +894,35 @@ class DynamicSamplingTrainerHelperTests(unittest.TestCase):
         self.assertEqual(out["completion_mask"].sum().item(), 0)
         self.assertTrue(out["_skip_policy_loss"].all().item())
         self.assertEqual(out["importance_sampling_ratio"].tolist(), [[1.0] * 3] * 2)
+
+    def test_save_latest_restart_checkpoint_uses_stable_directory(self):
+        import os
+
+        trainer, _ = self._make_bare_trainer()
+        trainer.latest_full_checkpoint_dir_name = "latest-full-checkpoint"
+        trainer._get_output_dir = mock.Mock(return_value="/tmp/run")
+        trainer.is_world_process_zero = mock.Mock(return_value=True)
+        trainer.save_model = mock.Mock()
+        trainer._save_optimizer_and_scheduler = mock.Mock()
+        trainer._save_scaler = mock.Mock()
+        trainer._save_rng_state = mock.Mock()
+        trainer.state = type("_FakeState", (), {"save_to_json": mock.Mock()})()
+
+        with mock.patch("os.path.isdir", return_value=False), mock.patch(
+            "shutil.rmtree"
+        ) as rmtree:
+            trainer.args.should_save = True
+            trainer._save_latest_restart_checkpoint(trial=None)
+
+        full_dir = os.path.join("/tmp/run", "latest-full-checkpoint")
+        rmtree.assert_not_called()
+        trainer.save_model.assert_called_once_with(full_dir, _internal_call=True)
+        trainer._save_optimizer_and_scheduler.assert_called_once_with(full_dir)
+        trainer._save_scaler.assert_called_once_with(full_dir)
+        trainer._save_rng_state.assert_called_once_with(full_dir)
+        trainer.state.save_to_json.assert_called_once_with(
+            os.path.join(full_dir, "trainer_state.json")
+        )
 
 
 class TrainScriptDefaultsTests(unittest.TestCase):
