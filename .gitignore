@@ -25,10 +25,6 @@ databases/
 logs/
 runs/
 
-data/
-
-data/*/processed/
-
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
