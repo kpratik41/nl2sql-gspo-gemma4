@@ -380,28 +380,37 @@ def build_mschema_from_db(db_path: str, db_id: str,
 
     # -- columns --------------------------------------------------------
     for table in tables:
-        try:
-            cur.execute(f"SELECT COUNT(*) FROM `{table}`")
-            row_count = cur.fetchone()[0]
-        except Exception:
-            row_count = None
+        row_count = None
+        if include_stats:
+            try:
+                cur.execute(f"SELECT COUNT(*) FROM `{table}`")
+                row_count = cur.fetchone()[0]
+            except Exception:
+                row_count = None
 
         cur.execute(f"PRAGMA table_info('{table}');")
         cols = cur.fetchall()   # (cid, name, type, notnull, dflt, pk)
-        ms.add_table(table, row_count=row_count, column_count=len(cols))
+        ms.add_table(
+            table,
+            row_count=row_count if include_stats else None,
+            column_count=len(cols) if include_stats else None,
+        )
 
         for cid, col_name, col_type, notnull, dflt, pk in cols:
             col_type = col_type or "TEXT"
 
-            # sample values for type classification
-            try:
-                cur.execute(
-                    f"SELECT `{col_name}` FROM `{table}` "
-                    f"WHERE `{col_name}` IS NOT NULL LIMIT 20;"
-                )
-                samples = [r[0] for r in cur.fetchall()]
-            except Exception:
-                samples = []
+            # Sample values only when stats/examples are requested. Bare schema
+            # builds should avoid scanning table data entirely.
+            samples = []
+            if include_stats:
+                try:
+                    cur.execute(
+                        f"SELECT `{col_name}` FROM `{table}` "
+                        f"WHERE `{col_name}` IS NOT NULL LIMIT 20;"
+                    )
+                    samples = [r[0] for r in cur.fetchall()]
+                except Exception:
+                    samples = []
 
             kind = classify_column(col_type, samples)
 

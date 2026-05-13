@@ -147,10 +147,40 @@ The normalized dataset should expose these fields:
     "messages": [...],
     "db_id": "...",
     "gold_sql": "...",
-    "evidence": "..."
+    "evidence": "...",
+    "question": "...",
+    "tools": [...]
 }
 
 Keep remove_unused_columns=False in TRL config because reward functions need db_id, gold_sql, evidence, and messages.
+
+Bare schema datasets currently generated in this workspace:
+
+- `outputs/train-6601-schema-bare.jsonl`: 6601 BIRD train rows, message-only, bare schema, primary/foreign keys only, no few-shots, no column descriptions, no table/column stats, no nullability labels.
+- `outputs/dev-20251106-schema-bare.jsonl`: 1534 BIRD dev rows with the same bare-schema format.
+
+Tool-calling datasets currently generated in this workspace:
+
+- `outputs/train-6601-schema-bare-tool.jsonl`: built from the bare train file.
+- `outputs/dev-20251106-schema-bare-tool.jsonl`: built from the bare dev file.
+
+Tool datasets are produced by `scripts/data_generation/build_tool_dataset.py`. They replace the old non-tool system prompt with `prompts.py::SYSTEM_PROMPT_TEMPLATES`, inject the compact catalog from `src/nl2sql_gspo/tool_calling.py`, attach native Gemma/OpenAI-style `tools`, and expose top-level `db_id`, `gold_sql`, `evidence`, `question`, `prompt`, `messages`, and `tools`. The prompt/messages should contain only `system` and `user`; the gold SQL stays top-level as `gold_sql` for rewards/evaluation.
+
+The intended tool set is exactly:
+
+- `bm25_search_sqlite(db_id, table, column, query, top_k=10, where=None)`
+- `sqlite_peek(db_id, table, columns, limit=10, where=None)`
+- `sqlite_query(db_id, sql, max_return_rows=100)`
+
+`gen_tools.py` also contains `consensus_at_1`, but it is not part of the current tool dataset or GRPO tool catalog.
+
+When filtering or rendering prompt length for tool datasets, pass row-level `tools` to `apply_chat_template(..., tools=tools)`. Gemma tokenizers may return a `BatchEncoding` from `apply_chat_template(..., tokenize=True)`; count actual `input_ids`, not `len(BatchEncoding)`.
+
+Standalone inference for tool datasets should point `INPUT_FILE` to `outputs/dev-20251106-schema-bare-tool.jsonl`, `DATABASE_DIR` to `databases/dev_databases`, and use `scripts/launch_inference.sh` / `scripts/run_inference_bird.py`. The helper `src/nl2sql_gspo/inference_tool_executor.py` configures `BIRD_DB_ROOTS`, parses emitted Gemma-style `call:name{...}` tool calls, and executes them against `gen_tools.py`.
+
+Tool inference is agentic, not one-shot. `scripts/run_inference_bird.py` should generate until a tool boundary, execute the emitted calls, append Gemma-native assistant `tool_calls` plus `tool_responses`, re-render the chat template, and continue until no tool calls remain or `MAX_TOOL_ROUNDS` / `--max_tool_rounds` is reached. This matters for vLLM because Gemma 4 generation config treats the tool-response boundary token as a stop token; stopping after a first tool call is expected unless the runner feeds the tool response back into the model and resumes generation.
+
+The current tool prompt also enforces an output-shape contract: before calling `sqlite_query`, the assistant should write `ExpectedOutputColumns=[...]` in the scratch pad, and after a successful query it should compare returned `columns` against that list before finalizing. The runtime augments successful `sqlite_query` responses with a `column_coverage_reminder` to reinforce this. This is meant to reduce under-projection on broad questions such as “provide details including location, enrollment, rates, rankings, status...”.
 
 Training Method
 
@@ -322,4 +352,3 @@ If changing distributed training settings, update:
 scripts/launch_train.sh
 configs/ds_zero3_bf16.json
 src/nl2sql_gspo/train_gspo_nl2sql.py
-

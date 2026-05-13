@@ -12,7 +12,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from nl2sql_gspo.data import normalize_record
 from nl2sql_gspo.sql_utils import bird_execute_sql, bird_get_gold_rows, bird_result_match, extract_sql, get_database_path
-
+from nl2sql_gspo.inference_tool_executor import (
+    configure_tool_env,
+    execute_tool_calls,
+    extract_and_execute_tools,
+    extract_tool_calls,
+    text_before_first_tool_call,
+)
 
 BIRD_SPLIT_MARKER = "\t----- bird -----\t"
 
@@ -59,6 +65,7 @@ def print_run_configuration(args: argparse.Namespace, output_dir: Path) -> None:
         print(f"[run] vllm_data_parallel_size={args.vllm_data_parallel_size}")
         print(f"[run] vllm_gpu_memory_utilization={args.vllm_gpu_memory_utilization}")
         print(f"[run] vllm_max_model_len={args.vllm_max_model_len}")
+    print(f"[run] max_tool_rounds={args.max_tool_rounds}")
 
 
 def resolve_vllm_tokenizer_source(model_name_or_path: str) -> str:
@@ -113,6 +120,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vllm_data_parallel_size", type=int, default=2)
     parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.9)
     parser.add_argument("--vllm_max_model_len", type=int, default=None)
+    parser.add_argument("--max_tool_rounds", type=int, default=8)
     parser.add_argument("--skip_generation", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
@@ -162,13 +170,14 @@ def load_rows(input_file: str, num_examples: int) -> List[Dict[str, Any]]:
     return rows
 
 
-def render_prompt(tokenizer, messages: List[Dict[str, str]]) -> str:
+def render_prompt(tokenizer, messages: List[Dict[str, str]], tools: Optional[List[Dict[str, Any]]] = None) -> str:
     if hasattr(tokenizer, "apply_chat_template"):
         try:
             return tokenizer.apply_chat_template(
                 messages,
                 tokenize=False,
                 add_generation_prompt=True,
+                tools=tools,
             )
         except ValueError as exc:
             if "tokenizer.chat_template is not set" not in str(exc):
@@ -208,7 +217,8 @@ def filter_rows_by_prompt_length(rows: List[Dict[str, Any]], tokenizer, max_prom
 
     for row in rows:
         prompt_messages = get_generation_messages(row)
-        prompt_text = render_prompt(tokenizer, prompt_messages)
+        tools = row.get("tools")
+        prompt_text = render_prompt(tokenizer, prompt_messages, tools)
         prompt_token_count = len(tokenizer(prompt_text, truncation=False)["input_ids"])
 
         prepared_row = dict(row)
@@ -308,6 +318,227 @@ def prepare_rows_for_generation(rows: List[Dict[str, Any]], tokenizer, max_promp
     return rows, skipped_rows
 
 
+def get_generation_eos_token_ids(model, tokenizer) -> Any:
+    eos_token_id = getattr(getattr(model, "generation_config", None), "eos_token_id", None)
+    if eos_token_id is None:
+        eos_token_id = getattr(tokenizer, "eos_token_id", None)
+    return eos_token_id
+
+
+def build_assistant_tool_message(
+    generated_text: str,
+    tool_calls: List[Dict[str, Any]],
+    tool_responses: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    normalized_calls = []
+    for index, call in enumerate(tool_calls):
+        function = call.get("function") or {}
+        normalized_calls.append(
+            {
+                "id": call.get("id") or f"call_{index}",
+                "type": "function",
+                "function": {
+                    "name": function.get("name", ""),
+                    "arguments": function.get("arguments") or {},
+                },
+            }
+        )
+
+    return {
+        "role": "assistant",
+        "content": "",
+        "reasoning": text_before_first_tool_call(generated_text),
+        "tool_calls": normalized_calls,
+        "tool_responses": [
+            {
+                "name": response.get("name", "unknown"),
+                "response": response.get("response", {"value": response.get("raw_response")}),
+            }
+            for response in tool_responses
+        ],
+    }
+
+
+def build_generation_detail(
+    row: Dict[str, Any],
+    prediction_text: str,
+    prompt_token_count: int,
+    completion_token_count: int,
+    tool_rounds: int,
+    tool_call_count: int,
+    stop_reason: str,
+) -> Dict[str, Any]:
+    return {
+        "source_idx": row.get("source_idx", -1),
+        "db_id": row.get("db_id", ""),
+        "prompt_tokens": prompt_token_count,
+        "prediction_text": prediction_text,
+        "pred_sql": extract_sql(prediction_text),
+        "completion_token_count": completion_token_count,
+        "tool_rounds": tool_rounds,
+        "tool_call_count": tool_call_count,
+        "stop_reason": stop_reason,
+    }
+
+
+def should_use_agentic_tool_loop(row: Dict[str, Any], max_tool_rounds: int) -> bool:
+    return bool(row.get("tools")) and max_tool_rounds > 0
+
+
+def generate_one_with_transformers_tool_loop(
+    model,
+    tokenizer,
+    row: Dict[str, Any],
+    generation_device,
+    max_new_tokens: int,
+    max_tool_rounds: int,
+    eval_timeout: float,
+    temperature: float,
+    top_p: float,
+) -> Dict[str, Any]:
+    import torch
+
+    messages = [dict(message) for message in get_generation_messages(row)]
+    tools = row.get("tools")
+    generated_parts: List[str] = []
+    prompt_token_count = int(row["prompt_tokens"])
+    completion_token_count = 0
+    tool_rounds = 0
+    tool_call_count = 0
+    stop_reason = "finished"
+    do_sample = temperature > 0.0
+    eos_token_id = get_generation_eos_token_ids(model, tokenizer)
+
+    for round_index in range(max_tool_rounds + 1):
+        remaining_tokens = max_new_tokens - completion_token_count
+        if remaining_tokens <= 0:
+            stop_reason = "max_new_tokens"
+            break
+
+        prompt_text = render_prompt(tokenizer, messages, tools)
+        tokenized = tokenizer(prompt_text, return_tensors="pt", truncation=False)
+        tokenized = {key: value.to(generation_device) for key, value in tokenized.items()}
+        current_prompt_tokens = int(tokenized["input_ids"].shape[-1])
+        if round_index == 0:
+            prompt_token_count = current_prompt_tokens
+
+        with torch.inference_mode():
+            output_ids = model.generate(
+                **tokenized,
+                max_new_tokens=remaining_tokens,
+                do_sample=do_sample,
+                temperature=temperature if do_sample else None,
+                top_p=top_p if do_sample else None,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=eos_token_id,
+            )
+
+        generated_ids = output_ids[0][current_prompt_tokens:]
+        completion_token_count += int(generated_ids.shape[0])
+        generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+        if generated_text:
+            generated_parts.append(generated_text)
+
+        tool_calls = extract_tool_calls(generated_text)
+        if not tool_calls:
+            stop_reason = "finished"
+            break
+
+        if round_index >= max_tool_rounds:
+            stop_reason = "max_tool_rounds"
+            break
+
+        tool_responses = execute_tool_calls(tool_calls, timeout_s=eval_timeout)
+        for response in tool_responses:
+            generated_parts.append(response["rendered"])
+        messages.append(build_assistant_tool_message(generated_text, tool_calls, tool_responses))
+        tool_rounds += 1
+        tool_call_count += len(tool_calls)
+
+    prediction_text = "\n".join(part for part in generated_parts if part).strip()
+    return build_generation_detail(
+        row=row,
+        prediction_text=prediction_text,
+        prompt_token_count=prompt_token_count,
+        completion_token_count=completion_token_count,
+        tool_rounds=tool_rounds,
+        tool_call_count=tool_call_count,
+        stop_reason=stop_reason,
+    )
+
+
+def generate_one_with_vllm_tool_loop(
+    llm,
+    sampling_params_cls,
+    tokenizer,
+    row: Dict[str, Any],
+    max_new_tokens: int,
+    max_tool_rounds: int,
+    eval_timeout: float,
+    temperature: float,
+    top_p: float,
+) -> Dict[str, Any]:
+    messages = [dict(message) for message in get_generation_messages(row)]
+    tools = row.get("tools")
+    generated_parts: List[str] = []
+    prompt_token_count = int(row["prompt_tokens"])
+    completion_token_count = 0
+    tool_rounds = 0
+    tool_call_count = 0
+    stop_reason = "finished"
+
+    for round_index in range(max_tool_rounds + 1):
+        remaining_tokens = max_new_tokens - completion_token_count
+        if remaining_tokens <= 0:
+            stop_reason = "max_new_tokens"
+            break
+
+        prompt_text = render_prompt(tokenizer, messages, tools)
+        current_prompt_tokens = len(tokenizer(prompt_text, truncation=False)["input_ids"])
+        if round_index == 0:
+            prompt_token_count = current_prompt_tokens
+
+        sampling_params = sampling_params_cls(
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=remaining_tokens,
+        )
+        request_output = llm.generate([prompt_text], sampling_params=sampling_params, use_tqdm=False)[0]
+        first_output = request_output.outputs[0] if request_output.outputs else None
+        generated_text = (first_output.text or "").strip() if first_output else ""
+        round_tokens = len(first_output.token_ids) if first_output else 0
+        completion_token_count += round_tokens
+        if generated_text:
+            generated_parts.append(generated_text)
+
+        tool_calls = extract_tool_calls(generated_text)
+        if not tool_calls:
+            stop_reason = "finished"
+            break
+
+        if round_index >= max_tool_rounds:
+            stop_reason = "max_tool_rounds"
+            break
+
+        tool_responses = execute_tool_calls(tool_calls, timeout_s=eval_timeout)
+        for response in tool_responses:
+            generated_parts.append(response["rendered"])
+        messages.append(build_assistant_tool_message(generated_text, tool_calls, tool_responses))
+        tool_rounds += 1
+        tool_call_count += len(tool_calls)
+
+    prediction_text = "\n".join(part for part in generated_parts if part).strip()
+    return build_generation_detail(
+        row=row,
+        prediction_text=prediction_text,
+        prompt_token_count=prompt_token_count,
+        completion_token_count=completion_token_count,
+        tool_rounds=tool_rounds,
+        tool_call_count=tool_call_count,
+        stop_reason=stop_reason,
+    )
+
+
 def _transformers_generate_worker(
     queue,
     shard_id: int,
@@ -339,12 +570,25 @@ def _transformers_generate_worker(
 
         results = []
         for row in rows:
+            if should_use_agentic_tool_loop(row, worker_config["max_tool_rounds"]):
+                configure_tool_env(worker_config.get("database_dir", "databases"))
+                results.append(
+                    generate_one_with_transformers_tool_loop(
+                        model=model,
+                        tokenizer=tokenizer,
+                        row=row,
+                        generation_device=generation_device,
+                        max_new_tokens=worker_config["max_new_tokens"],
+                        max_tool_rounds=worker_config["max_tool_rounds"],
+                        eval_timeout=worker_config.get("eval_timeout", 60.0),
+                        temperature=worker_config["temperature"],
+                        top_p=worker_config["top_p"],
+                    )
+                )
+                continue
+
             prompt_text = row["prompt_text"]
-            tokenized = tokenizer(
-                prompt_text,
-                return_tensors="pt",
-                truncation=False,
-            )
+            tokenized = tokenizer(prompt_text, return_tensors="pt", truncation=False)
             tokenized = {key: value.to(generation_device) for key, value in tokenized.items()}
             prompt_token_count = int(row["prompt_tokens"])
 
@@ -356,20 +600,28 @@ def _transformers_generate_worker(
                     temperature=worker_config["temperature"] if do_sample else None,
                     top_p=worker_config["top_p"] if do_sample else None,
                     pad_token_id=tokenizer.pad_token_id,
-                    eos_token_id=tokenizer.eos_token_id,
+                    eos_token_id=get_generation_eos_token_ids(model, tokenizer),
                 )
 
             generated_ids = output_ids[0][prompt_token_count:]
             prediction_text = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+            if "call:" in prediction_text:
+                configure_tool_env(worker_config.get("database_dir", "databases"))
+                prediction_text = extract_and_execute_tools(
+                    prediction_text,
+                    timeout_s=worker_config.get("eval_timeout", 60.0),
+                )
+
             results.append(
-                {
-                    "source_idx": row.get("source_idx", -1),
-                    "db_id": row.get("db_id", ""),
-                    "prompt_tokens": prompt_token_count,
-                    "prediction_text": prediction_text,
-                    "pred_sql": extract_sql(prediction_text),
-                    "completion_token_count": int(generated_ids.shape[0]),
-                }
+                build_generation_detail(
+                    row=row,
+                    prediction_text=prediction_text,
+                    prompt_token_count=prompt_token_count,
+                    completion_token_count=int(generated_ids.shape[0]),
+                    tool_rounds=0,
+                    tool_call_count=len(extract_tool_calls(prediction_text)),
+                    stop_reason="finished",
+                )
             )
 
         queue.put({"status": "ok", "shard_id": shard_id, "results": results})
@@ -400,6 +652,9 @@ def generate_predictions_with_transformers_data_parallel(
         "temperature": args.temperature,
         "top_p": args.top_p,
         "max_new_tokens": args.max_new_tokens,
+        "max_tool_rounds": args.max_tool_rounds,
+        "database_dir": args.database_dir,
+        "eval_timeout": args.eval_timeout,
     }
 
     ctx = mp.get_context("spawn")
@@ -472,6 +727,10 @@ def generate_predictions_with_transformers_data_parallel(
                 "pred_sql": pred_sql,
                 "gold_sql": extract_sql(row.get("gold_sql", "")),
                 "prompt_tokens": prompt_token_count,
+                "completion_token_count": completion_token_count,
+                "tool_rounds": generated.get("tool_rounds", 0),
+                "tool_call_count": generated.get("tool_call_count", 0),
+                "stop_reason": generated.get("stop_reason", ""),
             }
         )
 
@@ -510,28 +769,53 @@ def _vllm_generate_worker(
             max_model_len=llm_config["max_model_len"],
             dtype="bfloat16",
         )
-        sampling_params = SamplingParams(
-            temperature=llm_config["temperature"],
-            top_p=llm_config["top_p"],
-            max_tokens=llm_config["max_new_tokens"],
-        )
-        prompt_texts = [row["prompt_text"] for row in rows]
-        outputs = llm.generate(prompt_texts, sampling_params=sampling_params, use_tqdm=False)
+        from nl2sql_gspo.model_utils import load_tokenizer
+
+        tokenizer = load_tokenizer(llm_config["tokenizer_name_or_path"])
 
         results = []
-        for row, request_output in zip(rows, outputs):
+        for row in rows:
+            if should_use_agentic_tool_loop(row, llm_config["max_tool_rounds"]):
+                configure_tool_env(llm_config.get("database_dir", "databases"))
+                results.append(
+                    generate_one_with_vllm_tool_loop(
+                        llm=llm,
+                        sampling_params_cls=SamplingParams,
+                        tokenizer=tokenizer,
+                        row=row,
+                        max_new_tokens=llm_config["max_new_tokens"],
+                        max_tool_rounds=llm_config["max_tool_rounds"],
+                        eval_timeout=llm_config.get("eval_timeout", 60.0),
+                        temperature=llm_config["temperature"],
+                        top_p=llm_config["top_p"],
+                    )
+                )
+                continue
+
+            sampling_params = SamplingParams(
+                temperature=llm_config["temperature"],
+                top_p=llm_config["top_p"],
+                max_tokens=llm_config["max_new_tokens"],
+            )
+            request_output = llm.generate([row["prompt_text"]], sampling_params=sampling_params, use_tqdm=False)[0]
             first_output = request_output.outputs[0] if request_output.outputs else None
             prediction_text = (first_output.text or "").strip() if first_output else ""
             completion_token_count = len(first_output.token_ids) if first_output else 0
+
+            if "call:" in prediction_text:
+                configure_tool_env(llm_config.get("database_dir", "databases"))
+                prediction_text = extract_and_execute_tools(prediction_text, timeout_s=llm_config.get("eval_timeout", 60.0))
+
             results.append(
-                {
-                    "source_idx": row.get("source_idx", -1),
-                    "db_id": row.get("db_id", ""),
-                    "prompt_tokens": int(row["prompt_tokens"]),
-                    "prediction_text": prediction_text,
-                    "pred_sql": extract_sql(prediction_text),
-                    "completion_token_count": completion_token_count,
-                }
+                build_generation_detail(
+                    row=row,
+                    prediction_text=prediction_text,
+                    prompt_token_count=int(row["prompt_tokens"]),
+                    completion_token_count=completion_token_count,
+                    tool_rounds=0,
+                    tool_call_count=len(extract_tool_calls(prediction_text)),
+                    stop_reason="finished",
+                )
             )
 
         queue.put({"status": "ok", "shard_id": shard_id, "results": results})
@@ -569,6 +853,9 @@ def generate_predictions_with_vllm_data_parallel(
         "temperature": args.temperature,
         "top_p": args.top_p,
         "max_new_tokens": args.max_new_tokens,
+        "max_tool_rounds": args.max_tool_rounds,
+        "database_dir": args.database_dir,
+        "eval_timeout": args.eval_timeout,
     }
 
     ctx = mp.get_context("spawn")
@@ -650,6 +937,10 @@ def generate_predictions_with_vllm_data_parallel(
                 "pred_sql": pred_sql,
                 "gold_sql": extract_sql(row.get("gold_sql", "")),
                 "prompt_tokens": prompt_token_count,
+                "completion_token_count": completion_token_count,
+                "tool_rounds": generated.get("tool_rounds", 0),
+                "tool_call_count": generated.get("tool_call_count", 0),
+                "stop_reason": generated.get("stop_reason", ""),
             }
         )
 
@@ -705,13 +996,6 @@ def generate_predictions_with_transformers(rows: List[Dict[str, Any]], args: arg
     log_each_example = should_log_each_example(len(rows))
 
     for idx, row in enumerate(rows):
-        prompt_text = row["prompt_text"]
-        tokenized = tokenizer(
-            prompt_text,
-            return_tensors="pt",
-            truncation=False,
-        )
-        tokenized = {key: value.to(generation_device) for key, value in tokenized.items()}
         prompt_token_count = int(row["prompt_tokens"])
         source_idx = row.get("source_idx", idx)
         db_id = row.get("db_id", "")
@@ -722,21 +1006,53 @@ def generate_predictions_with_transformers(rows: List[Dict[str, Any]], args: arg
                 f"idx={source_idx} db_id={db_id} prompt_tokens={prompt_token_count}"
             )
 
-        with torch.inference_mode():
-            output_ids = model.generate(
-                **tokenized,
+        if should_use_agentic_tool_loop(row, args.max_tool_rounds):
+            generated = generate_one_with_transformers_tool_loop(
+                model=model,
+                tokenizer=tokenizer,
+                row=row,
+                generation_device=generation_device,
                 max_new_tokens=args.max_new_tokens,
-                do_sample=do_sample,
-                temperature=args.temperature if do_sample else None,
-                top_p=args.top_p if do_sample else None,
-                pad_token_id=tokenizer.pad_token_id,
-                eos_token_id=tokenizer.eos_token_id,
+                max_tool_rounds=args.max_tool_rounds,
+                eval_timeout=args.eval_timeout,
+                temperature=args.temperature,
+                top_p=args.top_p,
             )
+            prediction_text = generated["prediction_text"]
+            pred_sql = generated["pred_sql"]
+            prompt_token_count = generated["prompt_tokens"]
+            completion_token_count = generated["completion_token_count"]
+        else:
+            prompt_text = row["prompt_text"]
+            tokenized = tokenizer(prompt_text, return_tensors="pt", truncation=False)
+            tokenized = {key: value.to(generation_device) for key, value in tokenized.items()}
 
-        generated_ids = output_ids[0][prompt_token_count:]
-        prediction_text = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
-        pred_sql = extract_sql(prediction_text)
-        completion_token_count = int(generated_ids.shape[0])
+            with torch.inference_mode():
+                output_ids = model.generate(
+                    **tokenized,
+                    max_new_tokens=args.max_new_tokens,
+                    do_sample=do_sample,
+                    temperature=args.temperature if do_sample else None,
+                    top_p=args.top_p if do_sample else None,
+                    pad_token_id=tokenizer.pad_token_id,
+                    eos_token_id=get_generation_eos_token_ids(model, tokenizer),
+                )
+
+            generated_ids = output_ids[0][prompt_token_count:]
+            prediction_text = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+            if "call:" in prediction_text:
+                prediction_text = extract_and_execute_tools(prediction_text, timeout_s=args.eval_timeout)
+            pred_sql = extract_sql(prediction_text)
+            completion_token_count = int(generated_ids.shape[0])
+            generated = build_generation_detail(
+                row=row,
+                prediction_text=prediction_text,
+                prompt_token_count=prompt_token_count,
+                completion_token_count=completion_token_count,
+                tool_rounds=0,
+                tool_call_count=len(extract_tool_calls(prediction_text)),
+                stop_reason="finished",
+            )
 
         official_predictions[str(source_idx)] = f"{pred_sql}{BIRD_SPLIT_MARKER}{db_id}"
         detailed_predictions.append(
@@ -747,6 +1063,10 @@ def generate_predictions_with_transformers(rows: List[Dict[str, Any]], args: arg
                 "pred_sql": pred_sql,
                 "gold_sql": extract_sql(row.get("gold_sql", "")),
                 "prompt_tokens": prompt_token_count,
+                "completion_token_count": completion_token_count,
+                "tool_rounds": generated.get("tool_rounds", 0),
+                "tool_call_count": generated.get("tool_call_count", 0),
+                "stop_reason": generated.get("stop_reason", ""),
             }
         )
 
@@ -806,19 +1126,11 @@ def generate_predictions_with_vllm(rows: List[Dict[str, Any]], args: argparse.Na
         dtype="bfloat16",
     )
 
-    sampling_params = SamplingParams(
-        temperature=args.temperature,
-        top_p=args.top_p,
-        max_tokens=args.max_new_tokens,
-    )
-    prompt_texts = [row["prompt_text"] for row in rows]
-    outputs = llm.generate(prompt_texts, sampling_params=sampling_params, use_tqdm=False)
-
     official_predictions: Dict[str, str] = {}
     detailed_predictions: List[Dict[str, Any]] = []
     log_each_example = should_log_each_example(len(rows))
 
-    for idx, (row, request_output) in enumerate(zip(rows, outputs)):
+    for idx, row in enumerate(rows):
         source_idx = row.get("source_idx", idx)
         db_id = row.get("db_id", "")
         prompt_token_count = int(row["prompt_tokens"])
@@ -829,10 +1141,44 @@ def generate_predictions_with_vllm(rows: List[Dict[str, Any]], args: argparse.Na
                 f"idx={source_idx} db_id={db_id} prompt_tokens={prompt_token_count}"
             )
 
-        first_output = request_output.outputs[0] if request_output.outputs else None
-        prediction_text = (first_output.text or "").strip() if first_output else ""
-        pred_sql = extract_sql(prediction_text)
-        completion_token_count = len(first_output.token_ids) if first_output else 0
+        if should_use_agentic_tool_loop(row, args.max_tool_rounds):
+            generated = generate_one_with_vllm_tool_loop(
+                llm=llm,
+                sampling_params_cls=SamplingParams,
+                tokenizer=tokenizer,
+                row=row,
+                max_new_tokens=args.max_new_tokens,
+                max_tool_rounds=args.max_tool_rounds,
+                eval_timeout=args.eval_timeout,
+                temperature=args.temperature,
+                top_p=args.top_p,
+            )
+            prediction_text = generated["prediction_text"]
+            pred_sql = generated["pred_sql"]
+            prompt_token_count = generated["prompt_tokens"]
+            completion_token_count = generated["completion_token_count"]
+        else:
+            sampling_params = SamplingParams(
+                temperature=args.temperature,
+                top_p=args.top_p,
+                max_tokens=args.max_new_tokens,
+            )
+            request_output = llm.generate([row["prompt_text"]], sampling_params=sampling_params, use_tqdm=False)[0]
+            first_output = request_output.outputs[0] if request_output.outputs else None
+            prediction_text = (first_output.text or "").strip() if first_output else ""
+            if "call:" in prediction_text:
+                prediction_text = extract_and_execute_tools(prediction_text, timeout_s=args.eval_timeout)
+            pred_sql = extract_sql(prediction_text)
+            completion_token_count = len(first_output.token_ids) if first_output else 0
+            generated = build_generation_detail(
+                row=row,
+                prediction_text=prediction_text,
+                prompt_token_count=prompt_token_count,
+                completion_token_count=completion_token_count,
+                tool_rounds=0,
+                tool_call_count=len(extract_tool_calls(prediction_text)),
+                stop_reason="finished",
+            )
 
         official_predictions[str(source_idx)] = f"{pred_sql}{BIRD_SPLIT_MARKER}{db_id}"
         detailed_predictions.append(
@@ -843,6 +1189,10 @@ def generate_predictions_with_vllm(rows: List[Dict[str, Any]], args: argparse.Na
                 "pred_sql": pred_sql,
                 "gold_sql": extract_sql(row.get("gold_sql", "")),
                 "prompt_tokens": prompt_token_count,
+                "completion_token_count": completion_token_count,
+                "tool_rounds": generated.get("tool_rounds", 0),
+                "tool_call_count": generated.get("tool_call_count", 0),
+                "stop_reason": generated.get("stop_reason", ""),
             }
         )
 
@@ -1328,6 +1678,9 @@ def main() -> None:
     rows = load_rows(args.input_file, args.num_examples)
     print(f"[run] loaded {len(rows)} input rows")
 
+    # Configure tool environment for database access
+    configure_tool_env(args.database_dir)
+    
     predictions_path = output_dir / "predict_dev.json"
     details_path = output_dir / "prediction_details.jsonl"
     filtered_path = output_dir / "filtered_examples.jsonl"

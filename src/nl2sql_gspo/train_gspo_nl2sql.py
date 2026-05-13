@@ -246,13 +246,14 @@ def filter_by_prompt_length(dataset, tokenizer, max_prompt_length: int, split_na
         prompt = example.get("prompt") or example.get("messages")
         if not prompt:
             return False
+        tools = example.get("tools") or None
         try:
             ids = tokenizer.apply_chat_template(
-                prompt, tokenize=True, add_generation_prompt=True
+                prompt, tokenize=True, add_generation_prompt=True, tools=tools
             )
         except Exception:
             text = tokenizer.apply_chat_template(
-                prompt, tokenize=False, add_generation_prompt=True
+                prompt, tokenize=False, add_generation_prompt=True, tools=tools
             )
             ids = tokenizer.encode(text, add_special_tokens=False)
         return _token_count(ids) <= max_prompt_length
@@ -302,6 +303,10 @@ def main():
     train_dataset = filter_by_prompt_length(
         train_dataset, tokenizer, args.max_prompt_length, "train"
     )
+
+    tools = None
+    if len(train_dataset) > 0:
+        tools = train_dataset[0].get("tools") or None
 
     if args.train_limit >= 0:
         train_dataset = train_dataset.select(range(min(args.train_limit, len(train_dataset))))
@@ -409,6 +414,7 @@ def main():
         eval_dataset=eval_dataset,
         processing_class=tokenizer,
         reward_funcs=reward_functions,
+        tools=tools,
         enable_dynamic_sampling=args.enable_dynamic_sampling,
         dynamic_sampling_min_std=args.dynamic_sampling_min_std,
         dapo_max_rounds=args.dapo_max_rounds,

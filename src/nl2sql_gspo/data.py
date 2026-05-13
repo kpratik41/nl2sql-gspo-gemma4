@@ -113,6 +113,7 @@ def normalize_record(example: Dict[str, Any]) -> Dict[str, Any]:
 
     inferred_db_id = _extract_from_messages(messages, DB_ID_TAG_RE, SCHEMA_DB_ID_RE)
     inferred_evidence = _extract_from_messages(messages, HINT_TAG_RE)
+    tools = example.get("tools") or []
 
     return {
         "prompt": prompt_messages,
@@ -132,4 +133,6 @@ def normalize_record(example: Dict[str, Any]) -> Dict[str, Any]:
             or inferred_evidence
             or ""
         ),
+        "question": example.get("question", ""),
+        "tools": tools,
     }
