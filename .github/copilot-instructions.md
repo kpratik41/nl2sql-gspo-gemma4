@@ -180,7 +180,13 @@ Standalone inference for tool datasets should point `INPUT_FILE` to `outputs/dev
 
 Tool inference is agentic, not one-shot. `scripts/run_inference_bird.py` should generate until a tool boundary, execute the emitted calls, append Gemma-native assistant `tool_calls` plus `tool_responses`, re-render the chat template, and continue until no tool calls remain or `MAX_TOOL_ROUNDS` / `--max_tool_rounds` is reached. This matters for vLLM because Gemma 4 generation config treats the tool-response boundary token as a stop token; stopping after a first tool call is expected unless the runner feeds the tool response back into the model and resumes generation.
 
-The current tool prompt also enforces an output-shape contract: before calling `sqlite_query`, the assistant should write `ExpectedOutputColumns=[...]` in the scratch pad, and after a successful query it should compare returned `columns` against that list before finalizing. The runtime augments successful `sqlite_query` responses with a `column_coverage_reminder` to reinforce this. This is meant to reduce under-projection on broad questions such as “provide details including location, enrollment, rates, rankings, status...”.
+The current tool prompt is draft-first and verification-oriented. The assistant should normally draft SQL from the question/hint/schema first, call `sqlite_query` to execute that candidate, and then use `sqlite_peek` or `bm25_search_sqlite` only when execution or semantic checks reveal uncertainty. Avoid reverting to a tool-first exploration workflow unless the schema/hint is insufficient to draft a plausible query.
+
+The tool prompt enforces an output-shape contract: before calling `sqlite_query`, the assistant should write `ExpectedOutputColumns=[...]` in the scratch pad, and after a successful query it should compare returned `columns` against that list before finalizing. The runtime augments successful `sqlite_query` responses with a `column_coverage_reminder` to reinforce this. This is meant to reduce under-projection on broad questions such as “provide details including location, enrollment, rates, rankings, status...”.
+
+For threshold logic, the tool prompt requires a numeric scale check when scale is uncertain. Before comparing Percent/Rate/Ratio/Fraction columns to hard-coded thresholds, the assistant should use `sqlite_peek` or schema value ranges to confirm whether values are stored as 0-1 fractions, 0-100 percentages, or counts.
+
+The prompt also enforces predicate source fidelity. When similar columns exist in joined tables, choose the predicate column whose name and table semantics directly match the question/hint instead of a generic similarly named column from another table.
 
 Training Method
 

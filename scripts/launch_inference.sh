@@ -16,6 +16,8 @@ NUM_EXAMPLES="${NUM_EXAMPLES:--1}"
 MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-30000}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-4096}"
 MAX_TOOL_ROUNDS="${MAX_TOOL_ROUNDS:-8}"
+TEMPERATURE="${TEMPERATURE:-0.0}"
+TOP_P="${TOP_P:-1.0}"
 EVAL_TIMEOUT="${EVAL_TIMEOUT:-60}"
 EVAL_WORKERS="${EVAL_WORKERS:-16}"
 TRANSFORMERS_DEVICE_MAP="${TRANSFORMERS_DEVICE_MAP:-none}"
@@ -24,6 +26,7 @@ VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-4}"
 VLLM_DATA_PARALLEL_SIZE="${VLLM_DATA_PARALLEL_SIZE:-2}"
 VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.90}"
 VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-}"
+VLLM_ASYNC_CONCURRENCY="${VLLM_ASYNC_CONCURRENCY:-8}"
 APPEND_OUTPUT_TIMESTAMP="${APPEND_OUTPUT_TIMESTAMP:-1}"
 OUTPUT_TIMESTAMP="${OUTPUT_TIMESTAMP:-}"
 
@@ -52,6 +55,8 @@ cmd=(
   --max_prompt_length "${MAX_PROMPT_LENGTH}"
   --max_new_tokens "${MAX_NEW_TOKENS}"
   --max_tool_rounds "${MAX_TOOL_ROUNDS}"
+  --temperature "${TEMPERATURE}"
+  --top_p "${TOP_P}"
   --eval_timeout "${EVAL_TIMEOUT}"
   --eval_workers "${EVAL_WORKERS}"
   --transformers_device_map "${TRANSFORMERS_DEVICE_MAP}"
@@ -71,8 +76,12 @@ if [[ -n "${VLLM_MAX_MODEL_LEN}" ]]; then
   cmd+=(--vllm_max_model_len "${VLLM_MAX_MODEL_LEN}")
 fi
 
-if [[ "${INFERENCE_BACKEND}" == "vllm" ]]; then
+if [[ "${INFERENCE_BACKEND}" == "vllm" || "${INFERENCE_BACKEND}" == "vllm_async" ]]; then
   cmd+=(--vllm_gpu_memory_utilization "${VLLM_GPU_MEMORY_UTILIZATION}")
+fi
+
+if [[ "${INFERENCE_BACKEND}" == "vllm_async" ]]; then
+  cmd+=(--vllm_async_concurrency "${VLLM_ASYNC_CONCURRENCY}")
 fi
 
 "${cmd[@]}"
