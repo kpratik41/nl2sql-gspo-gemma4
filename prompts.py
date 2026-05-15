@@ -86,9 +86,12 @@ SQL GENERATION RULES
 
 Output columns:
 - Return exactly the columns requested in the question, and no extras.
+- Preserve the requested column order in the SELECT list; execution matching is positional.
 - If the question asks for an ID, return the ID, not a name, unless it explicitly asks for both.
 - If the question asks for a name/title/text/description, return that string column.
 - If the question asks for both a value and its score/metric/rank/count/rate/status/date, include both.
+- If the question asks for an attribute "for each" entity or across an entity range, include the entity identifier together with the attribute unless the question clearly asks for only the attribute values.
+- Do not drop contextual identifiers that make repeated values interpretable, such as item_id with item attribute, post_id with post metric, or molecule_id with bond type.
 - For broad wording such as "provide", "include", "details", "characteristics", or "information about", include every explicitly named requested attribute.
 - Before final answer, compare sqlite_query returned columns to ExpectedOutputColumns. If any requested output attribute is missing, revise the SELECT list and run sqlite_query again.
 
@@ -109,7 +112,10 @@ Filters and predicates:
 - Every filter condition must appear in WHERE or HAVING.
 - Use HAVING only for aggregate-dependent filters.
 - Use the column whose table and column name most directly match the question or hint. Do not substitute a generic similarly named column from another table when a more specific facts/relationship column exists.
+- Treat <hint> as authoritative when it defines a metric, predicate, join source, or aggregation grain. Do not replace a hinted "total", "rate", "count", "related", or literal mapping with a plausible alternative.
 - When similar columns exist in multiple joined tables, use sqlite_peek or a small sqlite_query check if the correct source is uncertain.
+- If the final answer lists values of a requested attribute, exclude NULL values for that returned attribute unless the question explicitly asks about missing/null values.
+- If a text/description/ruling/comment/body condition refers to content stored in a related detail table, select and filter from the table that owns that text column and join through the schema key; do not assume the main entity table has the right text.
 
 Literal values:
 - Preserve literal values exactly, including capitalization, punctuation, formatting, and type.
@@ -119,14 +125,18 @@ Literal values:
 
 Counts and aggregation:
 - When the question asks for counts of entities, decide whether COUNT(DISTINCT entity_id) is required.
+- Do not use COUNT(DISTINCT ...) just because the wording names an entity. Use DISTINCT only when the question asks for unique entities or row multiplication would otherwise duplicate the intended entity.
+- If the question asks "how many A and B" or names multiple categories, return separate counts for each category unless it explicitly asks for their combined total.
 - Group at the intended grain and avoid row multiplication after joins.
 - Every non-aggregated selected column must be grouped or functionally determined by the group.
+- If the question or hint says total/highest/lowest over repeated records, aggregate at the described entity/group grain before ranking; do not rank individual rows unless the question asks for a single record.
 - Use CAST(numerator AS REAL) / denominator for ratios when integer division would be wrong.
 
 Ordering, limits, and ties:
 - For highest/lowest/top/earliest/latest questions, use the exact ranking metric and direction.
-- Use LIMIT 1 only when one row is requested.
-- If all ties are requested, compare against MIN/MAX in a subquery/CTE instead of LIMIT 1.
+- Use LIMIT 1 only when the question explicitly asks for one arbitrary row, says any one, or provides a deterministic tie-breaker.
+- For highest/lowest/most/least/first/last questions without an explicit tie-breaker, check for ties. If multiple rows share the extremum, return all tied answer rows using MIN/MAX, RANK/DENSE_RANK, or an aggregate subquery/CTE instead of plain LIMIT 1.
+- If the wording is singular but no tie-breaker is given, do not assume there is only one answer; verify ties with sqlite_query when the metric can repeat.
 - Add a deterministic tie-breaker only when the question or schema implies one; do not invent semantic tie-breakers.
 
 Dates and numeric scales:
@@ -155,6 +165,9 @@ call:sqlite_query{db_id:<DBID>,sql:<YOUR_SQL>,max_return_rows:10}
 After sqlite_query succeeds:
 - Check returned columns against ExpectedOutputColumns.
 - Check whether row count and sample rows look compatible with the question.
+- If the SQL uses LIMIT 1 for a superlative/extremum, verify there are no tied rows unless the question permits any one answer.
+- If the SQL answers multiple categories with one combined count, revise to separate category counts unless the question asks for a combined total.
+- If the SQL ranks individual rows but the question/hint defines a total per entity/group, revise to aggregate by that entity/group first.
 - If selected columns are incomplete, revise SELECT and call sqlite_query again.
 - If a string/category literal is uncertain or rows look wrong, call bm25_search_sqlite.
 - If a numeric threshold/date format/type/scale is uncertain, call sqlite_peek.
