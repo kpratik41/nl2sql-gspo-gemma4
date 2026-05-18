@@ -5,9 +5,10 @@
 This repository implements reinforcement learning training for a large language model on an NL2SQL task using:
 
 - TRL `GRPOTrainer`
+- TRL experimental `AsyncGRPOTrainer` as an optional backend
 - GSPO-style sequence-level importance sampling
 - vLLM server mode for rollouts
-- DeepSpeed ZeRO-3 for distributed training
+- DeepSpeed ZeRO-3 or FSDP for distributed training
 - BIRD-style NL2SQL train/dev data
 - SQLite execution-based rewards
 
@@ -27,7 +28,8 @@ nl2sql-gspo-gemma4/
 │   └── copilot-instructions.md
 ├── CLAUDE.md
 ├── configs/
-│   └── ds_zero3_bf16.json
+│   ├── ds_zero3_bf16.json
+│   └── fsdp_gemma4_bf16.json
 ├── scripts/
 │   ├── launch_vllm.sh
 │   ├── launch_train.sh
@@ -163,6 +165,8 @@ Tool-calling datasets currently generated in this workspace:
 
 - `outputs/train-6601-schema-bare-tool.jsonl`: built from the bare train file.
 - `outputs/dev-20251106-schema-bare-tool.jsonl`: built from the bare dev file.
+- `outputs/train-6601-schema-tool.jsonl`: built from the full schema train file.
+- `outputs/dev-20251106-schema-tool.jsonl`: built from the full schema dev file.
 
 Tool datasets are produced by `scripts/data_generation/build_tool_dataset.py`. They replace the old non-tool system prompt with `prompts.py::SYSTEM_PROMPT_TEMPLATES`, inject the compact catalog from `src/nl2sql_gspo/tool_calling.py`, attach native Gemma/OpenAI-style `tools`, and expose top-level `db_id`, `gold_sql`, `evidence`, `question`, `prompt`, `messages`, and `tools`. The prompt/messages should contain only `system` and `user`; the gold SQL stays top-level as `gold_sql` for rewards/evaluation.
 
@@ -190,17 +194,29 @@ The prompt also enforces predicate source fidelity. When similar columns exist i
 
 Training Method
 
-This project uses TRL GRPOTrainer, but configured for GSPO-style training by setting:
+This project has two training backends:
+
+- `TRAINER_BACKEND=grpo` / `--trainer_backend grpo`: the existing `DynamicSamplingGRPOTrainer` subclass of TRL `GRPOTrainer`, configured for GSPO-style sequence-level importance sampling and DAPO-style dynamic sampling.
+- `TRAINER_BACKEND=async_grpo` / `--trainer_backend async_grpo`: TRL experimental `AsyncGRPOTrainer`, imported from `trl.experimental.async_grpo`, which decouples vLLM server rollout generation from trainer consumption and overlaps generation/scoring with optimization.
+
+The standard GRPO backend is configured for GSPO-style training by setting:
 
 importance_sampling_level="sequence"
 
-This is important. Do not accidentally remove this setting.
+This is important for the standard GRPO backend. Do not accidentally remove this setting from the `grpo` path.
 
-The current intended setup is:
+The standard GRPO setup is:
 Training GPUs: 0,1,2,3,4,5
 vLLM GPUs:     6,7
 Training:      DeepSpeed ZeRO-3
 Rollouts:      vLLM server mode
+Precision:     bf16
+
+The AsyncGRPO setup is:
+Training GPUs: 0,1,2,3,4,5
+vLLM GPUs:     6,7
+Training:      FSDP
+Rollouts:      raw vLLM server mode with NCCL weight transfer
 Precision:     bf16
 
 The vLLM server should be started separately before training.
@@ -217,21 +233,35 @@ bash scripts/launch_train.sh
 
 To resume from a saved checkpoint through the launcher workflow, set `RESUME_FROM_CHECKPOINT` before running `bash scripts/launch_train.sh`.
 
-The training script uses:
+For the standard GRPO backend, the training script uses:
 use_vllm=True
 vllm_mode="server"
 vllm_server_base_url="http://127.0.0.1:8000"
 
+For AsyncGRPO, start vLLM with:
+
+VLLM_SERVER_KIND=async_grpo bash scripts/launch_vllm.sh
+
+This uses raw `vllm serve` with `VLLM_SERVER_DEV_MODE=1`, `--logprobs-mode processed_logprobs`, and `--weight-transfer-config '{"backend":"nccl"}'`, which TRL experimental AsyncGRPO requires for rollout weight updates.
+
+Then launch training with:
+
+TRAINER_BACKEND=async_grpo DISTRIBUTED_BACKEND=fsdp bash scripts/launch_train.sh
+
+AsyncGRPO is experimental and its API may drift across TRL versions. In TRL 1.4.0, it supports FSDP for distributed training and does not accept `eval_dataset`; training-time rollout rewards are still logged, but held-out dev-set eval must be run through the standalone inference/evaluation scripts.
+
+`gen_tools.py` exposes async tool functions. TRL experimental AsyncGRPO currently rejects coroutine tools, so `src/nl2sql_gspo/tool_calling.py` provides synchronous wrappers via `get_sync_grpo_tool_functions()` for AsyncGRPO. Keep those wrappers if using tool calls in AsyncGRPO.
+
 The training script also accepts an optional `--resume_from_checkpoint` argument for explicit checkpoint resume.
 
-The current launcher recipe trains from `outputs/train-6601-schema-filtered.jsonl` and evaluates on `outputs/dev-20251106-schema-256.jsonl`.
-It currently uses `num_generations=16`, launcher default `gradient_accumulation_steps=16` (override via `GRADIENT_ACCUMULATION_STEPS`), launcher default `max_prompt_length=16000` (override via `MAX_PROMPT_LENGTH`), and `max_completion_length=4096` with vLLM server mode (vLLM `max_model_len=24576`), and the launcher defaults to `google/gemma-4-31B-it`.
+The current launcher recipe trains from `outputs/train-6601-schema-tool.jsonl` and uses `outputs/dev-20251106-schema-tool.jsonl` where a backend supports online eval. AsyncGRPO loads the eval file only for normalization/filtering checks and then skips online eval because the experimental trainer does not accept `eval_dataset`.
+It currently uses `num_generations=16`, launcher default `gradient_accumulation_steps=16` (override via `GRADIENT_ACCUMULATION_STEPS`), launcher default `max_prompt_length=9000` (override via `MAX_PROMPT_LENGTH`), and `max_completion_length=4096` with vLLM server mode (vLLM `max_model_len=24576`), and the launcher defaults to `google/gemma-4-31B-it`.
 The training launcher also supports `MAX_STEPS` for short smoke runs while keeping the normal epoch-based recipe as the default.
 The training launcher accepts `LEARNING_RATE` or `LR` env overrides for one-off runs without editing the script.
 The training launcher defaults to model-only rotating checkpoints (`SAVE_ONLY_MODEL=1`, `SAVE_TOTAL_LIMIT=3`), which write HF model weights/config and trainer state while skipping DeepSpeed optimizer/scheduler/scaler/RNG state.
 The launcher also defaults `SAVE_LATEST_FULL_CHECKPOINT=1`, which refreshes `OUTPUT_DIR/latest-full-checkpoint` on every save with a full DeepSpeed resume checkpoint containing optimizer/scheduler/RNG state.
 For model-only checkpoints, continue training by setting `MODEL_NAME` to the checkpoint directory and leaving `RESUME_FROM_CHECKPOINT` unset. For exact resume, set `RESUME_FROM_CHECKPOINT` to `OUTPUT_DIR/latest-full-checkpoint`.
-The vLLM launcher routes through `python -m nl2sql_gspo.vllm_serve_compat`, a local wrapper around TRL's server entrypoint.
+By default, the vLLM launcher routes through `python -m nl2sql_gspo.vllm_serve_compat`, a local wrapper around TRL's server entrypoint. For AsyncGRPO, set `VLLM_SERVER_KIND=async_grpo` so the launcher uses raw `vllm serve` with weight-transfer configuration.
 The local `nl2sql_gspo.vllm_serve_compat` wrapper also installs a weight-sync diagnostic around TRL's `WeightSyncWorkerExtension.update_named_param`, so server logs include the parameter name, dtype, shape, approximate GiB size, and elapsed time for each incoming weight update, plus the same metadata on exceptions/timeouts.
 The repository also includes `scripts/check_cluster_health.py`, a local health-check utility that reports GPU inventory, `nvidia-smi` topology, peer-access status, NCCL-related env vars, and runs a small NCCL all-reduce/broadcast/all-gather smoke test across the currently visible GPUs.
 For `google/gemma-4-31B-it`, leave `VLLM_ATTENTION_BACKEND` unset by default. vLLM `0.19.x+` contains a Gemma 4 config hook that detects heterogeneous `head_dim` / `global_head_dim` and forces `TRITON_ATTN` when `global_head_dim > 256`; explicitly setting `VLLM_ATTENTION_BACKEND=TORCH_SDPA` bypasses that safeguard and breaks this model family.
@@ -249,6 +279,14 @@ Try AutoModelForCausalLM first for text-only training.
 If that fails, try a multimodal class such as AutoModelForImageTextToText.
 Freeze non-text modules if present.
 
+Tool Rollout Training
+
+Tool rollout training uses exactly the three callable tools from `src/nl2sql_gspo/tool_calling.py` / `gen_tools.py`: `bm25_search_sqlite`, `sqlite_peek`, and `sqlite_query`.
+
+For standard GRPO, callable tools are loaded with `get_grpo_tool_functions()`. For AsyncGRPO, callable tools are loaded with `get_sync_grpo_tool_functions()` because the experimental rollout worker requires synchronous callables. The top-level JSON `tools` in each dataset row are used for prompt rendering and prompt-length filtering, but the trainer `tools=` argument should receive Python callables, not JSON tool schemas.
+
+When tool rollouts are enabled, SQL extraction must only reward final SQL inside `<final_answer><sql_code>...</sql_code></final_answer>`. Unfinished completions that stop after a tool call should not receive execution/result reward for `CandidateSQL` from scratchpad text or for SQL embedded inside `call:sqlite_query{...}`.
+
 Reward Functions
 
 Reward functions live in: src/nl2sql_gspo/rewards.py
@@ -258,7 +296,7 @@ Dynamic-sampling trainer subclass lives in: src/nl2sql_gspo/dynamic_sampling_tra
 
 Current reward functions are:
 
-- `format_reward` (binary): strict `<scratch_pad>...</scratch_pad><final_answer><sql_code>...</sql_code></final_answer>` regex match
+- `format_reward` (binary): current tool-prompt contract requiring `<scratch_pad>`, `<relevant_tables>`, `<relevant_columns>`, and clean final SQL inside `<final_answer><sql_code>...</sql_code></final_answer>`
 - `execution_reward` (binary): predicted SQL executes without error
 - `result_reward` (binary, BIRD EX): uses official BIRD semantics — `set(predicted_rows) == set(gold_rows)` on RAW rows (no normalization), with a per-query timeout. Implemented via `bird_execute_sql` + `bird_get_gold_rows` (with a per-process gold cache keyed by `(db_id, gold_sql)`) + `bird_result_match` in `src/nl2sql_gspo/sql_utils.py`.
 - `table_linking_reward` (binary): predicted table set == gold table set
@@ -356,5 +394,7 @@ The local BIRD execution-accuracy scorer should follow the official dev-set sema
 
 If changing distributed training settings, update:
 scripts/launch_train.sh
+scripts/launch_vllm.sh
 configs/ds_zero3_bf16.json
+configs/fsdp_gemma4_bf16.json
 src/nl2sql_gspo/train_gspo_nl2sql.py

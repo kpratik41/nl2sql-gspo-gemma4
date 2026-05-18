@@ -453,12 +453,27 @@ async def sqlite_peek(
     profile_scan_rows: int = 5000,
     profile_topk: int = 10,
     where: Optional[str] = None,
-    **_extra,
 ) -> Dict[str, Any]:
     """
     Preview column samples and small profiles from a SQLite table (read-only).
     Returns representative rows and basic stats for each column to help the agent
     understand data ranges, types, and distinctness.
+
+    Args:
+      db_id: Logical database id from the prompt.
+      table: Exact table name to inspect.
+      columns: Exact column names to inspect.
+      limit: Maximum number of sample values per column.
+      timeout_s: Wallclock timeout for read-only SQLite work.
+      vm_step_limit: Maximum SQLite virtual-machine steps before aborting.
+      busy_timeout_ms: SQLite busy timeout in milliseconds.
+      profile: Whether to include lightweight column profile statistics.
+      profile_scan_rows: Maximum rows to scan while building profile statistics.
+      profile_topk: Maximum number of frequent values to return in profiles.
+      where: Optional SQL WHERE fragment to restrict inspected rows.
+
+    Returns:
+      Dictionary with samples, profiles, and metadata, or an error dictionary.
     """
     import time
     t0 = time.time()
@@ -690,6 +705,24 @@ async def bm25_search_sqlite(
     Perform hybrid BM25 + regex/substring text search over a SQLite column (read-only).
     Returns 2X results: top_k from BM25 ranking + top_k from regex/substring matching.
     Helps locate text values semantically or literally matching a keyword query within a table.
+
+    Args:
+      db_id: Logical database id from the prompt.
+      table: Exact table name to search.
+      column: Exact text column name to search.
+      query: Natural-language or literal search text.
+      top_k: Number of best matches to return from each search strategy.
+      timeout_s: Optional wallclock timeout for read-only SQLite work.
+      busy_timeout_ms: Optional SQLite busy timeout in milliseconds.
+      vm_step_limit: Optional SQLite virtual-machine step limit before aborting.
+      where: Optional SQL WHERE fragment to restrict searched rows.
+      distinct: Whether to search distinct column values.
+      case_sensitive: Whether substring matching should be case-sensitive.
+      min_chars: Minimum candidate string length to include.
+      max_chars: Maximum candidate string length to include.
+
+    Returns:
+      List of matching values with scores and metadata, or an error item.
     """
     def _tok(s: str) -> List[str]:
         return re.findall(r"[A-Za-z0-9_]+", (s or "").lower())
@@ -951,7 +984,6 @@ async def sqlite_query(
     busy_timeout_ms: int = 5000,
     max_return_rows: Optional[int] = 100,
     limit: Optional[int] = None,
-    **_extra,
 ) -> Dict[str, Any]:
     """
     Execute the agent's **actual** read-only SQL and return results, with guardrails.
@@ -976,6 +1008,7 @@ async def sqlite_query(
       vm_step_limit: SQLite VM step cap (default 50,000,000).
       busy_timeout_ms: SQLite busy timeout for readonly connection (default 3000).
       max_return_rows: If set, cap returned rows and set "truncated": true when reached.
+      limit: Optional alias for max_return_rows.
 
     Returns:
       {"rows":[...], "columns":[...], "db_path": "...", "truncated": bool}
@@ -987,6 +1020,7 @@ async def sqlite_query(
       - Always run this once per query before vending `<final_answer>`.
       - If a result set is massive, only the first `max_return_rows` are returned
         and `"truncated": true` is set, signaling the agent to revise with LIMIT.
+
     """
     try:
         db_path = _resolve_db_path(db_id)

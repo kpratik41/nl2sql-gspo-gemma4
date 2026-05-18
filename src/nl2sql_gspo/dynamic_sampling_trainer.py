@@ -42,21 +42,36 @@ Key invariants
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import random
+import re
 import shutil
 import time
+from collections import Counter
 from typing import Any, Dict, List, Optional
 
-from accelerate.utils import DistributedType
+from accelerate.utils import DistributedType, broadcast_object_list
 from accelerate.utils.operations import gather_object
 import torch
+from trl.chat_template_utils import parse_response
 from trl.data_utils import apply_chat_template, is_conversational, prepare_multimodal_messages
 from trl.models.utils import disable_gradient_checkpointing
 from trl import GRPOTrainer
 from trl.trainer.utils import nanmax, nanmin, nanstd, pad, use_adapter
 from transformers.trainer import clear_device_cache, is_sagemaker_mp_enabled
 from transformers.training_args import OptimizerNames
+
+from nl2sql_gspo.inference_tool_executor import extract_tool_calls
+from nl2sql_gspo.sql_utils import extract_completion_text, extract_final_answer_sql, extract_sql
+
+
+_TOOL_CALL_NAME_RE = re.compile(
+    r"(?:<\|tool_call\>\s*)?call:(?P<name>[A-Za-z_][A-Za-z0-9_]*)\{",
+    re.IGNORECASE,
+)
+_TOOL_RESPONSE_RE = re.compile(r"<\|tool_response\>|response:[A-Za-z_][A-Za-z0-9_]*\{", re.IGNORECASE)
 
 
 def _pad_to_width(tensor: torch.Tensor, target_width: int, pad_value, side: str) -> torch.Tensor:
@@ -73,6 +88,26 @@ def _is_truncated_completion(ids: List[int], eos_and_pad: List[int], max_complet
     if len(ids) < max_completion_length:
         return False
     return bool(ids) and ids[-1] not in eos_and_pad
+
+
+def _flatten_gathered(items):
+    """Flatten gather_object output while preserving scalar dict samples."""
+
+    flattened = []
+    for item in items:
+        if isinstance(item, list):
+            flattened.extend(item)
+        else:
+            flattened.append(item)
+    return flattened
+
+
+def _quantile(values: List[int], q: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    idx = min(len(ordered) - 1, max(0, int(round((len(ordered) - 1) * q))))
+    return float(ordered[idx])
 
 
 # Pad value/side for known 2D output keys. ``prompt_ids`` and
@@ -126,6 +161,10 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         self._dyn_pool_cursor: int = 0
         self._dyn_pool_pass: int = 0
         self._last_rewards_per_func: Optional[torch.Tensor] = None
+        self.debug_rollouts = os.environ.get("DAPO_DEBUG_ROLLOUTS", "1") != "0"
+        self.debug_rollout_samples = max(0, int(os.environ.get("DAPO_DEBUG_ROLLOUT_SAMPLES", "3")))
+        self.debug_rollout_sample_chars = max(0, int(os.environ.get("DAPO_DEBUG_ROLLOUT_SAMPLE_CHARS", "500")))
+        self.debug_rollout_every = max(1, int(os.environ.get("DAPO_DEBUG_ROLLOUT_EVERY", "1")))
 
         # Resolve reward-name to column index on the registered reward funcs.
         self._dyn_reward_idx: Optional[int] = None
@@ -157,8 +196,16 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             print(
                 f"[dapo] enabled={self.enable_dynamic_sampling} | mode={mode} | "
                 f"max_rounds={self.dapo_max_rounds} | min_std={self.dynamic_sampling_min_std} | "
-                f"criterion={criterion} | num_generations={self.num_generations}"
+                f"criterion={criterion} | num_generations={self.num_generations} | "
+                f"max_tool_calling_iterations={self.max_tool_calling_iterations}"
             )
+            if self.debug_rollouts:
+                print(
+                    "[rollout-debug] enabled "
+                    f"every={self.debug_rollout_every} "
+                    f"samples={self.debug_rollout_samples} "
+                    f"sample_chars={self.debug_rollout_sample_chars}"
+                )
 
     def _wait_for_everyone(self) -> None:
         wait_for_everyone = getattr(self.accelerator, "wait_for_everyone", None)
@@ -257,6 +304,639 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         # heterogeneity check can read a single reward column if requested.
         self._last_rewards_per_func = rewards_per_func
         return rewards_per_func
+
+    def _global_sum_int(self, value: int) -> int:
+        if not (torch.distributed.is_available() and torch.distributed.is_initialized()):
+            return int(value)
+        tensor = torch.tensor(int(value), device=self.accelerator.device, dtype=torch.long)
+        torch.distributed.all_reduce(tensor, op=torch.distributed.ReduceOp.SUM)
+        return int(tensor.item())
+
+    def _generate_tool_continuations(self, prompt_ids, images, multimodal_fields):
+        """Generate one continuation per active tool-rollout history.
+
+        TRL's server-mode vLLM helper assumes prompts are arranged as
+        ``num_generations`` duplicates of each original prompt and therefore
+        sends every Nth prompt with ``n=N``. After a tool response is appended,
+        each rollout history is unique, so continuation must be ``n=1`` per
+        active sequence. This helper also supports zero active local sequences
+        so all ranks still participate in the same collectives.
+        """
+        if not self.use_vllm or getattr(self.vllm_generation, "mode", None) != "server":
+            return self._generate_single_turn(prompt_ids, images, multimodal_fields)
+
+        if self.state.global_step != self._last_loaded_step:
+            self.vllm_generation.sync_weights()
+            self._last_loaded_step = self.state.global_step
+
+        all_prompts = gather_object(prompt_ids)
+        local_images = images if images is not None else [None] * len(prompt_ids)
+        all_images = gather_object(local_images)
+        if all(img is None for img in all_images):
+            all_images = None
+        counts = [int(x) for x in gather_object([len(prompt_ids)])]
+
+        if self.accelerator.is_main_process:
+            if all_prompts:
+                output = self.vllm_generation.vllm_client.generate(
+                    prompts=all_prompts,
+                    images=all_images,
+                    n=1,
+                    repetition_penalty=self.repetition_penalty,
+                    temperature=self.temperature,
+                    top_p=self.top_p,
+                    top_k=self.top_k,
+                    min_p=0.0 if self.min_p is None else self.min_p,
+                    max_tokens=self.max_completion_length,
+                    logprobs=getattr(self.vllm_generation, "logprobs", 0),
+                    structured_outputs_regex=getattr(self.vllm_generation, "structured_outputs_regex", None),
+                    generation_kwargs=getattr(self.vllm_generation, "generation_kwargs", None),
+                )
+                payload = (
+                    output["prompt_ids"],
+                    output["completion_ids"],
+                    output["logprobs"],
+                    output.get("logprob_token_ids"),
+                )
+            else:
+                payload = ([], [], [], None)
+        else:
+            payload = None
+
+        obj_list = [payload]
+        broadcast_object_list(obj_list, from_process=0)
+        _, all_completion_ids, all_logprobs, _ = obj_list[0]
+
+        start = sum(counts[: self.accelerator.process_index])
+        end = start + len(prompt_ids)
+        completion_ids = all_completion_ids[start:end]
+        logprobs = all_logprobs[start:end] if all_logprobs is not None else None
+        if logprobs is not None:
+            logprobs = [[lp[0] for lp in seq] for seq in logprobs]
+        return completion_ids, logprobs
+
+    def _completion_debug_flags(self, completion: Any) -> Dict[str, Any]:
+        text = extract_completion_text(completion)
+        call_names = [m.group("name") for m in _TOOL_CALL_NAME_RE.finditer(text)]
+        final_sql = extract_final_answer_sql(text)
+        extracted_sql = extract_sql(text)
+        roles = []
+        if isinstance(completion, list):
+            roles = [str(m.get("role", "")) for m in completion if isinstance(m, dict)]
+        return {
+            "text": text,
+            "call_names": call_names,
+            "has_tool_call": bool(call_names),
+            "has_tool_response": bool(_TOOL_RESPONSE_RE.search(text)) or "tool" in roles,
+            "has_final_answer_tag": "<final_answer" in text.lower(),
+            "has_final_sql": bool(final_sql),
+            "has_extracted_sql": bool(extracted_sql),
+            "sql": final_sql or extracted_sql,
+        }
+
+    def _attach_gemma_tool_calls(self, completions) -> int:
+        """Populate TRL's expected ``tool_calls`` field from Gemma tool text.
+
+        TRL only runs tools when the decoded assistant message contains a
+        structured ``tool_calls`` list. Gemma-4 emits compact native calls like
+        ``call:sqlite_query{db_id:<|"|>...,sql:<|"|>...}``; without this bridge
+        those calls remain plain text and no tool response is ever appended.
+        """
+
+        attached = 0
+        if not completions:
+            return attached
+
+        for completion in completions:
+            if not isinstance(completion, list) or not completion:
+                continue
+            message = completion[-1]
+            if not isinstance(message, dict) or message.get("tool_calls"):
+                continue
+            content = str(message.get("content", ""))
+            parsed_calls = extract_tool_calls(content)
+            if not parsed_calls:
+                continue
+            message["tool_calls"] = [
+                {
+                    "id": call.get("id", f"call_{idx}"),
+                    "type": "function",
+                    "function": {
+                        "name": call.get("function", {}).get("name", ""),
+                        "arguments": call.get("function", {}).get("arguments", {}),
+                    },
+                }
+                for idx, call in enumerate(parsed_calls)
+            ]
+            attached += len(message["tool_calls"])
+
+        return attached
+
+    def _gemma_tool_parse_stats(self, completions) -> Dict[str, Any]:
+        raw_seq = 0
+        parsed_seq = 0
+        parsed_calls = 0
+        names = Counter()
+        raw_names = Counter()
+        for completion in completions or []:
+            if not isinstance(completion, list) or not completion:
+                continue
+            message = completion[-1]
+            if not isinstance(message, dict):
+                continue
+            content = str(message.get("content", ""))
+            raw_matches = re.findall(r"call:([A-Za-z_][A-Za-z0-9_]*)\{", content)
+            if raw_matches:
+                raw_seq += 1
+                raw_names.update(raw_matches)
+            parsed = extract_tool_calls(content)
+            if parsed:
+                parsed_seq += 1
+                parsed_calls += len(parsed)
+                names.update(call.get("function", {}).get("name", "unknown") for call in parsed)
+        return {
+            "raw_seq": raw_seq,
+            "parsed_seq": parsed_seq,
+            "parsed_calls": parsed_calls,
+            "raw_names": raw_names,
+            "names": names,
+        }
+
+    def _tool_dict_index(self, completion_index: int) -> int:
+        """Map a generated completion back to an available tool dictionary.
+
+        TRL builds tool dictionaries for its configured generation batch size,
+        but DAPO oversampling can ask vLLM for a much larger temporary rollout
+        batch. Plain callable tools are identical across rows, so wrapping the
+        index keeps tool execution valid for oversampled completions.
+        """
+
+        tool_dict_count = len(self._sync_tool_dicts)
+        if tool_dict_count == 0:
+            return 0
+        return completion_index % tool_dict_count
+
+    @staticmethod
+    def _format_tool_result(result):
+        """Return chat-template-safe tool content plus any image payloads."""
+
+        images = []
+        if isinstance(result, list) and all(isinstance(part, dict) and "type" in part for part in result):
+            for part in result:
+                if part.get("type") == "image":
+                    images.append(part.get("image"))
+            return result, images
+        if isinstance(result, str):
+            return result, images
+        try:
+            return json.dumps(result, ensure_ascii=False, default=str), images
+        except TypeError:
+            return str(result), images
+
+    def _tool_call_loop(self, prompts, prompt_ids, completion_ids, completions, logprobs, images, multimodal_fields):
+        # Tool execution loop: execute tools, then regenerate completions with tool results appended to the prompt.
+        parse_stats = self._gemma_tool_parse_stats(completions)
+        attached_initial = self._attach_gemma_tool_calls(completions)
+        if getattr(self.accelerator, "is_main_process", True):
+            step = int(getattr(self.state, "global_step", 0))
+            raw_names = ",".join(f"{k}:{v}" for k, v in parse_stats["raw_names"].most_common(8)) or "none"
+            names = ",".join(f"{k}:{v}" for k, v in parse_stats["names"].most_common(8)) or "none"
+            print(
+                f"[tool-parse] step={step} rollouts={len(completions)} "
+                f"raw_tool_seq={parse_stats['raw_seq']} parsed_tool_seq={parse_stats['parsed_seq']} "
+                f"attached_gemma_tool_calls={attached_initial} raw_names={raw_names} parsed_names={names}",
+                flush=True,
+            )
+
+        tool_calls = [completion[0].get("tool_calls") for completion in completions]
+        idxs_with_tool = [idx for idx, tool_call in enumerate(tool_calls) if tool_call]
+        tool_calls = [tool_calls[idx] for idx in idxs_with_tool]
+        tool_mask = [[1] * len(ids) for ids in completion_ids]
+        tool_images = [[] for _ in completion_ids]
+        tool_call_count = 0
+        tool_failure_count = 0
+        iteration_num = 0
+        global_active_tool_sequences = self._global_sum_int(len(idxs_with_tool))
+
+        while global_active_tool_sequences > 0 and iteration_num < self.max_tool_calling_iterations:
+            if getattr(self.accelerator, "is_main_process", True):
+                names = Counter(
+                    call.get("function", {}).get("name", "unknown")
+                    for call_list in tool_calls
+                    for call in (call_list or [])
+                )
+                name_summary = ",".join(f"{k}:{v}" for k, v in names.most_common(8)) or "none"
+                print(
+                    f"[tool-loop] step={int(getattr(self.state, 'global_step', 0))} "
+                    f"iter={iteration_num} seqs={len(idxs_with_tool)} calls={sum(len(x) for x in tool_calls)} "
+                    f"global_seqs={global_active_tool_sequences} names={name_summary}",
+                    flush=True,
+                )
+            prompt_completion_tools = [prompts[i] for i in idxs_with_tool]
+            completions_len_before = [len(completions[i]) for i in idxs_with_tool]
+            tool_images_len_before = [len(tool_images[i]) for i in idxs_with_tool]
+            prompts_len_before = [len(prompts[i]) for i in idxs_with_tool]
+
+            for idx in range(len(idxs_with_tool)):
+                idx_with_tool = idxs_with_tool[idx]
+                tool_call_list = tool_calls[idx]
+                prompt_completion_tool = prompt_completion_tools[idx]
+                tool_dict_index = self._tool_dict_index(idx_with_tool)
+                sync_tool_dict = self._sync_tool_dicts[tool_dict_index]
+                async_tool_dict = self._async_tool_dicts[tool_dict_index]
+                prompt_completion_tool.append(completions[idx_with_tool][-1])
+                async_coros = []
+                tool_call_results = []
+
+                for tool_call in tool_call_list:
+                    tool_call_count += 1
+                    tool_call_id = tool_call.get("id")
+                    if tool_call["type"] == "function":
+                        function = tool_call["function"]
+                        name = function["name"]
+                        try:
+                            if name in sync_tool_dict:
+                                tool_call_results.append(
+                                    (tool_call_id, name, sync_tool_dict[name](**function["arguments"]))
+                                )
+                            elif name in async_tool_dict:
+                                async_coros.append(
+                                    (tool_call_id, name, async_tool_dict[name](**function["arguments"]))
+                                )
+                            else:
+                                raise ValueError(f"Tool {name} not found.")
+                        except Exception as exc:
+                            tool_failure_count += 1
+                            tool_call_results.append((tool_call_id, name, {"error": str(exc)}))
+                    else:
+                        tool_failure_count += 1
+                        name = tool_call.get("name", "unknown")
+                        tool_call_results.append(
+                            (tool_call_id, name, {"error": f"Unsupported tool call type: {tool_call['type']}"})
+                        )
+
+                if async_coros:
+
+                    async def _run_async_tools(coros_with_names):
+                        coros = [coro for _, _, coro in coros_with_names]
+                        results = await asyncio.gather(*coros, return_exceptions=True)
+                        return [
+                            (tool_call_id, name, result)
+                            for (tool_call_id, name, _), result in zip(coros_with_names, results, strict=False)
+                        ]
+
+                    async_results = asyncio.run_coroutine_threadsafe(
+                        _run_async_tools(async_coros), self.async_loop
+                    ).result()
+
+                    for tool_call_id, name, result in async_results:
+                        if isinstance(result, Exception):
+                            tool_failure_count += 1
+                            tool_call_results.append((tool_call_id, name, {"error": str(result)}))
+                        else:
+                            tool_call_results.append((tool_call_id, name, result))
+
+                for tool_call_id, name, result in tool_call_results:
+                    content, images_from_tool = self._format_tool_result(result)
+                    tool_message = {"role": "tool", "name": name, "content": content}
+                    if tool_call_id is not None:
+                        tool_message["tool_call_id"] = tool_call_id
+                    for image in images_from_tool:
+                        if image is not None:
+                            tool_images[idx_with_tool].append(image)
+                    prompt_completion_tool.append(tool_message)
+                    completions[idx_with_tool].append(tool_message)
+
+            if getattr(self.accelerator, "is_main_process", True):
+                print(
+                    f"[tool-loop] step={int(getattr(self.state, 'global_step', 0))} "
+                    f"iter={iteration_num} executed_calls={tool_call_count} failures={tool_failure_count}",
+                    flush=True,
+                )
+
+            prompt_completion_tool_ids = []
+            for idx in range(len(idxs_with_tool)):
+                idx_with_tool = idxs_with_tool[idx]
+                tool_messages = []
+                for message in reversed(completions[idx_with_tool]):
+                    if message["role"] == "tool":
+                        tool_messages.insert(0, message)
+                    else:
+                        break
+                suffix_ids = self._get_tool_suffix_ids(tool_messages)
+                prompt_completion_tool_ids.append(
+                    prompt_ids[idx_with_tool] + completion_ids[idx_with_tool] + suffix_ids
+                )
+
+            if self.use_vllm and self.vllm_mode == "colocate":
+                max_model_len = self.vllm_generation.llm.llm_engine.model_config.max_model_len
+            else:
+                config = self.model.config.text_config if self._is_vlm else self.model.config
+                env_max_model_len = int(os.environ.get("VLLM_MAX_MODEL_LEN") or 0)
+                batch_max_prompt_len = max((len(ids) for ids in prompt_ids), default=0)
+                max_model_len = (
+                    getattr(config, "max_position_embeddings", None)
+                    or getattr(self.vllm_generation, "max_model_length", None)
+                    or env_max_model_len
+                    or (batch_max_prompt_len + self.max_completion_length)
+                )
+            overlong = [
+                len(pct) - len(prompt_ids[i]) > self.max_completion_length or len(pct) >= max_model_len
+                for i, pct in zip(idxs_with_tool, prompt_completion_tool_ids, strict=True)
+            ]
+            if getattr(self.accelerator, "is_main_process", True):
+                kept = len(overlong) - sum(1 for value in overlong if value)
+                max_len = max((len(pct) for pct in prompt_completion_tool_ids), default=0)
+                print(
+                    f"[tool-loop] step={int(getattr(self.state, 'global_step', 0))} "
+                    f"iter={iteration_num} post_tool_prompt_seqs={len(prompt_completion_tool_ids)} "
+                    f"kept={kept} overlong={len(overlong) - kept} max_prompt_completion_tool_len={max_len}",
+                    flush=True,
+                )
+            for idx in range(len(idxs_with_tool)):
+                if overlong[idx]:
+                    idx_with_tool = idxs_with_tool[idx]
+                    del completions[idx_with_tool][completions_len_before[idx] :]
+                    del tool_images[idx_with_tool][tool_images_len_before[idx] :]
+                    del prompts[idx_with_tool][prompts_len_before[idx] :]
+
+            idxs_with_tool = [idx for idx, over in zip(idxs_with_tool, overlong, strict=True) if not over]
+            prompt_completion_tool_ids = [
+                pct for pct, over in zip(prompt_completion_tool_ids, overlong, strict=True) if not over
+            ]
+            global_active_tool_sequences = self._global_sum_int(len(idxs_with_tool))
+            if global_active_tool_sequences == 0:
+                break
+
+            if idxs_with_tool:
+                merged_images = images
+                if any(imgs for imgs in tool_images):
+                    if merged_images is None:
+                        merged_images = [imgs if imgs else None for imgs in tool_images]
+                    else:
+                        merged_images = [
+                            (existing or []) + new for existing, new in zip(merged_images, tool_images, strict=True)
+                        ]
+                loop_images = [merged_images[i] for i in idxs_with_tool] if merged_images else None
+                if multimodal_fields:
+                    loop_multimodal_fields = {}
+                    for key, value in multimodal_fields.items():
+                        selected = [value[i] for i in idxs_with_tool]
+                        if selected and isinstance(selected[0], list):
+                            selected = [
+                                item + [0] * (len(pct) - len(item))
+                                for item, pct in zip(selected, prompt_completion_tool_ids, strict=True)
+                            ]
+                        loop_multimodal_fields[key] = selected
+                else:
+                    loop_multimodal_fields = {}
+            else:
+                loop_images = None
+                loop_multimodal_fields = {}
+
+            if getattr(self.accelerator, "is_main_process", True):
+                print(
+                    f"[tool-loop] step={int(getattr(self.state, 'global_step', 0))} "
+                    f"iter={iteration_num} post_tool_generate_start seqs={len(prompt_completion_tool_ids)} "
+                    f"global_seqs={global_active_tool_sequences}",
+                    flush=True,
+                )
+            post_tool_ids, post_tool_logprobs = self._generate_tool_continuations(
+                prompt_completion_tool_ids, loop_images, loop_multimodal_fields
+            )
+            if getattr(self.accelerator, "is_main_process", True):
+                print(
+                    f"[tool-loop] step={int(getattr(self.state, 'global_step', 0))} "
+                    f"iter={iteration_num} post_tool_generate_done "
+                    f"mean_new_tokens={sum(len(ids) for ids in post_tool_ids) / max(len(post_tool_ids), 1):.1f}",
+                    flush=True,
+                )
+
+            for idx in range(len(idxs_with_tool)):
+                idx_with_tool = idxs_with_tool[idx]
+                completion_tool_length = len(prompt_completion_tool_ids[idx]) - len(prompt_ids[idx_with_tool])
+                excess_length = completion_tool_length + len(post_tool_ids[idx]) - self.max_completion_length
+                if excess_length > 0:
+                    new_len = len(post_tool_ids[idx]) - excess_length
+                    post_tool_ids[idx] = post_tool_ids[idx][:new_len]
+                    if logprobs is not None:
+                        post_tool_logprobs[idx] = post_tool_logprobs[idx][:new_len]
+
+            for idx in range(len(idxs_with_tool)):
+                idx_with_tool = idxs_with_tool[idx]
+                prompt_completion_tool_length = len(prompt_completion_tool_ids[idx])
+                prompt_length = len(prompt_ids[idx_with_tool])
+                completion_length = len(completion_ids[idx_with_tool])
+                post_tool_length = len(post_tool_ids[idx])
+                tool_length = prompt_completion_tool_length - prompt_length - completion_length
+                tool_mask[idx_with_tool] += [0] * tool_length + [1] * post_tool_length
+                if logprobs is not None:
+                    logprobs[idx_with_tool] += [0.0] * tool_length + post_tool_logprobs[idx]
+
+            for idx in range(len(idxs_with_tool)):
+                idx_with_tool = idxs_with_tool[idx]
+                prompt_length = len(prompt_ids[idx_with_tool])
+                pct = prompt_completion_tool_ids[idx]
+                completion_ids[idx_with_tool] = pct[prompt_length:] + post_tool_ids[idx]
+
+            post_tool_completions = [parse_response(self._tokenizer, ids) if ids else {} for ids in post_tool_ids]
+            self._attach_gemma_tool_calls([[completion] for completion in post_tool_completions if completion])
+
+            for idx in range(len(idxs_with_tool)):
+                idx_with_tool = idxs_with_tool[idx]
+                if post_tool_completions[idx]:
+                    completions[idx_with_tool].append(post_tool_completions[idx])
+
+            tool_calls = [completion.get("tool_calls") for completion in post_tool_completions]
+            idxs_with_tool = [idx for idx, tool_call in zip(idxs_with_tool, tool_calls, strict=True) if tool_call]
+            tool_calls = [tool_call for tool_call in tool_calls if tool_call]
+            if getattr(self.accelerator, "is_main_process", True):
+                print(
+                    f"[tool-loop] step={int(getattr(self.state, 'global_step', 0))} "
+                    f"iter={iteration_num} next_tool_seqs={len(idxs_with_tool)}",
+                    flush=True,
+                )
+            global_active_tool_sequences = self._global_sum_int(len(idxs_with_tool))
+            iteration_num += 1
+
+        return tool_mask, completions, completion_ids, logprobs, tool_call_count, tool_failure_count, tool_images
+
+    def _log_rollout_debug(
+        self,
+        *,
+        mode: str,
+        inputs,
+        completions,
+        completion_ids_list,
+        tool_mask_list,
+        rewards_per_func: torch.Tensor,
+        num_generations: int,
+    ) -> None:
+        if not self.debug_rollouts or mode != "train":
+            return
+        step = int(getattr(self.state, "global_step", 0))
+        if step % self.debug_rollout_every != 0:
+            return
+
+        eos_and_pad = [self._tokenizer.eos_token_id, self._tokenizer.pad_token_id]
+        lengths = [len(ids) for ids in completion_ids_list]
+        truncated = [
+            _is_truncated_completion(ids, eos_and_pad, self.max_completion_length)
+            for ids in completion_ids_list
+        ]
+        flags = [self._completion_debug_flags(completion) for completion in completions]
+
+        tool_mask_sequences = 0
+        tool_mask_zero_tokens = 0
+        tool_mask_total_tokens = 0
+        if tool_mask_list is not None:
+            for mask in tool_mask_list:
+                zeros = sum(1 for x in mask if int(x) == 0)
+                tool_mask_zero_tokens += zeros
+                tool_mask_total_tokens += len(mask)
+                if zeros > 0:
+                    tool_mask_sequences += 1
+
+        call_counts: Dict[str, int] = {}
+        for flag in flags:
+            for name in flag["call_names"]:
+                call_counts[name] = call_counts.get(name, 0) + 1
+
+        local_counts = torch.tensor(
+            [
+                len(completions),
+                sum(1 for flag in flags if flag["has_tool_call"]),
+                sum(1 for flag in flags if flag["has_tool_response"]),
+                sum(1 for flag in flags if flag["has_final_answer_tag"]),
+                sum(1 for flag in flags if flag["has_final_sql"]),
+                sum(1 for flag in flags if flag["has_extracted_sql"]),
+                sum(1 for x in truncated if x),
+                tool_mask_sequences,
+                tool_mask_zero_tokens,
+                tool_mask_total_tokens,
+            ],
+            device=self.accelerator.device,
+            dtype=torch.long,
+        )
+        gathered_counts = self.accelerator.gather(local_counts.unsqueeze(0))
+        totals = gathered_counts.sum(dim=0).tolist()
+
+        gathered_lengths = _flatten_gathered(gather_object(lengths))
+        gathered_call_counts = _flatten_gathered(gather_object([call_counts]))
+        merged_call_counts: Dict[str, int] = {}
+        for item in gathered_call_counts:
+            if not isinstance(item, dict):
+                continue
+            for name, count in item.items():
+                merged_call_counts[name] = merged_call_counts.get(name, 0) + int(count)
+
+        gathered_samples = []
+        if self.debug_rollout_samples > 0:
+            local_samples = []
+            for i, (flag, length, is_truncated) in enumerate(zip(flags, lengths, truncated)):
+                if len(local_samples) >= self.debug_rollout_samples:
+                    break
+                if flag["has_final_sql"] and flag["has_tool_response"]:
+                    continue
+                db_id = ""
+                try:
+                    db_id = str(inputs[i].get("db_id", ""))
+                except Exception:
+                    pass
+                local_samples.append(
+                    {
+                        "rank": int(self.accelerator.process_index),
+                        "idx": i,
+                        "db_id": db_id,
+                        "len": length,
+                        "truncated": bool(is_truncated),
+                        "tool_call": flag["has_tool_call"],
+                        "tool_response": flag["has_tool_response"],
+                        "final_sql": flag["has_final_sql"],
+                        "extractable_sql": flag["has_extracted_sql"],
+                        "calls": flag["call_names"],
+                        "sql": flag["sql"][:240],
+                        "text": flag["text"][: self.debug_rollout_sample_chars].replace("\n", "\\n"),
+                    }
+                )
+            gathered_samples = _flatten_gathered(gather_object([local_samples]))
+
+        if not getattr(self.accelerator, "is_main_process", True):
+            return
+
+        n = max(int(totals[0]), 1)
+        len_mean = sum(gathered_lengths) / max(len(gathered_lengths), 1)
+        mask_frac = float(totals[8]) / float(totals[9]) if totals[9] else 0.0
+        call_suffix = (
+            " tool_calls_by_name="
+            + ",".join(f"{name}:{count}" for name, count in sorted(merged_call_counts.items()))
+            if merged_call_counts
+            else " tool_calls_by_name=none"
+        )
+        print(
+            f"[rollout-debug] step={step} candidates={totals[0]} groups={totals[0] // max(num_generations, 1)} "
+            f"num_generations={num_generations} "
+            f"tool_call={totals[1]}({totals[1] / n:.1%}) "
+            f"tool_response={totals[2]}({totals[2] / n:.1%}) "
+            f"final_tag={totals[3]}({totals[3] / n:.1%}) "
+            f"final_sql={totals[4]}({totals[4] / n:.1%}) "
+            f"extractable_sql={totals[5]}({totals[5] / n:.1%}) "
+            f"truncated={totals[6]}({totals[6] / n:.1%}) "
+            f"tool_masked_seq={totals[7]}({totals[7] / n:.1%}) "
+            f"tool_masked_token_frac={mask_frac:.1%}{call_suffix}"
+        )
+        print(
+            f"[rollout-debug] step={step} completion_tokens "
+            f"mean={len_mean:.1f} p50={_quantile(gathered_lengths, 0.50):.0f} "
+            f"p90={_quantile(gathered_lengths, 0.90):.0f} "
+            f"p99={_quantile(gathered_lengths, 0.99):.0f} "
+            f"max={max(gathered_lengths) if gathered_lengths else 0}"
+        )
+
+        if rewards_per_func is not None and rewards_per_func.numel() > 0:
+            reward_bits = []
+            for i, name in enumerate(self.reward_func_names):
+                vals = rewards_per_func[:, i].detach().float()
+                finite = vals[~torch.isnan(vals)]
+                if finite.numel() == 0:
+                    continue
+                reward_bits.append(
+                    f"{name}:mean={finite.mean().item():.3g},"
+                    f"nz={(finite != 0).float().mean().item():.1%},"
+                    f"min={finite.min().item():.3g},max={finite.max().item():.3g}"
+                )
+            if reward_bits:
+                print(f"[rollout-debug] step={step} rewards " + " | ".join(reward_bits))
+
+            if self._dyn_reward_idx is not None:
+                vals = rewards_per_func[:, self._dyn_reward_idx].detach().float()
+                try:
+                    grouped = vals.view(-1, num_generations)
+                    successes = grouped.sum(dim=1)
+                    buckets = [(successes == i).sum().item() for i in range(num_generations + 1)]
+                    compact = ",".join(f"{i}:{int(c)}" for i, c in enumerate(buckets) if c)
+                    print(
+                        f"[rollout-debug] step={step} group_successes reward={self.dynamic_sampling_reward_name} "
+                        f"successes_per_{num_generations}={compact or 'none'}"
+                    )
+                except Exception:
+                    pass
+
+        printed = 0
+        for sample in gathered_samples:
+            if printed >= self.debug_rollout_samples:
+                break
+            if not isinstance(sample, dict):
+                continue
+            print(
+                "[rollout-sample] "
+                f"step={step} rank={sample['rank']} idx={sample['idx']} db_id={sample['db_id']} "
+                f"len={sample['len']} trunc={sample['truncated']} "
+                f"tool_call={sample['tool_call']} tool_response={sample['tool_response']} "
+                f"final_sql={sample['final_sql']} extractable_sql={sample['extractable_sql']} "
+                f"calls={sample['calls']} sql={sample['sql']!r} text={sample['text']!r}"
+            )
+            printed += 1
 
     # ------------------------------------------------------------------ #
     # Heterogeneity check
@@ -423,6 +1103,12 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 for prompt, image_list in zip(prompts, images, strict=True)
             ]
 
+        if getattr(self.accelerator, "is_main_process", True):
+            print(
+                f"[rollout-stage] step={int(getattr(self.state, 'global_step', 0))} "
+                f"generate_start prompts={len(prompts)}",
+                flush=True,
+            )
         generated = self._generate(prompts)
         (
             prompt_ids_list,
@@ -434,6 +1120,15 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             extra_fields,
             *_,
         ) = generated
+        if getattr(self.accelerator, "is_main_process", True):
+            lengths = [len(ids) for ids in completion_ids_list]
+            mean_len = sum(lengths) / max(len(lengths), 1)
+            print(
+                f"[rollout-stage] step={int(getattr(self.state, 'global_step', 0))} "
+                f"generate_done completions={len(completion_ids_list)} mean_completion_tokens={mean_len:.1f} "
+                f"max_completion_tokens={max(lengths, default=0)}",
+                flush=True,
+            )
 
         prompt_ids = [torch.tensor(ids, device=device) for ids in prompt_ids_list]
         prompt_mask = [torch.ones_like(ids, dtype=torch.long) for ids in prompt_ids]
@@ -453,6 +1148,13 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             tool_mask = pad(tool_mask, padding_value=1, padding_side="right")
         else:
             tool_mask = None
+
+        # TRL tool rollouts may include tool-response tokens in the generated
+        # continuation so later assistant tokens are conditioned on the actual
+        # observation. Those observation tokens are environment output, not
+        # policy actions, so they must not contribute to the policy loss.
+        if tool_mask is not None:
+            completion_mask = completion_mask * tool_mask
 
         if self.mask_truncated_completions:
             eos_and_pad = [self._tokenizer.eos_token_id, self._tokenizer.pad_token_id]
@@ -502,8 +1204,28 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                     elif not isinstance(values, list):
                         inp[key] = values
 
+        if getattr(self.accelerator, "is_main_process", True):
+            print(
+                f"[rollout-stage] step={int(getattr(self.state, 'global_step', 0))} "
+                f"reward_start completions={len(completions)}",
+                flush=True,
+            )
         rewards_per_func = self._calculate_rewards(inputs, prompts, completions, completion_ids_list)
+        if getattr(self.accelerator, "is_main_process", True):
+            print(
+                f"[rollout-stage] step={int(getattr(self.state, 'global_step', 0))} reward_done",
+                flush=True,
+            )
         num_generations = self.num_generations if mode == "train" else self.num_generations_eval
+        self._log_rollout_debug(
+            mode=mode,
+            inputs=inputs,
+            completions=completions,
+            completion_ids_list=completion_ids_list,
+            tool_mask_list=tool_mask_list,
+            rewards_per_func=rewards_per_func,
+            num_generations=num_generations,
+        )
 
         if self.multi_objective_aggregation == "sum_then_normalize":
             rewards = (rewards_per_func * self.reward_weights.to(device).unsqueeze(0)).nansum(dim=1)

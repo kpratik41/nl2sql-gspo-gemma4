@@ -1,0 +1,10 @@
+{
+  "transformer_layer_cls_to_wrap": [
+    "Gemma4TextDecoderLayer"
+  ],
+  "activation_checkpointing": true,
+  "use_orig_params": true,
+  "sync_module_states": true,
+  "forward_prefetch": false,
+  "limit_all_gathers": true
+}

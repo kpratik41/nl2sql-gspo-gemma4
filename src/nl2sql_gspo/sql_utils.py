@@ -10,6 +10,10 @@ SQL_FENCE_RE = re.compile(r"```\s*(.*?)```", re.IGNORECASE | re.DOTALL)
 SQL_CODE_TAG_RE = re.compile(r"<sql_code>\s*(.*?)\s*</sql_code>", re.IGNORECASE | re.DOTALL)
 FINAL_ANSWER_TAG_RE = re.compile(r"<final_answer>\s*(.*?)\s*</final_answer>", re.IGNORECASE | re.DOTALL)
 SQL_START_RE = re.compile(r"\b(SELECT|WITH)\b", re.IGNORECASE)
+TOOL_CALL_MARKER_RE = re.compile(
+    r"(?:<\|tool_call\>\s*)?call:[A-Za-z_][A-Za-z0-9_]*\{",
+    re.IGNORECASE,
+)
 
 BAD_SQL_RE = re.compile(
     r"\b(DROP|ALTER|TRUNCATE|ATTACH|DETACH|PRAGMA|VACUUM|REINDEX|CREATE|INSERT|UPDATE|DELETE)\b",
@@ -61,21 +65,62 @@ def clean_sql(sql: str) -> str:
     return sql
 
 
-def extract_sql(completion: Any) -> str:
+def _last_match(pattern: re.Pattern[str], text: str) -> Optional[re.Match[str]]:
+    match = None
+    for match in pattern.finditer(text):
+        pass
+    return match
+
+
+def extract_final_answer_sql(completion: Any) -> str:
+    """Extract SQL only from the final-answer contract used by tool prompts.
+
+    This intentionally ignores draft SQL in ``<scratch_pad>`` and SQL embedded
+    inside tool calls/responses. During tool-call RL a rollout that stops after
+    a tool call should not receive execution/result reward for an unfinished
+    candidate query.
+    """
+
+    text = extract_completion_text(completion).strip()
+    if not text:
+        return ""
+
+    final_answer = _last_match(FINAL_ANSWER_TAG_RE, text)
+    if not final_answer:
+        return ""
+
+    final_answer_text = final_answer.group(1).strip()
+    tagged_sql = _last_match(SQL_CODE_TAG_RE, final_answer_text)
+    if tagged_sql:
+        return clean_sql(tagged_sql.group(1))
+
+    sql_start = SQL_START_RE.search(final_answer_text)
+    if sql_start:
+        return clean_sql(final_answer_text[sql_start.start():])
+
+    return ""
+
+
+def extract_sql(completion: Any, *, prefer_final_answer: bool = True) -> str:
     text = extract_completion_text(completion).strip()
 
     if not text:
         return ""
 
-    m = SQL_CODE_TAG_RE.search(text)
+    if prefer_final_answer:
+        final_sql = extract_final_answer_sql(text)
+        if final_sql:
+            return final_sql
+
+    m = _last_match(SQL_CODE_TAG_RE, text)
     if m:
         return clean_sql(m.group(1))
 
-    m = FINAL_ANSWER_TAG_RE.search(text)
+    m = _last_match(FINAL_ANSWER_TAG_RE, text)
     if m:
         final_answer_text = m.group(1).strip()
 
-        tagged_sql = SQL_CODE_TAG_RE.search(final_answer_text)
+        tagged_sql = _last_match(SQL_CODE_TAG_RE, final_answer_text)
         if tagged_sql:
             return clean_sql(tagged_sql.group(1))
 
@@ -92,6 +137,12 @@ def extract_sql(completion: Any) -> str:
         candidate = m.group(1)
         if SQL_START_RE.search(candidate):
             return clean_sql(candidate)
+
+    # If the completion contains tool-call syntax but no final-answer SQL, it
+    # is an unfinished agentic rollout. Do not reward a draft CandidateSQL from
+    # the scratchpad or a SQL argument inside a tool call as the final answer.
+    if TOOL_CALL_MARKER_RE.search(text):
+        return ""
 
     m = SQL_START_RE.search(text)
     if m:

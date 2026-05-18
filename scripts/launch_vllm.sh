@@ -22,6 +22,11 @@ if ! "${PYTHON_BIN}" -c "import trl" >/dev/null 2>&1; then
     source "$HOME/miniforge3/etc/profile.d/conda.sh"
     conda activate nl2sql312
     set -u
+  elif [[ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]]; then
+    set +u
+    source "$HOME/miniconda3/etc/profile.d/conda.sh"
+    conda activate nl2sql312
+    set -u
   fi
 fi
 
@@ -45,12 +50,31 @@ echo "[launch_vllm] writing launcher log to ${VLLM_LOG_FILE}"
 exec > >(tee -a "${VLLM_LOG_FILE}") 2>&1
 
 MODEL_NAME="${MODEL_NAME:-google/gemma-4-31B-it}"
+VLLM_SERVER_KIND="${VLLM_SERVER_KIND:-trl}"
+VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-2}"
+VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.90}"
+VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-24576}"
 
-"${PYTHON_BIN}" -m nl2sql_gspo.vllm_serve_compat \
-  --model "${MODEL_NAME}" \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --tensor_parallel_size 2 \
-  --gpu_memory_utilization 0.90 \
-  --max_model_len 24576 \
-  --dtype bfloat16
+if [[ "${VLLM_SERVER_KIND}" == "async_grpo" || "${VLLM_SERVER_KIND}" == "async" ]]; then
+  export VLLM_SERVER_DEV_MODE="${VLLM_SERVER_DEV_MODE:-1}"
+  echo "[launch_vllm] starting raw vLLM server for TRL AsyncGRPO"
+  "${PYTHON_BIN}" -m vllm.entrypoints.cli.main serve "${MODEL_NAME}" \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --tensor-parallel-size "${VLLM_TENSOR_PARALLEL_SIZE}" \
+    --gpu-memory-utilization "${VLLM_GPU_MEMORY_UTILIZATION}" \
+    --max-model-len "${VLLM_MAX_MODEL_LEN}" \
+    --dtype bfloat16 \
+    --logprobs-mode processed_logprobs \
+    --weight-transfer-config '{"backend":"nccl"}'
+else
+  echo "[launch_vllm] starting TRL compatibility vLLM server"
+  "${PYTHON_BIN}" -m nl2sql_gspo.vllm_serve_compat \
+    --model "${MODEL_NAME}" \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --tensor_parallel_size "${VLLM_TENSOR_PARALLEL_SIZE}" \
+    --gpu_memory_utilization "${VLLM_GPU_MEMORY_UTILIZATION}" \
+    --max_model_len "${VLLM_MAX_MODEL_LEN}" \
+    --dtype bfloat16
+fi

@@ -70,8 +70,8 @@ RUN_NAME="${RUN_NAME:-gemma4-31b-gspo-bird-${RUN_TIMESTAMP}}"
 LOGGING_DIR="${LOGGING_DIR:-outputs/gemma4_31b_gspo_bird/tb/${RUN_TIMESTAMP}}"
 TRAIN_LIMIT="${TRAIN_LIMIT:--1}"
 EVAL_LIMIT="${EVAL_LIMIT:--1}"
-TRAIN_FILE="${TRAIN_FILE:-outputs/train-6601-schema-filtered.jsonl}"
-EVAL_FILE="${EVAL_FILE:-outputs/dev-20251106-schema-256.jsonl}"
+TRAIN_FILE="${TRAIN_FILE:-outputs/train-6601-schema-tool.jsonl}"
+EVAL_FILE="${EVAL_FILE:-outputs/dev-20251106-schema-tool.jsonl}"
 MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-9000}"
 MAX_COMPLETION_LENGTH="${MAX_COMPLETION_LENGTH:-4096}"
 NUM_GENERATIONS="${NUM_GENERATIONS:-16}"
@@ -85,6 +85,17 @@ MAX_STEPS="${MAX_STEPS:--1}"
 MODEL_NAME="${MODEL_NAME:-google/gemma-4-31B-it}"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/gemma4_31b_gspo_bird}"
 VLLM_GROUP_PORT="${VLLM_GROUP_PORT:-29600}"
+TRAINER_BACKEND="${TRAINER_BACKEND:-grpo}"
+if [[ -z "${DISTRIBUTED_BACKEND:-}" ]]; then
+  if [[ "${TRAINER_BACKEND}" == "async_grpo" ]]; then
+    DISTRIBUTED_BACKEND="fsdp"
+  else
+    DISTRIBUTED_BACKEND="deepspeed"
+  fi
+fi
+DEEPSPEED_CONFIG="${DEEPSPEED_CONFIG:-configs/ds_zero3_bf16.json}"
+FSDP="${FSDP:-full_shard auto_wrap}"
+FSDP_CONFIG="${FSDP_CONFIG:-configs/fsdp_gemma4_bf16.json}"
 RESUME_ARGS=()
 
 is_model_only_checkpoint() {
@@ -163,8 +174,26 @@ REWARD_WORKERS="${REWARD_WORKERS:-1}"
 LENGTH_PENALTY_MAX="${LENGTH_PENALTY_MAX:-4096}"
 LENGTH_PENALTY_BUFFER="${LENGTH_PENALTY_BUFFER:-512}"
 REWARD_WEIGHTS="${REWARD_WEIGHTS:-0.2,0.5,2.0,0.5,0.5,0.1,0.1}"
+ENABLE_TOOL_ROLLOUTS="${ENABLE_TOOL_ROLLOUTS:-1}"
+TOOL_DB_EXTRA_ROOTS="${TOOL_DB_EXTRA_ROOTS:-}"
+ASYNC_MAX_TOOL_CALLING_ITERATIONS="${ASYNC_MAX_TOOL_CALLING_ITERATIONS:-8}"
+ASYNC_REQUEST_TIMEOUT="${ASYNC_REQUEST_TIMEOUT:-600}"
+ASYNC_MAX_INFLIGHT_TASKS="${ASYNC_MAX_INFLIGHT_TASKS:--1}"
+ASYNC_MAX_STALENESS="${ASYNC_MAX_STALENESS:-4}"
+ASYNC_QUEUE_MAXSIZE="${ASYNC_QUEUE_MAXSIZE:-1024}"
+ASYNC_WEIGHT_SYNC_STEPS="${ASYNC_WEIGHT_SYNC_STEPS:-1}"
 
 DAPO_ARGS=(
+  --trainer_backend "${TRAINER_BACKEND}"
+  --distributed_backend "${DISTRIBUTED_BACKEND}"
+  --fsdp "${FSDP}"
+  --fsdp_config "${FSDP_CONFIG}"
+  --async_max_tool_calling_iterations "${ASYNC_MAX_TOOL_CALLING_ITERATIONS}"
+  --async_request_timeout "${ASYNC_REQUEST_TIMEOUT}"
+  --async_max_inflight_tasks "${ASYNC_MAX_INFLIGHT_TASKS}"
+  --async_max_staleness "${ASYNC_MAX_STALENESS}"
+  --async_queue_maxsize "${ASYNC_QUEUE_MAXSIZE}"
+  --async_weight_sync_steps "${ASYNC_WEIGHT_SYNC_STEPS}"
   --num_iterations "${NUM_ITERATIONS}"
   --dynamic_sampling_min_std "${DYNAMIC_SAMPLING_MIN_STD}"
   --dapo_max_rounds "${DAPO_MAX_ROUNDS}"
@@ -185,6 +214,12 @@ if [[ -n "${STEPS_PER_GENERATION:-}" ]]; then
 fi
 if [[ -n "${DYNAMIC_SAMPLING_REWARD_NAME:-}" ]]; then
   DAPO_ARGS+=(--dynamic_sampling_reward_name "${DYNAMIC_SAMPLING_REWARD_NAME}")
+fi
+if [[ "${ENABLE_TOOL_ROLLOUTS}" == "1" ]]; then
+  DAPO_ARGS+=(--enable_tool_rollouts)
+fi
+if [[ -n "${TOOL_DB_EXTRA_ROOTS}" ]]; then
+  DAPO_ARGS+=(--tool_db_extra_roots "${TOOL_DB_EXTRA_ROOTS}")
 fi
 
 "${ACCELERATE_BIN}" launch \
@@ -214,7 +249,7 @@ fi
   --report_to "${REPORT_TO}" \
   --run_name "${RUN_NAME}" \
   --logging_dir "${LOGGING_DIR}" \
-  --deepspeed configs/ds_zero3_bf16.json \
+  --deepspeed "${DEEPSPEED_CONFIG}" \
   --logging_steps "${LOGGING_STEPS}" \
   --save_steps "${SAVE_STEPS}" \
   --save_total_limit "${SAVE_TOTAL_LIMIT}" \

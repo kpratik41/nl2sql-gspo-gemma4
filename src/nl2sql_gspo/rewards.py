@@ -6,6 +6,7 @@ from typing import List
 
 from nl2sql_gspo.sql_utils import (
     extract_completion_text,
+    extract_final_answer_sql,
     extract_sql,
     bird_execute_sql,
     bird_get_gold_rows,
@@ -55,9 +56,21 @@ from nl2sql_gspo.schema_utils import (
 #   <final_answer>
 #   <sql_code> ... </sql_code>
 #   </final_answer>
-FORMAT_RE = re.compile(
-    r"<scratch_pad>\s*.+?\s*</scratch_pad>\s*"
+SCRATCH_PAD_RE = re.compile(r"<scratch_pad>\s*.+?\s*</scratch_pad>", re.IGNORECASE | re.DOTALL)
+RELEVANT_TABLES_RE = re.compile(
+    r"<relevant_tables>\s*.+?\s*</relevant_tables>",
+    re.IGNORECASE | re.DOTALL,
+)
+RELEVANT_COLUMNS_RE = re.compile(
+    r"<relevant_columns>\s*.+?\s*</relevant_columns>",
+    re.IGNORECASE | re.DOTALL,
+)
+FINAL_SQL_RE = re.compile(
     r"<final_answer>\s*<sql_code>\s*.+?\s*</sql_code>\s*</final_answer>",
+    re.IGNORECASE | re.DOTALL,
+)
+SQL_CODE_CONTENT_RE = re.compile(
+    r"<sql_code>\s*(.*?)\s*</sql_code>",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -191,7 +204,32 @@ def make_nl2sql_rewards(
         rewards = []
         for completion in completions:
             text = extract_completion_text(completion)
-            rewards.append(1.0 if FORMAT_RE.search(text) else 0.0)
+            final_sql = extract_final_answer_sql(text)
+            sql_code_match = None
+            final_match = FINAL_SQL_RE.search(text)
+            if final_match:
+                sql_code_match = SQL_CODE_CONTENT_RE.search(final_match.group(0))
+            sql_code_text = sql_code_match.group(1) if sql_code_match else ""
+            sql_code_clean = sql_code_text.strip()
+            sql_code_is_clean = (
+                bool(sql_code_clean)
+                and "<scratch_pad" not in sql_code_clean.lower()
+                and "<final_answer" not in sql_code_clean.lower()
+                and "call:" not in sql_code_clean
+                and "```" not in sql_code_clean
+            )
+            rewards.append(
+                1.0
+                if (
+                    SCRATCH_PAD_RE.search(text)
+                    and RELEVANT_TABLES_RE.search(text)
+                    and RELEVANT_COLUMNS_RE.search(text)
+                    and final_match
+                    and final_sql
+                    and sql_code_is_clean
+                )
+                else 0.0
+            )
         return rewards
 
     def execution_reward(completions, db_id=None, **kwargs) -> List[float]:

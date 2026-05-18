@@ -1,5 +1,6 @@
 import argparse
 import os
+from typing import Callable
 
 
 # Order: format, execution, result, table_linking, column_linking, nonnull, length_penalty
@@ -27,6 +28,30 @@ def parse_reward_weights(value: str | None) -> list[float]:
     return weights
 
 
+def weight_reward_functions(
+    reward_functions: list[Callable],
+    reward_weights: list[float],
+) -> list[Callable]:
+    """Return reward wrappers for trainers that do not support reward_weights.
+
+    AsyncGRPOTrainer sums rewards directly, unlike GRPOTrainer which accepts a
+    separate `reward_weights` argument. Wrapping preserves the same reward scale
+    across trainer backends.
+    """
+
+    weighted = []
+    for reward_func, weight in zip(reward_functions, reward_weights, strict=True):
+        reward_name = getattr(reward_func, "__name__", reward_func.__class__.__name__)
+
+        def _weighted_reward(*args, _reward_func=reward_func, _weight=weight, **kwargs):
+            values = _reward_func(*args, **kwargs)
+            return [None if value is None else float(value) * _weight for value in values]
+
+        _weighted_reward.__name__ = f"{reward_name}_x{weight:g}"
+        weighted.append(_weighted_reward)
+    return weighted
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser()
 
@@ -37,6 +62,20 @@ def parse_args(argv=None):
     parser.add_argument("--eval_limit", type=int, default=-1)
     parser.add_argument("--database_dir", type=str, required=True)
     parser.add_argument("--output_dir", type=str, required=True)
+    parser.add_argument(
+        "--trainer_backend",
+        type=str,
+        choices=["grpo", "async_grpo"],
+        default="grpo",
+        help="Use the existing DynamicSamplingGRPOTrainer or TRL experimental AsyncGRPOTrainer.",
+    )
+    parser.add_argument(
+        "--distributed_backend",
+        type=str,
+        choices=["deepspeed", "fsdp", "none"],
+        default="deepspeed",
+        help="Trainer sharding backend. Use fsdp to avoid DeepSpeed.",
+    )
 
     parser.add_argument("--vllm_server_base_url", type=str, default="http://127.0.0.1:8000")
     parser.add_argument(
@@ -48,6 +87,20 @@ def parse_args(argv=None):
 
     parser.add_argument("--max_prompt_length", type=int, default=20000)
     parser.add_argument("--max_completion_length", type=int, default=4096)
+    parser.add_argument(
+        "--enable_tool_rollouts",
+        action="store_true",
+        help=(
+            "Pass callable NL2SQL tools to TRL's GRPO tool loop. The JSONL "
+            "tool definitions are still used for chat-template rendering."
+        ),
+    )
+    parser.add_argument(
+        "--tool_db_extra_roots",
+        type=str,
+        default=None,
+        help="Optional os.pathsep-separated DB roots appended to BIRD_DB_ROOTS for tool execution.",
+    )
 
     parser.add_argument("--num_generations", type=int, default=16)
     parser.add_argument("--temperature", type=float, default=0.8)
@@ -78,6 +131,8 @@ def parse_args(argv=None):
     parser.add_argument("--logging_dir", type=str, default=None)
 
     parser.add_argument("--deepspeed", type=str, default="configs/ds_zero3_bf16.json")
+    parser.add_argument("--fsdp", type=str, default="full_shard auto_wrap")
+    parser.add_argument("--fsdp_config", type=str, default="configs/fsdp_gemma4_bf16.json")
 
     parser.add_argument("--logging_steps", type=int, default=5)
     parser.add_argument("--save_steps", type=int, default=100)
@@ -97,6 +152,14 @@ def parse_args(argv=None):
     parser.add_argument("--eval_on_start", action="store_true")
     parser.add_argument("--log_completions", action="store_true")
     parser.add_argument("--num_completions_to_print", type=int, default=2)
+
+    # TRL experimental AsyncGRPO controls.
+    parser.add_argument("--async_max_tool_calling_iterations", type=int, default=8)
+    parser.add_argument("--async_request_timeout", type=int, default=600)
+    parser.add_argument("--async_max_inflight_tasks", type=int, default=-1)
+    parser.add_argument("--async_max_staleness", type=int, default=4)
+    parser.add_argument("--async_queue_maxsize", type=int, default=1024)
+    parser.add_argument("--async_weight_sync_steps", type=int, default=1)
 
     parser.add_argument("--beta", type=float, default=0.0)
     parser.add_argument("--epsilon", type=float, default=0.2)
@@ -273,10 +336,13 @@ def filter_by_prompt_length(dataset, tokenizer, max_prompt_length: int, split_na
 def main():
     from datasets import load_dataset
     from nl2sql_gspo.data import normalize_record
-    from nl2sql_gspo.dynamic_sampling_trainer import DynamicSamplingGRPOTrainer
-    from nl2sql_gspo.model_utils import load_model_and_tokenizer
+    from nl2sql_gspo.model_utils import load_model_and_tokenizer, load_tokenizer
     from nl2sql_gspo.rewards import make_nl2sql_rewards
-    from trl import GRPOConfig
+    from nl2sql_gspo.tool_calling import (
+        configure_tool_db_roots,
+        get_grpo_tool_functions,
+        get_sync_grpo_tool_functions,
+    )
 
     args = parse_args()
 
@@ -286,7 +352,11 @@ def main():
 
     logging_dir = args.logging_dir or os.path.join(args.output_dir, "tb")
 
-    model, tokenizer = load_model_and_tokenizer(args.model_name_or_path)
+    if args.trainer_backend == "async_grpo":
+        tokenizer = load_tokenizer(args.model_name_or_path)
+        model = None
+    else:
+        model, tokenizer = load_model_and_tokenizer(args.model_name_or_path)
 
     raw_train_dataset = load_dataset(
         "json",
@@ -304,9 +374,19 @@ def main():
         train_dataset, tokenizer, args.max_prompt_length, "train"
     )
 
-    tools = None
-    if len(train_dataset) > 0:
-        tools = train_dataset[0].get("tools") or None
+    trainer_tools = None
+    if args.enable_tool_rollouts:
+        roots = configure_tool_db_roots(
+            database_dir=args.database_dir,
+            extra_roots=args.tool_db_extra_roots,
+        )
+        if args.trainer_backend == "async_grpo":
+            trainer_tools = get_sync_grpo_tool_functions()
+        else:
+            trainer_tools = get_grpo_tool_functions()
+        print(f"[tools] enabled GRPO callable tools with BIRD_DB_ROOTS={roots}")
+    elif args.trainer_backend == "async_grpo":
+        trainer_tools = None
 
     if args.train_limit >= 0:
         train_dataset = train_dataset.select(range(min(args.train_limit, len(train_dataset))))
@@ -342,6 +422,88 @@ def main():
         length_penalty_buffer=args.length_penalty_buffer,
     )
 
+    use_deepspeed = args.distributed_backend == "deepspeed"
+    use_fsdp = args.distributed_backend == "fsdp"
+    deepspeed_config = args.deepspeed if use_deepspeed else None
+    fsdp = args.fsdp if use_fsdp else None
+    fsdp_config = args.fsdp_config if use_fsdp else None
+    gradient_checkpointing = not use_fsdp
+
+    if args.trainer_backend == "async_grpo":
+        from trl.experimental.async_grpo.async_grpo_config import AsyncGRPOConfig
+        from trl.experimental.async_grpo.async_grpo_trainer import AsyncGRPOTrainer
+
+        if use_deepspeed:
+            raise ValueError(
+                "AsyncGRPOTrainer is experimental and only supports FSDP for distributed training. "
+                "Run with --distributed_backend fsdp (recommended) or none."
+            )
+        if eval_dataset is not None:
+            print("[async_grpo] eval_dataset is loaded for filtering checks but AsyncGRPOTrainer does not accept eval_dataset; skipping online eval.")
+        if args.num_iterations != 1 or args.enable_dynamic_sampling:
+            print("[async_grpo] num_iterations/dynamic-sampling controls are not used by AsyncGRPOTrainer.")
+        if args.top_p != 1.0:
+            print("[async_grpo] AsyncGRPOConfig in TRL 1.4.0 has no top_p parameter; ignoring --top_p.")
+        if args.save_latest_full_checkpoint:
+            print("[async_grpo] save_latest_full_checkpoint is only implemented by DynamicSamplingGRPOTrainer; ignoring it.")
+
+        training_args = AsyncGRPOConfig(
+            output_dir=args.output_dir,
+            epsilon=args.epsilon,
+            epsilon_high=args.epsilon_high,
+            num_generations=args.num_generations,
+            max_completion_length=args.max_completion_length,
+            temperature=args.temperature,
+            max_tool_calling_iterations=(
+                args.async_max_tool_calling_iterations if args.enable_tool_rollouts else None
+            ),
+            vllm_server_base_url=args.vllm_server_base_url,
+            vllm_server_timeout=600,
+            request_timeout=args.async_request_timeout,
+            max_inflight_tasks=args.async_max_inflight_tasks,
+            max_staleness=args.async_max_staleness,
+            queue_maxsize=args.async_queue_maxsize,
+            weight_sync_steps=args.async_weight_sync_steps,
+            per_device_train_batch_size=args.per_device_train_batch_size,
+            gradient_accumulation_steps=args.gradient_accumulation_steps,
+            learning_rate=args.learning_rate,
+            warmup_ratio=args.warmup_ratio,
+            num_train_epochs=args.num_train_epochs,
+            max_steps=args.max_steps,
+            bf16=True,
+            gradient_checkpointing=gradient_checkpointing,
+            deepspeed=deepspeed_config,
+            fsdp=fsdp,
+            fsdp_config=fsdp_config,
+            remove_unused_columns=False,
+            logging_steps=args.logging_steps,
+            logging_dir=logging_dir,
+            save_steps=args.save_steps,
+            save_only_model=args.save_only_model,
+            save_total_limit=args.save_total_limit,
+            report_to=report_to,
+            run_name=args.run_name,
+            log_completions=args.log_completions,
+            num_completions_to_print=args.num_completions_to_print,
+            dataloader_num_workers=2,
+        )
+
+        trainer = AsyncGRPOTrainer(
+            model=args.model_name_or_path,
+            args=training_args,
+            train_dataset=train_dataset,
+            processing_class=tokenizer,
+            reward_funcs=weight_reward_functions(reward_functions, args.reward_weights),
+            tools=trainer_tools if args.enable_tool_rollouts else None,
+        )
+        trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+        trainer.save_model(args.output_dir)
+        tokenizer.save_pretrained(args.output_dir)
+        return
+
+    from nl2sql_gspo.dynamic_sampling_trainer import DynamicSamplingGRPOTrainer
+    from trl import GRPOConfig
+
     training_args = GRPOConfig(
         output_dir=args.output_dir,
 
@@ -364,6 +526,9 @@ def main():
         # Rollout sampling
         num_generations=args.num_generations,
         max_completion_length=args.max_completion_length,
+        max_tool_calling_iterations=(
+            args.async_max_tool_calling_iterations if args.enable_tool_rollouts else None
+        ),
         temperature=args.temperature,
         top_p=args.top_p,
 
@@ -384,8 +549,10 @@ def main():
 
         # Memory
         bf16=True,
-        gradient_checkpointing=True,
-        deepspeed=args.deepspeed,
+        gradient_checkpointing=gradient_checkpointing,
+        deepspeed=deepspeed_config,
+        fsdp=fsdp,
+        fsdp_config=fsdp_config,
 
         # Important because rewards need db_id, gold_sql, evidence, messages
         remove_unused_columns=False,
@@ -414,7 +581,7 @@ def main():
         eval_dataset=eval_dataset,
         processing_class=tokenizer,
         reward_funcs=reward_functions,
-        tools=tools,
+        tools=trainer_tools,
         enable_dynamic_sampling=args.enable_dynamic_sampling,
         dynamic_sampling_min_std=args.dynamic_sampling_min_std,
         dapo_max_rounds=args.dapo_max_rounds,

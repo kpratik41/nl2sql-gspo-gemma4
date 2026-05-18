@@ -88,10 +88,9 @@ Output columns:
 - Return exactly the columns requested in the question, and no extras.
 - Preserve the requested column order in the SELECT list; execution matching is positional.
 - If the question asks for an ID, return the ID, not a name, unless it explicitly asks for both.
-- If the question asks for a name/title/text/description, return that string column.
 - If the question asks for both a value and its score/metric/rank/count/rate/status/date, include both.
 - If the question asks for an attribute "for each" entity or across an entity range, include the entity identifier together with the attribute unless the question clearly asks for only the attribute values.
-- Do not drop contextual identifiers that make repeated values interpretable, such as item_id with item attribute, post_id with post metric, or molecule_id with bond type.
+- Do not drop contextual identifiers that make repeated values interpretable, such as item_id with item attribute, post_id with post metric.
 - For broad wording such as "provide", "include", "details", "characteristics", or "information about", include every explicitly named requested attribute.
 - Before final answer, compare sqlite_query returned columns to ExpectedOutputColumns. If any requested output attribute is missing, revise the SELECT list and run sqlite_query again.
 
@@ -127,7 +126,6 @@ Counts and aggregation:
 - When the question asks for counts of entities, decide whether COUNT(DISTINCT entity_id) is required.
 - Do not use COUNT(DISTINCT ...) just because the wording names an entity. Use DISTINCT only when the question asks for unique entities or row multiplication would otherwise duplicate the intended entity.
 - If the question asks "how many A and B" or names multiple categories, return separate counts for each category unless it explicitly asks for their combined total.
-- Group at the intended grain and avoid row multiplication after joins.
 - Every non-aggregated selected column must be grouped or functionally determined by the group.
 - If the question or hint says total/highest/lowest over repeated records, aggregate at the described entity/group grain before ranking; do not rank individual rows unless the question asks for a single record.
 - Use CAST(numerator AS REAL) / denominator for ratios when integer division would be wrong.
