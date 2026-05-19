@@ -507,9 +507,6 @@ def main():
     training_args = GRPOConfig(
         output_dir=args.output_dir,
 
-        # GSPO-style behavior through sequence-level importance sampling
-        importance_sampling_level="sequence",
-
         # GRPO/GSPO objective settings
         beta=args.beta,
         epsilon=args.epsilon,
