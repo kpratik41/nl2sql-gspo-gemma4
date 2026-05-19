@@ -1,90 +1,553 @@
-# Copilot Instructions for NL2SQL GSPO Training Project
+# Copilot Instructions for NL2SQL RL Training
 
 ## Project Overview
 
-This repository implements reinforcement learning training for a large language model on an NL2SQL task using:
+This repository trains and evaluates a Gemma 4 31B instruction model on BIRD-style NL2SQL with reinforcement learning, tool-call rollouts, SQLite execution rewards, vLLM rollout serving, and post-training BIRD execution-accuracy evaluation.
 
-- TRL `GRPOTrainer`
-- TRL experimental `AsyncGRPOTrainer` as an optional backend
-- GSPO-style sequence-level importance sampling
-- vLLM server mode for rollouts
-- DeepSpeed ZeRO-3 or FSDP for distributed training
-- BIRD-style NL2SQL train/dev data
-- SQLite execution-based rewards
+The repository name still contains `gspo`, but the current standard GRPO training path no longer enables GSPO sequence-level importance sampling. Do not re-add `importance_sampling_level="sequence"` unless the user explicitly asks to restore GSPO. The active GRPO path is a TRL `GRPOTrainer` subclass with DAPO-style loss settings and DAPO-style dynamic sampling.
 
-The current target model is a Gemma 4 31B (Instruction-tuned) multimodal model. For this project, only text input and text output are used. Vision/audio/multimodal modules should be frozen if present. The language model decoder should remain trainable unless explicitly switching to LoRA/adapters.
+The target task is NL2SQL: given a natural-language question, schema, optional hint/evidence, and optional tool access, generate valid SQLite SQL inside the required final-answer XML shape.
 
-The task is NL2SQL: given a natural language question, schema, and optional evidence/hint, generate valid SQLite SQL.
+Primary model target:
 
----
+- `google/gemma-4-31B-it`
+- Text-only training and inference in this repo
+- Gemma 4 may expose multimodal modules; freeze non-text/multimodal modules if falling back to a multimodal model class
 
-## Repository Structure
+Primary training components:
 
-Expected structure:
+- TRL `GRPOTrainer` via `DynamicSamplingGRPOTrainer`
+- Optional TRL experimental `AsyncGRPOTrainer`
+- vLLM server-mode rollouts
+- DeepSpeed ZeRO-3 for the default GRPO path
+- FSDP for the optional AsyncGRPO path
+- BIRD-style SQLite execution rewards
+- Native Gemma/OpenAI-style tool schemas and callable tool rollouts
+
+## Source Of Truth
+
+Prefer the actual launcher and Python entrypoints over older docs:
+
+- Training launcher: `scripts/launch_train.sh`
+- Training entrypoint: `src/nl2sql_gspo/train_gspo_nl2sql.py`
+- Custom trainer: `src/nl2sql_gspo/dynamic_sampling_trainer.py`
+- vLLM launcher: `scripts/launch_vllm.sh`
+- Inference launcher: `scripts/launch_inference.sh`
+- Inference/evaluation: `scripts/run_inference_bird.py`
+- Rewards: `src/nl2sql_gspo/rewards.py`
+- SQL/database helpers: `src/nl2sql_gspo/sql_utils.py`
+- Tool definitions/wrappers: `src/nl2sql_gspo/tool_calling.py`
+- Data normalization: `src/nl2sql_gspo/data.py`
+- Model/tokenizer loading: `src/nl2sql_gspo/model_utils.py`
+
+`configs/train_gspo_gemma4.yaml` currently has zero lines and is not the active config. Do not treat it as authoritative.
+
+## Repository Layout
+
+Expected top-level structure:
 
 ```text
 nl2sql-gspo-gemma4/
-├── .github/
-│   └── copilot-instructions.md
-├── CLAUDE.md
+├── .github/copilot-instructions.md
 ├── configs/
 │   ├── ds_zero3_bf16.json
-│   └── fsdp_gemma4_bf16.json
-├── scripts/
-│   ├── launch_vllm.sh
-│   ├── launch_train.sh
-│   ├── launch_inference.sh
-│   ├── check_cluster_health.py
-│   ├── generate_failure_instructions.py
-│   ├── run_inference_bird.py
-│   ├── smoke_test_rewards.py
-│   ├── inspect_jsonl.py
-│   └── data_generation/
-│       ├── schema_build.py
-│       └── few_shot_bm25.py
-├── src/
-│   └── nl2sql_gspo/
-│       ├── __init__.py
-│       ├── train_gspo_nl2sql.py
-│       ├── data.py
-│       ├── model_utils.py
-│       ├── rewards.py
-│       ├── sql_utils.py
-│       └── schema_utils.py
-├── tests/
-│   └── test_core.py
+│   ├── fsdp_gemma4_bf16.json
+│   └── train_gspo_gemma4.yaml      # currently empty
 ├── data/
-│   ├── bird_train_data/
-│   │   ├── raw/
-│   │   └── processed/
-│   └── bird_dev_data/
-│       ├── raw/
-│       └── processed/
+│   ├── bird_train_data/raw/
+│   └── bird_dev_data/raw/
 ├── databases/
 │   ├── train_databases/
 │   └── dev_databases/
+├── gemma-4-31b-it-local/
+├── scripts/
+│   ├── launch_train.sh
+│   ├── launch_vllm.sh
+│   ├── launch_inference.sh
+│   ├── run_inference_bird.py
+│   ├── run_passk_bird.py
+│   ├── run_self_consistency_bird.py
+│   ├── generate_failure_instructions.py
+│   ├── analyze_passk_all_wrong.py
+│   ├── probe_train_heterogeneity.py
+│   ├── smoke_test_rewards.py
+│   ├── check_cluster_health.py
+│   ├── what_if_rewards.py
+│   └── data_generation/
+├── src/nl2sql_gspo/
+├── tests/test_core.py
+├── gen_tools.py
+├── prompts.py
+├── requirements.txt
 ├── outputs/
 └── logs/
+```
 
-Current top-level processed files such as `data/bird_train.jsonl` and `data/bird_dev.jsonl` may not exist yet. Raw split-specific folders are the current source of truth.
+Generated `outputs/` and `logs/` are part of normal workflows but should not be treated as source code. `temp.py` and `temp.jsonl` exist in the workspace; inspect before relying on them.
 
-Data Layout
+## Current Training Launcher Defaults
 
-The data/ folder holds raw and processed dataset artifacts.
+`scripts/launch_train.sh` is the active recipe. It starts 6 training processes on GPUs `0,1,2,3,4,5`; `scripts/launch_vllm.sh` starts the rollout server on GPUs `6,7`.
 
-data/bird_train_data/raw/ and data/bird_dev_data/raw/ contain original downloaded BIRD or Hugging Face source files.
-data/bird_train_data/processed/ and data/bird_dev_data/processed/ contain cleaned or converted files used for training/evaluation.
+Current default training launch values:
 
-Raw train sources in this workspace are commonly JSONL, while raw dev sources may be JSON arrays.
+```text
+MODEL_NAME=google/gemma-4-31B-it
+OUTPUT_DIR=outputs/gemma4_31b_gspo_bird
+TRAIN_FILE=outputs/train-6601-schema-tool.jsonl
+EVAL_FILE=outputs/dev-20251106-schema-tool.jsonl
+DATABASE_DIR=databases
+TRAIN_LIMIT=-1
+EVAL_LIMIT=-1
+TRAINER_BACKEND=grpo
+DISTRIBUTED_BACKEND=deepspeed
+DEEPSPEED_CONFIG=configs/ds_zero3_bf16.json
+FSDP="full_shard auto_wrap"
+FSDP_CONFIG=configs/fsdp_gemma4_bf16.json
+```
 
-Generated few-shot artifacts may also be stored alongside the raw split files, for example `data/bird_train_data/raw/train-6601-few-shot.jsonl` and `data/bird_dev_data/raw/dev_20251106-few-shot.json`.
+Rollout and sampling defaults:
 
-The databases/ folder holds SQLite databases.
+```text
+MAX_PROMPT_LENGTH=13500
+MAX_COMPLETION_LENGTH=8000
+NUM_GENERATIONS=16
+TEMPERATURE=1.2
+TOP_P=0.95
+ENABLE_TOOL_ROLLOUTS=1
+ASYNC_MAX_TOOL_CALLING_ITERATIONS=8
+VLLM_SERVER_BASE_URL=http://127.0.0.1:8000
+VLLM_GROUP_PORT=29600
+```
 
-The current workspace contains 69 train databases under `databases/train_databases` and 11 dev databases under `databases/dev_databases`.
+Optimization defaults:
 
-Expected database layout:
+```text
+PER_DEVICE_TRAIN_BATCH_SIZE=1
+GRADIENT_ACCUMULATION_STEPS=16
+LEARNING_RATE=5e-7
+NUM_TRAIN_EPOCHS=1
+MAX_STEPS=-1
+WARMUP_RATIO=0.03
+BF16=true
+```
 
+Objective and clipping defaults:
+
+```text
+loss_type=dapo
+scale_rewards=batch
+beta=0.0
+epsilon=0.2
+epsilon_high=0.28
+num_iterations=1
+steps_per_generation=None unless STEPS_PER_GENERATION is set
+mask_truncated_completions=false
+```
+
+DAPO dynamic-sampling defaults:
+
+```text
+ENABLE_DYNAMIC_SAMPLING=1
+DYNAMIC_SAMPLING_MIN_STD=1e-6
+DAPO_MAX_ROUNDS=1
+DAPO_OVERSAMPLE_FACTOR=16
+DYNAMIC_SAMPLING_REWARD_NAME=result_reward
+```
+
+Reward-shaping defaults:
+
+```text
+EXEC_TIMEOUT_S=60
+REWARD_WORKERS=1
+LENGTH_PENALTY_MAX=8000
+LENGTH_PENALTY_BUFFER=512
+REWARD_WEIGHTS=0.2,0.5,2.0,0.5,0.5,0.1,0.1
+```
+
+Logging and checkpoint defaults:
+
+```text
+WANDB_PROJECT=gemma4-31b-bird-gspo
+REPORT_TO=wandb
+RUN_NAME=gemma4-31b-gspo-bird-<timestamp>
+LOGGING_DIR=outputs/gemma4_31b_gspo_bird/tb/<timestamp>
+LOGGING_STEPS=10
+SAVE_STEPS=10
+SAVE_TOTAL_LIMIT=10
+SAVE_ONLY_MODEL=1
+SAVE_LATEST_FULL_CHECKPOINT=1
+LATEST_FULL_CHECKPOINT_DIR_NAME=latest-full-checkpoint
+EVAL_STEPS=10
+EVAL_ON_START=0
+LOG_COMPLETIONS=0
+NUM_COMPLETIONS_TO_PRINT=2
+```
+
+The launcher writes terminal logs to `logs/train_<timestamp>.log`.
+
+## GRPO, DAPO, And GSPO Status
+
+The default path uses `TRAINER_BACKEND=grpo`, which instantiates `DynamicSamplingGRPOTrainer` with TRL `GRPOConfig`.
+
+Current GRPO path:
+
+- Uses `loss_type="dapo"`
+- Uses `scale_rewards="batch"`
+- Uses asymmetric clipping through `epsilon=0.2`, `epsilon_high=0.28`
+- Uses DAPO-style dynamic sampling in the custom trainer
+- Uses vLLM server-mode rollouts
+- Does not set `importance_sampling_level="sequence"`
+
+Do not describe the current GRPO path as GSPO-enabled. The old setting:
+
+```python
+importance_sampling_level="sequence"
+```
+
+has intentionally been removed from `src/nl2sql_gspo/train_gspo_nl2sql.py`.
+
+The repo may still log TRL sampling/importance-correction metrics because the custom trainer and TRL vLLM integration have their own rollout correction logic. That is not the same as explicitly configuring GSPO sequence-level importance sampling.
+
+## DAPO Dynamic Sampling
+
+`DynamicSamplingGRPOTrainer` implements DAPO-style dynamic sampling on top of TRL `GRPOTrainer`.
+
+Core behavior:
+
+- Standard generation/scoring is run on prompt groups.
+- Each prompt group contains `num_generations` completions.
+- Heterogeneity is checked per prompt group.
+- By default, heterogeneity uses `result_reward` because `DYNAMIC_SAMPLING_REWARD_NAME=result_reward`.
+- A group is heterogeneous when intra-group reward std is at least `dynamic_sampling_min_std`.
+- With `dapo_oversample_factor > 1`, the trainer uses single-shot oversampling.
+- With `dapo_oversample_factor == 1`, the trainer uses iterative oversample-and-replace up to `dapo_max_rounds`.
+- Non-heterogeneous padding groups can have `completion_mask` zeroed so they contribute no policy gradient.
+- `num_items_in_batch` is recomputed from the final completion mask.
+- If all final groups are zero-masked, the trainer can skip the expensive policy loss path and return zero loss.
+
+Current default single-shot volume with 6 trainer ranks, `per_device_train_batch_size=1`, `num_generations=16`, and `dapo_oversample_factor=16`:
+
+```text
+6 ranks * 1 group/rank * 16 generations/group * 16 oversample = 1536 candidate completions per generation step
+```
+
+If `PER_DEVICE_TRAIN_BATCH_SIZE=2`, this doubles to `3072` candidate completions per generation step.
+
+Logged DAPO/debug metrics include:
+
+- `dapo/rounds_used`
+- `dapo/groups_attempted`
+- `dapo/groups_heterogeneous`
+- `dapo/groups_kept`
+- `dapo/groups_padded`
+- `dapo/heterogeneity_rate`
+- `dapo/selection_fill_rate`
+- `[dapo] step=...` summary lines
+- `[rollout-debug] ... truncated=... completion_tokens ...`
+
+Use logs to inspect truncation:
+
+```bash
+rg -n "rollout-debug|truncated=|overlong=|length_penalty_reward" logs/train_*.log
+```
+
+## Prompt Length And Context Budget
+
+Training filters prompts before training/eval because current TRL no longer carries `max_prompt_length` inside `GRPOConfig`. Filtering uses:
+
+```python
+tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True, tools=tools)
+```
+
+Always pass row-level `tools` while counting tool-dataset prompt length. Gemma tokenizers can return objects such as `BatchEncoding`; count actual `input_ids` or encoding IDs, not `len(BatchEncoding)`.
+
+Current default:
+
+```text
+MAX_PROMPT_LENGTH=13500
+MAX_COMPLETION_LENGTH=8000
+VLLM_MAX_MODEL_LEN=24576
+```
+
+With `VLLM_MAX_MODEL_LEN=24576` and `MAX_COMPLETION_LENGTH=8000`, a prompt cap above roughly `16576` leaves less than 8000 tokens of completion headroom.
+
+Recent measured rendered tool-template prompt lengths for current generated files:
+
+```text
+outputs/train-6601-schema-tool.jsonl:
+  total=6601
+  p50=11619
+  p75=14321
+  p90=21479
+  p95=79031
+  p99=79217
+  max=79648
+
+outputs/dev-20251106-schema-tool.jsonl:
+  total=1534
+  p50=14784
+  p75=17531
+  p90=22976
+  p95=29400
+  p99=29634
+  max=29945
+```
+
+Measured filter counts:
+
+```text
+MAX_PROMPT_LENGTH=9000:
+  train dropped 4287/6601, kept 2314
+  eval  dropped 1196/1534, kept 338
+
+MAX_PROMPT_LENGTH=13500:
+  train dropped 1900/6601, kept 4701
+  eval  dropped 792/1534, kept 742
+
+MAX_PROMPT_LENGTH=15500:
+  train dropped 1488/6601, kept 5113
+  eval  dropped 590/1534, kept 944
+
+MAX_PROMPT_LENGTH=16576:
+  train dropped 1152/6601, kept 5449
+  eval  dropped 462/1534, kept 1072
+
+MAX_PROMPT_LENGTH=18000:
+  train dropped 1101/6601, kept 5500
+  eval  dropped 393/1534, kept 1141
+
+MAX_PROMPT_LENGTH=20000:
+  train dropped 1090/6601, kept 5511
+  eval  dropped 320/1534, kept 1214
+```
+
+To filter nothing in the current train/eval files, the prompt cap would need at least `79648`, which is not compatible with the current vLLM context configuration. Prefer schema compaction or dataset regeneration for huge outliers rather than simply raising the cap.
+
+## vLLM Server Workflow
+
+Start vLLM before training:
+
+```bash
+bash scripts/launch_vllm.sh
+```
+
+Then start training:
+
+```bash
+bash scripts/launch_train.sh
+```
+
+Default `scripts/launch_vllm.sh` values:
+
+```text
+CUDA_VISIBLE_DEVICES=6,7
+MODEL_NAME=google/gemma-4-31B-it
+VLLM_SERVER_KIND=trl
+VLLM_TENSOR_PARALLEL_SIZE=2
+VLLM_GPU_MEMORY_UTILIZATION=0.90
+VLLM_MAX_MODEL_LEN=24576
+dtype=bfloat16
+port=8000
+```
+
+For the default GRPO path, the vLLM launcher uses:
+
+```bash
+python -m nl2sql_gspo.vllm_serve_compat
+```
+
+This wrapper delegates to TRL's vLLM server entrypoint and adds weight-sync diagnostics around `WeightSyncWorkerExtension.update_named_param`.
+
+For AsyncGRPO, start raw vLLM with:
+
+```bash
+VLLM_SERVER_KIND=async_grpo bash scripts/launch_vllm.sh
+```
+
+That path sets `VLLM_SERVER_DEV_MODE=1` and uses:
+
+```text
+--logprobs-mode processed_logprobs
+--weight-transfer-config '{"backend":"nccl"}'
+```
+
+For Gemma 4, leave `VLLM_ATTENTION_BACKEND` unset unless intentionally debugging backend selection. vLLM 0.19.x has model-aware logic for Gemma 4; forcing `TORCH_SDPA` can bypass safeguards and break this model family.
+
+Do not switch training to colocated vLLM unless explicitly requested. Server mode is the expected setup because it separates rollout memory from trainer memory.
+
+## Distributed Training And Memory
+
+Default GRPO training uses:
+
+- 6 training GPUs
+- DeepSpeed ZeRO-3
+- bf16
+- gradient checkpointing enabled
+- vLLM rollouts on separate GPUs
+- CPU optimizer offload
+
+`configs/ds_zero3_bf16.json`:
+
+- `bf16.enabled=true`
+- `zero_optimization.stage=3`
+- `offload_optimizer.device=cpu`
+- `offload_optimizer.pin_memory=true`
+- `gradient_clipping=1.0`
+- AdamW with `lr`, `betas`, and `weight_decay` set to `auto`
+- WarmupDecayLR with step counts set to `auto`
+
+No explicit parameter offload is configured. Model parameters are sharded by ZeRO-3 but not configured for CPU parameter offload.
+
+FSDP config in `configs/fsdp_gemma4_bf16.json`:
+
+- wraps `Gemma4TextDecoderLayer`
+- `activation_checkpointing=true`
+- `use_orig_params=true`
+- `sync_module_states=true`
+- `forward_prefetch=false`
+- `limit_all_gathers=true`
+
+AsyncGRPO defaults to FSDP when `TRAINER_BACKEND=async_grpo`; the launcher picks FSDP automatically unless `DISTRIBUTED_BACKEND` is explicitly set.
+
+Memory and sequence length:
+
+- KV cache during rollout generation scales roughly linearly with sequence length.
+- Efficient attention kernels make attention memory much better than naive quadratic attention, but attention compute is still very sequence-length sensitive.
+- Any fallback path that materializes full attention matrices can become quadratic in memory.
+- Long prompts plus tool loops can push total prompt+completion+tool context near `VLLM_MAX_MODEL_LEN`.
+
+## AsyncGRPO Backend
+
+The training script supports:
+
+```text
+TRAINER_BACKEND=async_grpo
+DISTRIBUTED_BACKEND=fsdp
+```
+
+AsyncGRPO behavior:
+
+- Imports `trl.experimental.async_grpo`
+- Uses `AsyncGRPOConfig` and `AsyncGRPOTrainer`
+- Requires FSDP or no distributed backend; DeepSpeed is rejected
+- Loads tokenizer but passes the model name/path to the trainer instead of loading a local model object first
+- Does not accept `eval_dataset`; eval file is loaded for normalization/filtering checks but online eval is skipped
+- Ignores `top_p` in the current TRL API path
+- Does not use custom dynamic sampling or `num_iterations`
+- Does not use `save_latest_full_checkpoint`
+- Applies reward weights by wrapping reward functions, because AsyncGRPO sums reward functions directly
+- Uses sync wrappers for tool functions because the experimental rollout worker expects synchronous callables
+
+Use:
+
+```bash
+VLLM_SERVER_KIND=async_grpo bash scripts/launch_vllm.sh
+TRAINER_BACKEND=async_grpo DISTRIBUTED_BACKEND=fsdp bash scripts/launch_train.sh
+```
+
+Treat AsyncGRPO as experimental; TRL APIs may drift.
+
+## Dataset Formats
+
+The code supports normalized chat/tool records and raw BIRD-style records.
+
+Raw BIRD-style examples can contain:
+
+```json
+{
+  "db_id": "database_name",
+  "question": "...",
+  "evidence": "...",
+  "SQL": "SELECT ..."
+}
+```
+
+Schema-built/tool examples normally contain:
+
+```json
+{
+  "db_id": "...",
+  "gold_sql": "SELECT ...",
+  "evidence": "...",
+  "question": "...",
+  "tools": [...],
+  "prompt": [
+    {"role": "system", "content": "..."},
+    {"role": "user", "content": "..."}
+  ],
+  "messages": [
+    {"role": "system", "content": "..."},
+    {"role": "user", "content": "..."}
+  ]
+}
+```
+
+`normalize_record` outputs:
+
+```json
+{
+  "prompt": ["system/user only"],
+  "messages": ["system/user only"],
+  "db_id": "...",
+  "gold_sql": "...",
+  "evidence": "...",
+  "question": "...",
+  "tools": [...]
+}
+```
+
+Rules:
+
+- Assistant messages are excluded from the prompt.
+- Assistant content can be used as `gold_sql` if no top-level gold field exists.
+- Preserve uppercase BIRD `SQL` as `gold_sql`.
+- Recover `db_id` from `<db_id>...</db_id>` or `<database_schema>\n`db_id`` in legacy prompts.
+- Recover evidence from `<hint>...</hint>` in legacy prompts.
+- Keep `remove_unused_columns=False` in trainer configs because rewards need `db_id`, `gold_sql`, `evidence`, `messages`, and sometimes `tools`.
+
+## Data Generation
+
+`scripts/data_generation/few_shot_bm25.py` generates BM25-based few-shot artifacts for train/dev. Train examples exclude retrieved few-shot examples from the same `db_id`.
+
+`scripts/data_generation/schema_build.py`:
+
+- Accepts JSONL and JSON array inputs
+- Supports train/dev split defaults
+- Reads DBs from `databases/<split>_databases`
+- Reads split-specific column meanings
+- Emits chat-format JSONL
+- Can emit messages-only rows
+- Includes top-level `db_id`, `gold_sql`, `evidence`, and `question` when not in messages-only mode
+- Can include or omit few-shot examples
+- Can include or omit stats
+- Can include or omit nullability labels
+- Renders row/column counts and per-column stats/examples
+- Uses top-occurring concrete values as examples
+- Truncates long rendered example values with `...`
+
+`scripts/data_generation/build_tool_dataset.py` converts schema-built rows into tool-calling rows:
+
+- Replaces the system prompt with `prompts.py::SYSTEM_PROMPT_TEMPLATES`
+- Injects `{TOOL_CATALOG_COMPACT}` from `tool_catalog_compact()`
+- Attaches native tool schemas from `get_tool_definitions()`
+- Emits `db_id`, `gold_sql`, `evidence`, `question`, `tools`, `prompt`, and `messages`
+- Keeps prompt/messages to system+user only
+- Extracts gold SQL with the shared SQL extractor
+- Raises if required fields are missing
+
+Current tool dataset names used by training:
+
+- `outputs/train-6601-schema-tool.jsonl`
+- `outputs/dev-20251106-schema-tool.jsonl`
+
+Other generated variants may exist, such as bare schema and bare-tool files, but the launcher defaults to the full `*-schema-tool.jsonl` files.
+
+## Database Layout
+
+The expected BIRD DB layout is:
+
+```text
 databases/
 ├── train_databases/
 │   └── <db_id>/
@@ -94,81 +557,24 @@ databases/
     └── <db_id>/
         ├── <db_id>.sqlite
         └── database_description/
+```
 
-Training should usually point to:
+`get_database_path` supports:
 
---database_dir databases/train_databases
+- `database_dir/<db_id>/<db_id>.sqlite`
+- `database_dir/<db_id>/<db_id>.db`
+- `database_dir/<db_id>.sqlite`
+- `database_dir/<db_id>.db`
+- `database_dir/train_databases/<db_id>/<db_id>.sqlite`
+- `database_dir/train_databases/<db_id>/<db_id>.db`
+- `database_dir/dev_databases/<db_id>/<db_id>.sqlite`
+- `database_dir/dev_databases/<db_id>/<db_id>.db`
 
-Evaluation/dev should usually point to:
+Training uses `--database_dir databases`, so both train and dev DBs can be resolved.
 
---database_dir databases/dev_databases
+## Tools
 
-Do not assume all databases live directly under databases/. The code supports split-based database folders and may also be passed the top-level databases/ directory.
-
-Dataset Format
-
-Training data is expected to be JSONL, and the code should handle both normalized chat-style records and raw BIRD-style records.
-
-Chat/harmony-style input:
-
-{
-  "messages": [
-    {"role": "system", "content": "..."},
-    {"role": "user", "content": "..."},
-    {"role": "assistant", "content": "SELECT ..."}
-  ],
-  "db_id": "database_name",
-  "gold_sql": "SELECT ...",
-  "evidence": "optional external knowledge or hint"
-}
-
-Raw BIRD-style input also appears in this workspace:
-
-{
-  "db_id": "database_name",
-  "question": "...",
-  "evidence": "optional external knowledge or hint",
-  "SQL": "SELECT ..."
-}
-
-Utility scripts under `scripts/data_generation/` may need to support both raw JSONL and JSON-array dataset files.
-
-The `scripts/data_generation/few_shot_bm25.py` utility generates both inference and training few-shot files. For dev/inference data, each example receives top-k few-shot examples retrieved from the train file. For train data, each example receives top-k few-shot examples retrieved from the train file while excluding examples from the same `db_id`.
-
-The `scripts/data_generation/schema_build.py` utility supports both train and dev splits. It should be able to consume JSONL or JSON inputs, default to the split-specific few-shot file and column-meaning file in `data/bird_<split>_data/raw/`, read schemas from `databases/<split>_databases/`, and emit chat-format JSONL under `outputs/`. It also renders compact schema statistics such as table row/column counts and per-column null/distinct/min/max summaries. `Examples:` should show the top occurring concrete values for numeric, date, and text columns rather than summary stats, and any rendered example longer than 50 characters should be truncated with `...`. The renderer also supports `--no-nullability` to omit `Nullable` / `Not Null` labels when a leaner schema prompt is needed. When invoked with `--no-fewshots`, it should omit the few-shot preamble entirely so the user prompt starts at `<question>` rather than leaving a placeholder block.
-
-Schema-built JSONL should include top-level `db_id`, `gold_sql`, `evidence`, and `question` fields in addition to `messages`. The shared normalizer also recovers `db_id` and `evidence` from older message-only schema-built prompts that embed `<db_id>` and `<hint>` tags.
-
-The training prompt should contain only system/user messages. The assistant message should be used as the gold SQL target for rewards, not included in the prompt.
-When normalizing raw BIRD data, preserve uppercase `SQL` fields as `gold_sql`.
-
-The normalized dataset should expose these fields:
-
-{
-    "prompt": [...],
-    "messages": [...],
-    "db_id": "...",
-    "gold_sql": "...",
-    "evidence": "...",
-    "question": "...",
-    "tools": [...]
-}
-
-Keep remove_unused_columns=False in TRL config because reward functions need db_id, gold_sql, evidence, and messages.
-
-Bare schema datasets currently generated in this workspace:
-
-- `outputs/train-6601-schema-bare.jsonl`: 6601 BIRD train rows, message-only, bare schema, primary/foreign keys only, no few-shots, no column descriptions, no table/column stats, no nullability labels.
-- `outputs/dev-20251106-schema-bare.jsonl`: 1534 BIRD dev rows with the same bare-schema format.
-
-Tool-calling datasets currently generated in this workspace:
-
-- `outputs/train-6601-schema-bare-tool.jsonl`: built from the bare train file.
-- `outputs/dev-20251106-schema-bare-tool.jsonl`: built from the bare dev file.
-- `outputs/train-6601-schema-tool.jsonl`: built from the full schema train file.
-- `outputs/dev-20251106-schema-tool.jsonl`: built from the full schema dev file.
-
-Tool datasets are produced by `scripts/data_generation/build_tool_dataset.py`. They replace the old non-tool system prompt with `prompts.py::SYSTEM_PROMPT_TEMPLATES`, inject the compact catalog from `src/nl2sql_gspo/tool_calling.py`, attach native Gemma/OpenAI-style `tools`, and expose top-level `db_id`, `gold_sql`, `evidence`, `question`, `prompt`, `messages`, and `tools`. The prompt/messages should contain only `system` and `user`; the gold SQL stays top-level as `gold_sql` for rewards/evaluation.
+Tool declarations live in `src/nl2sql_gspo/tool_calling.py`; implementations live in `gen_tools.py`.
 
 The intended tool set is exactly:
 
@@ -176,225 +582,432 @@ The intended tool set is exactly:
 - `sqlite_peek(db_id, table, columns, limit=10, where=None)`
 - `sqlite_query(db_id, sql, max_return_rows=100)`
 
-`gen_tools.py` also contains `consensus_at_1`, but it is not part of the current tool dataset or GRPO tool catalog.
+`gen_tools.py` may contain additional functions such as `consensus_at_1`, but they are not part of the current tool dataset or GRPO tool catalog.
 
-When filtering or rendering prompt length for tool datasets, pass row-level `tools` to `apply_chat_template(..., tools=tools)`. Gemma tokenizers may return a `BatchEncoding` from `apply_chat_template(..., tokenize=True)`; count actual `input_ids`, not `len(BatchEncoding)`.
+Tool env setup:
 
-Standalone inference for tool datasets should point `INPUT_FILE` to `outputs/dev-20251106-schema-bare-tool.jsonl`, `DATABASE_DIR` to `databases/dev_databases`, and use `scripts/launch_inference.sh` / `scripts/run_inference_bird.py`. The helper `src/nl2sql_gspo/inference_tool_executor.py` configures `BIRD_DB_ROOTS`, parses emitted Gemma-style `call:name{...}` tool calls, and executes them against `gen_tools.py`.
+- `configure_tool_db_roots(database_dir, extra_roots)` populates `BIRD_DB_ROOTS` if it is not already set.
+- It includes `database_dir`, split subdirs, and default `databases` roots.
+- Standard GRPO uses `get_grpo_tool_functions()`.
+- AsyncGRPO uses `get_sync_grpo_tool_functions()` because its tool worker currently expects synchronous callables.
 
-Tool inference is agentic, not one-shot. `scripts/run_inference_bird.py` should generate until a tool boundary, execute the emitted calls, append Gemma-native assistant `tool_calls` plus `tool_responses`, re-render the chat template, and continue until no tool calls remain or `MAX_TOOL_ROUNDS` / `--max_tool_rounds` is reached. This matters for vLLM because Gemma 4 generation config treats the tool-response boundary token as a stop token; stopping after a first tool call is expected unless the runner feeds the tool response back into the model and resumes generation.
+Tool prompt behavior:
 
-The current tool prompt is draft-first and verification-oriented. The assistant should normally draft SQL from the question/hint/schema first, call `sqlite_query` to execute that candidate, and then use `sqlite_peek` or `bm25_search_sqlite` only when execution or semantic checks reveal uncertainty. Avoid reverting to a tool-first exploration workflow unless the schema/hint is insufficient to draft a plausible query.
+- The prompt is draft-first and verification-oriented.
+- The model should normally draft candidate SQL, verify with `sqlite_query`, then use `sqlite_peek` or `bm25_search_sqlite` when execution or semantic checks reveal uncertainty.
+- The prompt requires `ExpectedOutputColumns=[...]` before calling `sqlite_query`.
+- Successful `sqlite_query` responses include a `column_coverage_reminder` to reduce under-projection.
+- Numeric scale checks should use schema ranges or `sqlite_peek` when values may be 0-1 fractions, 0-100 percentages, or counts.
+- Predicate source fidelity matters: when similar columns exist across joined tables, choose the column whose table semantics match the question.
 
-The tool prompt enforces an output-shape contract: before calling `sqlite_query`, the assistant should write `ExpectedOutputColumns=[...]` in the scratch pad, and after a successful query it should compare returned `columns` against that list before finalizing. The runtime augments successful `sqlite_query` responses with a `column_coverage_reminder` to reinforce this. This is meant to reduce under-projection on broad questions such as “provide details including location, enrollment, rates, rankings, status...”.
+Reward extraction must not treat scratchpad `CandidateSQL` or SQL embedded inside `call:sqlite_query{...}` as the final answer. Unfinished tool-call rollouts should not receive execution/result reward.
 
-For threshold logic, the tool prompt requires a numeric scale check when scale is uncertain. Before comparing Percent/Rate/Ratio/Fraction columns to hard-coded thresholds, the assistant should use `sqlite_peek` or schema value ranges to confirm whether values are stored as 0-1 fractions, 0-100 percentages, or counts.
+## Output Format Contract
 
-The prompt also enforces predicate source fidelity. When similar columns exist in joined tables, choose the predicate column whose name and table semantics directly match the question/hint instead of a generic similarly named column from another table.
+The current strict reward format expects:
 
-Training Method
+```xml
+<scratch_pad>...</scratch_pad>
+<relevant_tables>...</relevant_tables>
+<relevant_columns>...</relevant_columns>
+<final_answer>
+<sql_code>SELECT ...</sql_code>
+</final_answer>
+```
 
-This project has two training backends:
+`format_reward` requires:
 
-- `TRAINER_BACKEND=grpo` / `--trainer_backend grpo`: the existing `DynamicSamplingGRPOTrainer` subclass of TRL `GRPOTrainer`, configured for GSPO-style sequence-level importance sampling and DAPO-style dynamic sampling.
-- `TRAINER_BACKEND=async_grpo` / `--trainer_backend async_grpo`: TRL experimental `AsyncGRPOTrainer`, imported from `trl.experimental.async_grpo`, which decouples vLLM server rollout generation from trainer consumption and overlaps generation/scoring with optimization.
+- non-empty `<scratch_pad>`
+- non-empty `<relevant_tables>`
+- non-empty `<relevant_columns>`
+- final SQL inside `<final_answer><sql_code>...</sql_code></final_answer>`
+- clean SQL code without nested scratch/final tags, tool calls, or code fences
 
-The standard GRPO backend is configured for GSPO-style training by setting:
+## Rewards
 
-importance_sampling_level="sequence"
+`make_nl2sql_rewards` returns exactly seven reward functions in this order:
 
-This is important for the standard GRPO backend. Do not accidentally remove this setting from the `grpo` path.
+```text
+format_reward
+execution_reward
+result_reward
+table_linking_reward
+column_linking_reward
+nonnull_reward
+length_penalty_reward
+```
 
-The standard GRPO setup is:
-Training GPUs: 0,1,2,3,4,5
-vLLM GPUs:     6,7
-Training:      DeepSpeed ZeRO-3
-Rollouts:      vLLM server mode
-Precision:     bf16
+Default weights, in the same order:
 
-The AsyncGRPO setup is:
-Training GPUs: 0,1,2,3,4,5
-vLLM GPUs:     6,7
-Training:      FSDP
-Rollouts:      raw vLLM server mode with NCCL weight transfer
-Precision:     bf16
+```text
+0.2, 0.5, 2.0, 0.5, 0.5, 0.1, 0.1
+```
 
-The vLLM server should be started separately before training.
+Reward meanings:
 
-vLLM Server Mode
+- `format_reward`: binary strict XML/output-shape reward.
+- `execution_reward`: binary reward for predicted SQL executing successfully.
+- `result_reward`: binary BIRD execution-accuracy reward using raw-row set equality.
+- `table_linking_reward`: binary reward for predicted table set equaling gold table set.
+- `column_linking_reward`: continuous Jaccard reward over predicted vs gold column sets.
+- `nonnull_reward`: binary reward for execution success plus at least one non-null returned cell.
+- `length_penalty_reward`: DAPO Soft Overlong Punishment, always `<= 0`.
 
-The training script expects vLLM to be running in server mode.
+BIRD result semantics:
 
-Typical command:
-bash scripts/launch_vllm.sh
+```text
+set(predicted_rows) == set(gold_rows)
+```
 
-Then training:
+Do not normalize strings, floats, whitespace, or row order for `result_reward`. It must stay aligned with standalone BIRD dev evaluation.
+
+Execution details:
+
+- Predicted SQL execution is cached per process by `(db_id, extracted_sql)`.
+- Cache size is capped at `8192`.
+- Gold execution is cached by `(db_id, gold_sql)`.
+- `REWARD_WORKERS` controls per-rank thread parallelism for DB-backed rewards.
+- `REWARD_WORKERS=1` means serial SQL reward execution per rank.
+- Higher values parallelize reward execution but can stress SQLite/filesystem resources.
+- `EXEC_TIMEOUT_S` is used for predicted and gold SQL reward execution.
+- A hard timeout wrapper adds a 15 second buffer and can leak a stuck worker thread so the rank can continue to the next collective.
+
+Length penalty:
+
+- `LENGTH_PENALTY_MAX` should usually match `MAX_COMPLETION_LENGTH`.
+- Current launcher defaults both to `8000`.
+- `LENGTH_PENALTY_BUFFER=512`, so the penalty begins at `7488` tokens by default.
+- With a tokenizer available, length is counted with tokenizer tokens; otherwise it falls back to word count.
+
+## SQL Safety And Extraction
+
+SQL helpers live in `src/nl2sql_gspo/sql_utils.py`.
+
+Important extraction behavior:
+
+- Prefer SQL inside the final-answer contract.
+- Fall back to tagged SQL, fenced SQL, or raw SQL only when appropriate.
+- If tool-call syntax exists but no final-answer SQL exists, return empty SQL.
+- This prevents rewarding draft SQL or tool-call SQL arguments.
+
+Readonly safety:
+
+- Allowed SQL must contain `SELECT` or `WITH`.
+- Disallowed keywords include `DROP`, `ALTER`, `TRUNCATE`, `ATTACH`, `DETACH`, `PRAGMA`, `VACUUM`, `REINDEX`, `CREATE`, `INSERT`, `UPDATE`, and `DELETE`.
+- SQLite connections are opened read-only where possible.
+
+## Model And Tokenizer Loading
+
+`model_utils.py` behavior:
+
+- `load_tokenizer` resolves tokenizer files from local checkpoints or base model metadata.
+- If a local model checkpoint lacks tokenizer files, it may fall back to `_name_or_path`, `name_or_path`, or `model_name_or_path` from `config.json`.
+- If tokenizer fast loading fails, it retries with the slow tokenizer.
+- If pad token is absent, it uses EOS as pad.
+- If no chat template is present, it tries the `-it` instruct sibling.
+- If still absent, it installs a plain text fallback chat template.
+- `load_model_and_tokenizer` first tries `AutoModelForCausalLM` with bf16 and `attn_implementation="sdpa"`.
+- If CausalLM fails and `AutoModelForImageTextToText` exists, it falls back and freezes multimodal modules.
+- `model.config.use_cache=False` for training.
+- Inference loading sets `use_cache=True` and tries SDPA, then eager, then default, then multimodal fallback.
+
+## Checkpointing And Resume
+
+There are two checkpoint modes:
+
+- Rotating model-only checkpoints under `OUTPUT_DIR/checkpoint-*`
+- Stable full restart checkpoint under `OUTPUT_DIR/latest-full-checkpoint`
+
+Default launcher:
+
+```text
+SAVE_ONLY_MODEL=1
+SAVE_TOTAL_LIMIT=10
+SAVE_LATEST_FULL_CHECKPOINT=1
+```
+
+Model-only continuation:
+
+```bash
+MODEL_NAME=outputs/gemma4_31b_gspo_bird/checkpoint-100 \
+OUTPUT_DIR=outputs/gemma4_31b_gspo_bird_restart \
 bash scripts/launch_train.sh
+```
 
-To resume from a saved checkpoint through the launcher workflow, set `RESUME_FROM_CHECKPOINT` before running `bash scripts/launch_train.sh`.
+Exact full resume:
 
-For the standard GRPO backend, the training script uses:
-use_vllm=True
-vllm_mode="server"
-vllm_server_base_url="http://127.0.0.1:8000"
+```bash
+RESUME_FROM_CHECKPOINT=outputs/gemma4_31b_gspo_bird/latest-full-checkpoint \
+bash scripts/launch_train.sh
+```
 
-For AsyncGRPO, start vLLM with:
+The launcher rejects using a model-only checkpoint as `RESUME_FROM_CHECKPOINT` because it lacks optimizer/scheduler/RNG/DeepSpeed state. For model-only continuation, set `MODEL_NAME` instead.
 
-VLLM_SERVER_KIND=async_grpo bash scripts/launch_vllm.sh
+## Standalone Inference And Evaluation
 
-This uses raw `vllm serve` with `VLLM_SERVER_DEV_MODE=1`, `--logprobs-mode processed_logprobs`, and `--weight-transfer-config '{"backend":"nccl"}'`, which TRL experimental AsyncGRPO requires for rollout weight updates.
+Run inference after training or on a separate node:
 
-Then launch training with:
+```bash
+bash scripts/launch_inference.sh
+```
 
-TRAINER_BACKEND=async_grpo DISTRIBUTED_BACKEND=fsdp bash scripts/launch_train.sh
+Default inference launcher values:
 
-AsyncGRPO is experimental and its API may drift across TRL versions. In TRL 1.4.0, it supports FSDP for distributed training and does not accept `eval_dataset`; training-time rollout rewards are still logged, but held-out dev-set eval must be run through the standalone inference/evaluation scripts.
+```text
+INFERENCE_BACKEND=transformers
+MODEL_PATH=outputs/gemma4_31b_gspo_bird
+INPUT_FILE=outputs/dev-20251106-schema.jsonl
+DATABASE_DIR=databases/dev_databases
+DIFF_JSON_PATH=data/bird_dev_data/raw/dev_20251106.json
+OUTPUT_DIR=outputs/bird_dev_inference_<timestamp>
+NUM_EXAMPLES=-1
+MAX_PROMPT_LENGTH=30000
+MAX_NEW_TOKENS=4096
+MAX_TOOL_ROUNDS=8
+TEMPERATURE=0.0
+TOP_P=1.0
+EVAL_TIMEOUT=60
+EVAL_WORKERS=16
+```
 
-`gen_tools.py` exposes async tool functions. TRL experimental AsyncGRPO currently rejects coroutine tools, so `src/nl2sql_gspo/tool_calling.py` provides synchronous wrappers via `get_sync_grpo_tool_functions()` for AsyncGRPO. Keep those wrappers if using tool calls in AsyncGRPO.
+Supported inference backends:
 
-The training script also accepts an optional `--resume_from_checkpoint` argument for explicit checkpoint resume.
+- `transformers`
+- `vllm`
+- `vllm_async`
 
-The current launcher recipe trains from `outputs/train-6601-schema-tool.jsonl` and uses `outputs/dev-20251106-schema-tool.jsonl` where a backend supports online eval. AsyncGRPO loads the eval file only for normalization/filtering checks and then skips online eval because the experimental trainer does not accept `eval_dataset`.
-It currently uses `num_generations=16`, launcher default `gradient_accumulation_steps=16` (override via `GRADIENT_ACCUMULATION_STEPS`), launcher default `max_prompt_length=9000` (override via `MAX_PROMPT_LENGTH`), and `max_completion_length=4096` with vLLM server mode (vLLM `max_model_len=24576`), and the launcher defaults to `google/gemma-4-31B-it`.
-The training launcher also supports `MAX_STEPS` for short smoke runs while keeping the normal epoch-based recipe as the default.
-The training launcher accepts `LEARNING_RATE` or `LR` env overrides for one-off runs without editing the script.
-The training launcher defaults to model-only rotating checkpoints (`SAVE_ONLY_MODEL=1`, `SAVE_TOTAL_LIMIT=3`), which write HF model weights/config and trainer state while skipping DeepSpeed optimizer/scheduler/scaler/RNG state.
-The launcher also defaults `SAVE_LATEST_FULL_CHECKPOINT=1`, which refreshes `OUTPUT_DIR/latest-full-checkpoint` on every save with a full DeepSpeed resume checkpoint containing optimizer/scheduler/RNG state.
-For model-only checkpoints, continue training by setting `MODEL_NAME` to the checkpoint directory and leaving `RESUME_FROM_CHECKPOINT` unset. For exact resume, set `RESUME_FROM_CHECKPOINT` to `OUTPUT_DIR/latest-full-checkpoint`.
-By default, the vLLM launcher routes through `python -m nl2sql_gspo.vllm_serve_compat`, a local wrapper around TRL's server entrypoint. For AsyncGRPO, set `VLLM_SERVER_KIND=async_grpo` so the launcher uses raw `vllm serve` with weight-transfer configuration.
-The local `nl2sql_gspo.vllm_serve_compat` wrapper also installs a weight-sync diagnostic around TRL's `WeightSyncWorkerExtension.update_named_param`, so server logs include the parameter name, dtype, shape, approximate GiB size, and elapsed time for each incoming weight update, plus the same metadata on exceptions/timeouts.
-The repository also includes `scripts/check_cluster_health.py`, a local health-check utility that reports GPU inventory, `nvidia-smi` topology, peer-access status, NCCL-related env vars, and runs a small NCCL all-reduce/broadcast/all-gather smoke test across the currently visible GPUs.
-For `google/gemma-4-31B-it`, leave `VLLM_ATTENTION_BACKEND` unset by default. vLLM `0.19.x+` contains a Gemma 4 config hook that detects heterogeneous `head_dim` / `global_head_dim` and forces `TRITON_ATTN` when `global_head_dim > 256`; explicitly setting `VLLM_ATTENTION_BACKEND=TORCH_SDPA` bypasses that safeguard and breaks this model family.
-The training launcher skips eval-on-start by default; set `EVAL_ON_START=1` to run a pre-training dev baseline. It also supports optional `--train_limit` / `--eval_limit` row caps for smoke runs.
+Transformers backend:
 
-Do not switch to colocated vLLM unless explicitly requested. Server mode is preferred for this project because it separates rollout memory from training memory.
+- Defaults to `TRANSFORMERS_DEVICE_MAP=none`.
+- Defaults `TRANSFORMERS_DATA_PARALLEL_SIZE=0`, meaning one worker per visible GPU.
+- Intended for models that fit on a single GPU per worker.
+- Use `TRANSFORMERS_DEVICE_MAP=auto` to shard one model across visible GPUs.
 
-Model Loading Rules
+vLLM backend:
 
-The model is Gemma 4 31B or an internal equivalent.
+- Defaults to `VLLM_TENSOR_PARALLEL_SIZE=4`.
+- Defaults to `VLLM_DATA_PARALLEL_SIZE=2`.
+- Uses explicit worker processes for local data parallelism.
+- Do not rely on single-process `LLM(data_parallel_size=...)` for vLLM 0.19.x.
+- `vllm_async` also accepts `VLLM_ASYNC_CONCURRENCY`.
 
-Because Gemma 4 may be multimodal, model loading should:
+Inference filtering:
 
-Try AutoModelForCausalLM first for text-only training.
-If that fails, try a multimodal class such as AutoModelForImageTextToText.
-Freeze non-text modules if present.
+- Normalizes rows with `normalize_record`.
+- Uses `prompt` when present.
+- For legacy `messages`, strips assistant turns to avoid leaking gold SQL.
+- Renders with row-level `tools`.
+- Filters rows over `MAX_PROMPT_LENGTH` rather than truncating.
+- Writes filtered rows to `filtered_examples.jsonl`.
 
-Tool Rollout Training
+Inference outputs include:
 
-Tool rollout training uses exactly the three callable tools from `src/nl2sql_gspo/tool_calling.py` / `gen_tools.py`: `bm25_search_sqlite`, `sqlite_peek`, and `sqlite_query`.
+- `predict_dev.json`
+- `prediction_details.jsonl`
+- `filtered_examples.jsonl`
+- `eval_results.jsonl`
+- `eval_summary.json`
+- `eval_summary.md`
+- `eval_summary_by_difficulty.csv`
+- `eval_summary_by_db.csv`
 
-For standard GRPO, callable tools are loaded with `get_grpo_tool_functions()`. For AsyncGRPO, callable tools are loaded with `get_sync_grpo_tool_functions()` because the experimental rollout worker requires synchronous callables. The top-level JSON `tools` in each dataset row are used for prompt rendering and prompt-length filtering, but the trainer `tools=` argument should receive Python callables, not JSON tool schemas.
+Local BIRD evaluation:
 
-When tool rollouts are enabled, SQL extraction must only reward final SQL inside `<final_answer><sql_code>...</sql_code></final_answer>`. Unfinished completions that stop after a tool call should not receive execution/result reward for `CandidateSQL` from scratchpad text or for SQL embedded inside `call:sqlite_query{...}`.
+- Executes predicted and gold SQL.
+- Compares raw row sets.
+- Reports simple/moderate/challenging/total accuracy using dev difficulty JSON.
+- Includes extraction and execution counts.
+- Includes predicted-side and gold-side error text.
 
-Reward Functions
+## Tool Inference
 
-Reward functions live in: src/nl2sql_gspo/rewards.py
-Supporting SQL/database utilities live in: src/nl2sql_gspo/sql_utils.py
-Supporting schema utilities live in: src/nl2sql_gspo/schema_utils.py
-Dynamic-sampling trainer subclass lives in: src/nl2sql_gspo/dynamic_sampling_trainer.py
+Tool inference is agentic, not one-shot.
 
-Current reward functions are:
+`scripts/run_inference_bird.py`:
 
-- `format_reward` (binary): current tool-prompt contract requiring `<scratch_pad>`, `<relevant_tables>`, `<relevant_columns>`, and clean final SQL inside `<final_answer><sql_code>...</sql_code></final_answer>`
-- `execution_reward` (binary): predicted SQL executes without error
-- `result_reward` (binary, BIRD EX): uses official BIRD semantics — `set(predicted_rows) == set(gold_rows)` on RAW rows (no normalization), with a per-query timeout. Implemented via `bird_execute_sql` + `bird_get_gold_rows` (with a per-process gold cache keyed by `(db_id, gold_sql)`) + `bird_result_match` in `src/nl2sql_gspo/sql_utils.py`.
-- `table_linking_reward` (binary): predicted table set == gold table set
-- `column_linking_reward` (continuous): Jaccard of pred vs gold column sets
-- `nonnull_reward` (binary, small): predicted SQL executes AND returns at least one non-null cell
-- `length_penalty_reward` (continuous, ≤ 0): DAPO §3.4 Soft Overlong Punishment. 0 when `len ≤ L_max - L_cache`, linear ramp to -1 within the buffer, saturates at -1 beyond `L_max`. Length is measured in tokens via the trainer's tokenizer when available; falls back to `len(text.split())` otherwise.
+- Generates until a tool boundary.
+- Parses Gemma-style `call:name{...}` tool calls.
+- Executes calls through `inference_tool_executor.py` / `gen_tools.py`.
+- Appends assistant tool calls plus tool responses.
+- Re-renders the chat template.
+- Continues until no tool calls remain or `max_tool_rounds` is reached.
 
-Default reward weights: `[0.2, 0.5, 2.0, 0.5, 0.5, 0.1, 0.1]` (max positive weighted reward = 3.8; length penalty contributes ≤ 0). The old `schema_linking_reward`, `ngram_reward`, and `evidence_utilization_reward` have been removed.
+This matters because Gemma 4 generation can stop at tool-response boundary tokens. A first tool call is not a final answer; the runner must feed tool results back and resume generation.
 
-Reward execution timeouts are configurable via `--exec_timeout_s` (default 60s for both predicted and gold SQL — more permissive than BIRD's 30s default to avoid penalising slow reference queries during training). The Soft Overlong Punishment knobs are `--length_penalty_max` (default 4096, should match `--max_completion_length`) and `--length_penalty_buffer` (default 512, ≈ 12.5% of L_max per the DAPO recipe).
+## Pass@k, Self-Consistency, And Analysis Scripts
 
-Do NOT change `result_reward` away from BIRD set semantics on raw rows; it must stay aligned with the dev-set evaluator in `scripts/run_inference_bird.py` and the official `AlibabaResearch/DAMO-ConvAI/bird/llm/src/evaluation.py`.
+Additional scripts:
 
-The training script also supports configurable monitoring backends via `--report_to`, `--reward_workers` for per-rank thread parallelism in DB-backed rewards such as `result_reward`, and writes TensorBoard logs to `--logging_dir` when `tensorboard` is included. The launchers timestamp terminal logs under `logs/`, default W&B run names, and default TensorBoard directories.
+- `scripts/run_passk_bird.py`: pass@k evaluation over sampled candidates.
+- `scripts/run_self_consistency_bird.py`: generates multiple candidates, executes them, ignores empty result sets, then majority-votes over raw result sets.
+- `scripts/generate_failure_instructions.py`: mines failure heuristics from heterogeneous train prompts.
+- `scripts/analyze_passk_all_wrong.py`: analyzes pass@k all-wrong cases.
+- `scripts/probe_train_heterogeneity.py`: probes reward heterogeneity on train data.
+- `scripts/what_if_rewards.py`: reward what-if analysis.
+- `scripts/smoke_test_rewards.py`: quick reward sanity checks.
+- `scripts/inspect_jsonl.py`: inspect generated JSONL data.
+- `scripts/check_cluster_health.py`: GPU/NCCL/topology health check.
 
-The trainer is `DynamicSamplingGRPOTrainer` from `src/nl2sql_gspo/dynamic_sampling_trainer.py` — a subclass of TRL's `GRPOTrainer` implementing DAPO §3.2 dynamic sampling in two modes: **single-shot oversample** (preferred, enabled when `--dapo_oversample_factor > 1`) and **iterative oversample-and-replace** (when `--dapo_oversample_factor == 1`). In single-shot mode each rank generates `K * target_local_groups` groups in ONE rollout round (round 1 uses dataloader prompts; remaining `(K-1) * target_local_groups` come from a shared shuffled backup queue over `train_dataset`, consumed from the tail in all-rank blocks and reshuffled only after exhaustion), computes candidate rewards, then keeps the first `target_local_groups` heterogeneous groups; if fewer are found, the remaining slots are filled with **random non-heterogeneous groups whose `completion_mask` is zeroed** (no gradient contribution). Candidate reward filtering happens before the expensive policy old-logprob / vLLM importance-correction pass, so trainer-side logprobs are computed only for the final kept/padded groups rather than all `K` candidates. If every final group is zero-masked, the trainer marks the batch with `_skip_policy_loss` and returns a scalar zero loss after `_prepare_inputs`, avoiding a wasteful DeepSpeed forward/backward on an all-zero batch. In iterative mode, each call runs up to `--dapo_max_rounds` rollout rounds, keeping heterogeneous groups across rounds; rank-shape is kept uniform via `accelerator.gather(need_local).max()` which causes already-filled ranks to do redundant rollouts, so the single-shot path is recommended unless the oversample factor would be too large. Heterogeneity = intra-group reward std `>= --dynamic_sampling_min_std`; by default the `--dynamic_sampling_reward_name` reward (default `result_reward`) is used. If the budget is exhausted the buffer is padded with zero-masked groups so output shape matches what TRL expects. After concatenation, `num_items_in_batch` is recomputed from the final `completion_mask`. Logged metrics: `dapo/rounds_used`, `dapo/groups_attempted`, `dapo/groups_heterogeneous`, `dapo/groups_kept`, `dapo/groups_padded`, `dapo/heterogeneity_rate`, `dapo/selection_fill_rate`. The trainer prints a one-line config summary on rank 0 at startup and a `[dapo] step=N ...` line after each generation step.
+Self-consistency rules:
 
-The training script also supports `--num_iterations` (PPO mu, launcher default `1`), `--steps_per_generation`, `--mask_truncated_completions`, `--vllm_group_port` (launcher default `29600` to avoid ephemeral-port collisions during vLLM weight updates), `--reward_workers` for per-rank thread parallelism in SQL execution rewards, and optional `--log_completions` sample-table printing. The launcher defaults `MASK_TRUNCATED_COMPLETIONS=0`; prompt length is handled by filtering rows before training/eval, and completion-side overlong masking is opt-in. The prompt-length filter must count actual tokenizer `input_ids` because Gemma tokenizers may return a `BatchEncoding` from `apply_chat_template(..., tokenize=True)` whose object length is not the token count. If enabled, `--mask_truncated_completions` masks only completions that reach `max_completion_length` without EOS/PAD; short vLLM completions that omit EOS are not treated as overlong. The launcher exposes the full DAPO knob set via env vars: `NUM_ITERATIONS`, `STEPS_PER_GENERATION`, `ENABLE_DYNAMIC_SAMPLING`, `DYNAMIC_SAMPLING_MIN_STD`, `DAPO_MAX_ROUNDS`, `DAPO_OVERSAMPLE_FACTOR`, `DYNAMIC_SAMPLING_REWARD_NAME`, `MASK_TRUNCATED_COMPLETIONS`, `EXEC_TIMEOUT_S`, `REWARD_WORKERS`, `LENGTH_PENALTY_MAX`, `LENGTH_PENALTY_BUFFER`, `REWARD_WEIGHTS`, `VLLM_GROUP_PORT`, `LOG_COMPLETIONS`, `NUM_COMPLETIONS_TO_PRINT`, `SAVE_STEPS`, `EVAL_STEPS`, `LOGGING_STEPS`, `EVAL_LIMIT`, `GRADIENT_ACCUMULATION_STEPS`. Launcher defaults: `SAVE_STEPS=25`, `EVAL_STEPS=25`, `LOG_COMPLETIONS=0`, `EVAL_LIMIT=64`, `DAPO_MAX_ROUNDS=1`, `DAPO_OVERSAMPLE_FACTOR=8`, `DYNAMIC_SAMPLING_REWARD_NAME=result_reward`, `NUM_ITERATIONS=1`, `GRADIENT_ACCUMULATION_STEPS=16`, `REWARD_WORKERS=1`. Eval uses the same `num_generations` as training. With `gradient_accumulation_steps=16, num_iterations=1, per_device_train_batch_size=1` and 6 trainer ranks the DAPO target is `G=6` heterogeneous prompt-groups per optimizer step (1 group per rank × 6 ranks); single-shot oversample with `K=8` generates `K * G * num_generations = 8 * 6 * 16 = 768` completions per step in one round.
+- Vote signatures are unordered raw result sets.
+- Empty execution results are ignored.
+- Ties break by earliest sample index and then shorter SQL.
+- Moderate temperatures such as `0.5-0.8` often help diversity; greedy generation can reduce voting value.
 
-Tests
+## Monitoring
 
-Focused unit tests live in: tests/test_core.py
+Training logs:
 
-These tests currently cover:
+- Terminal log: `logs/train_<timestamp>.log`
+- vLLM log: `logs/vllm_<timestamp>.log`
+- TensorBoard dir: `outputs/gemma4_31b_gspo_bird/tb/<timestamp>` when enabled
+- W&B enabled by default via `WANDB_PROJECT` and `REPORT_TO=wandb`
 
-- BIRD raw record normalization
-- DAPO truncation masking only for completions that reach `max_completion_length`
-- schema-built message normalization for `db_id` and `evidence`
-- inference prompt preparation for normalized and legacy schema-built rows
-- prompt-length filtering for tokenizers that return `BatchEncoding` objects
-- SQL extraction and readonly checks
-- Database path resolution for split-based database folders
+Useful log searches:
 
-Documentation Maintenance
+```bash
+rg -n "dapo\\]|rollout-debug|truncated=|completion_tokens|length_penalty_reward" logs/train_*.log
+rg -n "dropped .*prompt >" logs/train_*.log
+rg -n "weight sync|update_named_param|exception|timeout" logs/vllm_*.log
+```
 
-After any relevant code change, review this file for drift.
+Common training metrics:
 
-Update `.github/copilot-instructions.md` when a code change affects repo structure, workflow, assumptions, supported behavior, or tests.
+- reward means/stds per reward function
+- aggregate reward and reward std
+- `frac_reward_zero_std`
+- DAPO attempted/heterogeneous/kept/padded groups
+- completion lengths and clipped ratios
+- tool call frequency and failures
+- entropy
+- clip ratios
+- grad norm
+- learning rate
+- step time
+- token count
 
-Also update `README.md` when setup, usage, or run instructions change.
+## Tests
 
+Run:
 
-When Editing Code
+```bash
+python -m unittest tests/test_core.py
+```
 
-When making code changes, prefer minimal targeted edits.
+Tests cover:
 
-If changing database path logic, update only sql_utils.py.
+- raw BIRD record normalization
+- schema-built message normalization
+- prompt filtering with tokenizer objects that return `BatchEncoding`-like wrappers
+- CLI parsing for training args
+- SQL extraction, readonly safety, database path resolution
+- BIRD raw-row set semantics
+- reward cache behavior
+- length penalty behavior
+- nonnull reward behavior
+- strict format reward behavior
+- inference prompt preparation
+- inference device grouping
+- schema rendering options
+- self-consistency voting
+- dynamic sampling helper functions
 
-If changing data format handling, update only data.py.
+When changing behavior, update or add focused tests in `tests/test_core.py`.
 
-If changing model loading/freezing, update only model_utils.py.
+## Editing Guidance
 
-If changing reward logic, update only rewards.py, sql_utils.py, or schema_utils.py.
+Prefer narrow edits that respect existing module boundaries:
 
-Inference and Evaluation
+- Data format handling: `src/nl2sql_gspo/data.py`
+- Model/tokenizer loading: `src/nl2sql_gspo/model_utils.py`
+- Reward logic: `src/nl2sql_gspo/rewards.py`
+- SQL safety/execution/extraction: `src/nl2sql_gspo/sql_utils.py`
+- Tool definitions/wrappers: `src/nl2sql_gspo/tool_calling.py`
+- Training CLI/config: `src/nl2sql_gspo/train_gspo_nl2sql.py`
+- Dynamic sampling/trainer internals: `src/nl2sql_gspo/dynamic_sampling_trainer.py`
+- vLLM server behavior: `src/nl2sql_gspo/vllm_serve_compat.py` and `scripts/launch_vllm.sh`
+- Inference and evaluation: `scripts/run_inference_bird.py` and `scripts/launch_inference.sh`
+- Dataset generation: `scripts/data_generation/`
+- Distributed defaults: `scripts/launch_train.sh`, `scripts/launch_vllm.sh`, `configs/*.json`, and `train_gspo_nl2sql.py`
 
-Standalone dev-set inference should run outside the training loop. In the current single-node recipe, training uses GPUs `0-5` and the vLLM server uses GPUs `6-7`, so there are no spare GPUs for local checkpoint inference while training is active. The intended workflow is to run inference after training finishes on the same 8-GPU node, unless a second node is available.
+Do not silently change BIRD result semantics. Keep training reward and standalone evaluator aligned.
 
-The repository now includes:
+Do not reward SQL from scratchpads or tool calls as final SQL.
 
-- `scripts/run_inference_bird.py`: generates SQL from a trained checkpoint on schema-augmented dev data and evaluates it locally.
-- `scripts/launch_inference.sh`: launcher for post-training or separate-node inference.
-- `scripts/run_passk_bird.py`: generates `k` sampled candidates per example and reports pass@k from prefixes of the same sampled set.
-- `scripts/run_self_consistency_bird.py`: generates `k` sampled candidates per example, ignores candidates that execute to empty result sets, then majority-votes over the remaining raw execution-result sets to produce one self-consistent SQL choice per example.
-- `scripts/generate_failure_instructions.py`: samples schema-built training prompts, runs sampled vLLM generations, filters to heterogeneous prompts using BIRD EX accuracy, mines common failure heuristics from wrong generations, and writes candidate instruction rules to Markdown/JSON artifacts.
+Do not include assistant gold SQL in training/inference prompts.
 
-Standalone inference supports a backend switch via `--inference_backend transformers|vllm`. The launcher mirrors this through `INFERENCE_BACKEND` and forwards `MAX_PROMPT_LENGTH`, `MAX_NEW_TOKENS`, `VLLM_TENSOR_PARALLEL_SIZE`, `VLLM_DATA_PARALLEL_SIZE`, `VLLM_GPU_MEMORY_UTILIZATION`, and `VLLM_MAX_MODEL_LEN`.
+Do not treat README values as current without checking launchers; README may drift.
 
-For self-consistency runs, keep `--num_generations` explicit and treat `--temperature` as a search knob rather than reusing the greedy-ish pass@k default blindly. For NL2SQL, a moderate temperature such as `0.5-0.8` is the recommended starting range because it adds enough diversity for useful voting without collapsing execution validity.
+After meaningful workflow/config changes, update this file and consider updating `README.md`.
 
-The launcher also forwards `TRANSFORMERS_DEVICE_MAP` and `TRANSFORMERS_DATA_PARALLEL_SIZE` for the local `transformers` backend.
+## Common Commands
 
-The inference launcher now appends a `YYYYMMDD_HHMMSS` suffix to `OUTPUT_DIR` by default for both backends. Set `APPEND_OUTPUT_TIMESTAMP=0` to disable this, or set `OUTPUT_TIMESTAMP` explicitly to control the suffix.
+Start rollout server:
 
-Standalone inference defaults to `max_prompt_length=30000` and `max_new_tokens=4096`, and filters out prompts longer than that limit instead of truncating them. Filtered prompts are printed during the run and written to `filtered_examples.jsonl` in the output directory.
+```bash
+bash scripts/launch_vllm.sh
+```
 
-The local BIRD evaluator defaults to `eval_timeout=60` seconds per example and `eval_workers=16` concurrent evaluation workers.
+Start training:
 
-For the local `transformers` backend, standalone inference now defaults to explicit multi-process data parallel with `device_map` disabled. This is intended for models that fit on a single GPU. To shard one model across the visible GPUs instead, opt in with `TRANSFORMERS_DEVICE_MAP=auto`.
+```bash
+bash scripts/launch_train.sh
+```
 
-For the local vLLM backend, standalone inference defaults to `vllm_tensor_parallel_size=4` and `vllm_data_parallel_size=2` for 8-GPU single-node runs.
+Short smoke training:
 
-For local standalone inference, data parallel should be implemented through explicit multi-process worker orchestration. Do not rely on single-process `LLM(data_parallel_size=...)` with vLLM 0.19.x.
+```bash
+TRAIN_LIMIT=256 EVAL_LIMIT=128 MAX_STEPS=2 bash scripts/launch_train.sh
+```
 
-The inference workflow writes JSON, Markdown, and CSV summaries for dev-set execution accuracy, including per-difficulty and per-database breakdowns.
+Override LR:
 
-Per-example evaluation results should include predicted-side and gold-side execution flags and error text when SQL execution fails. The JSON summary should also include extraction and execution counts such as predicted SQL extracted, predicted SQL executed, gold SQL executed, and both SQL executed.
+```bash
+LEARNING_RATE=1e-6 bash scripts/launch_train.sh
+```
 
-The local BIRD execution-accuracy scorer should follow the official dev-set semantics from `AlibabaResearch/DAMO-ConvAI/bird/llm/src/evaluation.py`:
+Exact resume:
 
-- execute predicted SQL and gold SQL on the target SQLite database
-- compare results using `set(predicted_rows) == set(gold_rows)`
-- report simple/moderate/challenging/total accuracy using the `difficulty` field from the dev JSON
-- standalone inference post-processing should use the shared `bird_execute_sql` / `bird_result_match` helpers directly for both predicted and gold SQL evaluation; avoid the legacy spawned pair-executor path because it can drop results as `no result` under concurrent load
+```bash
+RESUME_FROM_CHECKPOINT=outputs/gemma4_31b_gspo_bird/latest-full-checkpoint bash scripts/launch_train.sh
+```
 
-If changing distributed training settings, update:
-scripts/launch_train.sh
-scripts/launch_vllm.sh
-configs/ds_zero3_bf16.json
-configs/fsdp_gemma4_bf16.json
-src/nl2sql_gspo/train_gspo_nl2sql.py
+Model-only continuation:
+
+```bash
+MODEL_NAME=outputs/gemma4_31b_gspo_bird/checkpoint-100 \
+OUTPUT_DIR=outputs/gemma4_31b_gspo_bird_continue \
+bash scripts/launch_train.sh
+```
+
+Post-training inference:
+
+```bash
+bash scripts/launch_inference.sh
+```
+
+Small inference smoke:
+
+```bash
+NUM_EXAMPLES=2 bash scripts/launch_inference.sh
+```
+
+vLLM inference:
+
+```bash
+INFERENCE_BACKEND=vllm NUM_EXAMPLES=2 bash scripts/launch_inference.sh
+```
+
+Cluster health check:
+
+```bash
+python scripts/check_cluster_health.py
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5 python scripts/check_cluster_health.py
+```
+
+Run tests:
+
+```bash
+python -m unittest tests/test_core.py
+```
