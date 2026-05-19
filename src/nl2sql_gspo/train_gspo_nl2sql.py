@@ -151,7 +151,7 @@ def parse_args(argv=None):
     parser.add_argument("--eval_steps", type=int, default=100)
     parser.add_argument("--eval_on_start", action="store_true")
     parser.add_argument("--log_completions", action="store_true")
-    parser.add_argument("--num_completions_to_print", type=int, default=2)
+    parser.add_argument("--num_completions_to_print", type=int, default=0)
 
     # TRL experimental AsyncGRPO controls.
     parser.add_argument("--async_max_tool_calling_iterations", type=int, default=8)
