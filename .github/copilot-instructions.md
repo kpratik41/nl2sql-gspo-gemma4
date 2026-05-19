@@ -182,6 +182,8 @@ EVAL_STEPS=10
 EVAL_ON_START=0
 LOG_COMPLETIONS=0
 NUM_COMPLETIONS_TO_PRINT=0
+DAPO_DEBUG_ROLLOUTS=0
+TOOL_LOOP_DEBUG=0
 ```
 
 The launcher writes terminal logs to `logs/train_<timestamp>.log`.

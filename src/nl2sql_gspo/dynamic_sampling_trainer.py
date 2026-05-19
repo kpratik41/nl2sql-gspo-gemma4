@@ -161,10 +161,11 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         self._dyn_pool_cursor: int = 0
         self._dyn_pool_pass: int = 0
         self._last_rewards_per_func: Optional[torch.Tensor] = None
-        self.debug_rollouts = os.environ.get("DAPO_DEBUG_ROLLOUTS", "1") != "0"
+        self.debug_rollouts = os.environ.get("DAPO_DEBUG_ROLLOUTS", "0") != "0"
         self.debug_rollout_samples = max(0, int(os.environ.get("DAPO_DEBUG_ROLLOUT_SAMPLES", "3")))
         self.debug_rollout_sample_chars = max(0, int(os.environ.get("DAPO_DEBUG_ROLLOUT_SAMPLE_CHARS", "500")))
         self.debug_rollout_every = max(1, int(os.environ.get("DAPO_DEBUG_ROLLOUT_EVERY", "1")))
+        self.debug_tool_loop = os.environ.get("TOOL_LOOP_DEBUG", "0") != "0"
 
         # Resolve reward-name to column index on the registered reward funcs.
         self._dyn_reward_idx: Optional[int] = None
@@ -495,6 +496,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
 
     def _tool_call_loop(self, prompts, prompt_ids, completion_ids, completions, logprobs, images, multimodal_fields):
         # Tool execution loop: execute tools, then regenerate completions with tool results appended to the prompt.
+        mode = "train" if self.model.training else "eval"
         parse_stats = self._gemma_tool_parse_stats(completions)
         attached_initial = self._attach_gemma_tool_calls(completions)
         if getattr(self.accelerator, "is_main_process", True):
@@ -502,7 +504,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             raw_names = ",".join(f"{k}:{v}" for k, v in parse_stats["raw_names"].most_common(8)) or "none"
             names = ",".join(f"{k}:{v}" for k, v in parse_stats["names"].most_common(8)) or "none"
             print(
-                f"[tool-parse] step={step} rollouts={len(completions)} "
+                f"[tool-parse] mode={mode} step={step} rollouts={len(completions)} "
                 f"raw_tool_seq={parse_stats['raw_seq']} parsed_tool_seq={parse_stats['parsed_seq']} "
                 f"attached_gemma_tool_calls={attached_initial} raw_names={raw_names} parsed_names={names}",
                 flush=True,
@@ -519,7 +521,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         global_active_tool_sequences = self._global_sum_int(len(idxs_with_tool))
 
         while global_active_tool_sequences > 0 and iteration_num < self.max_tool_calling_iterations:
-            if getattr(self.accelerator, "is_main_process", True):
+            if self.debug_tool_loop and getattr(self.accelerator, "is_main_process", True):
                 names = Counter(
                     call.get("function", {}).get("name", "unknown")
                     for call_list in tool_calls
@@ -527,7 +529,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 )
                 name_summary = ",".join(f"{k}:{v}" for k, v in names.most_common(8)) or "none"
                 print(
-                    f"[tool-loop] step={int(getattr(self.state, 'global_step', 0))} "
+                    f"[tool-loop] mode={mode} step={int(getattr(self.state, 'global_step', 0))} "
                     f"iter={iteration_num} seqs={len(idxs_with_tool)} calls={sum(len(x) for x in tool_calls)} "
                     f"global_seqs={global_active_tool_sequences} names={name_summary}",
                     flush=True,
@@ -607,9 +609,9 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                     prompt_completion_tool.append(tool_message)
                     completions[idx_with_tool].append(tool_message)
 
-            if getattr(self.accelerator, "is_main_process", True):
+            if self.debug_tool_loop and getattr(self.accelerator, "is_main_process", True):
                 print(
-                    f"[tool-loop] step={int(getattr(self.state, 'global_step', 0))} "
+                    f"[tool-loop] mode={mode} step={int(getattr(self.state, 'global_step', 0))} "
                     f"iter={iteration_num} executed_calls={tool_call_count} failures={tool_failure_count}",
                     flush=True,
                 )
@@ -644,11 +646,11 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 len(pct) - len(prompt_ids[i]) > self.max_completion_length or len(pct) >= max_model_len
                 for i, pct in zip(idxs_with_tool, prompt_completion_tool_ids, strict=True)
             ]
-            if getattr(self.accelerator, "is_main_process", True):
+            if self.debug_tool_loop and getattr(self.accelerator, "is_main_process", True):
                 kept = len(overlong) - sum(1 for value in overlong if value)
                 max_len = max((len(pct) for pct in prompt_completion_tool_ids), default=0)
                 print(
-                    f"[tool-loop] step={int(getattr(self.state, 'global_step', 0))} "
+                    f"[tool-loop] mode={mode} step={int(getattr(self.state, 'global_step', 0))} "
                     f"iter={iteration_num} post_tool_prompt_seqs={len(prompt_completion_tool_ids)} "
                     f"kept={kept} overlong={len(overlong) - kept} max_prompt_completion_tool_len={max_len}",
                     flush=True,
@@ -694,9 +696,9 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 loop_images = None
                 loop_multimodal_fields = {}
 
-            if getattr(self.accelerator, "is_main_process", True):
+            if self.debug_tool_loop and getattr(self.accelerator, "is_main_process", True):
                 print(
-                    f"[tool-loop] step={int(getattr(self.state, 'global_step', 0))} "
+                    f"[tool-loop] mode={mode} step={int(getattr(self.state, 'global_step', 0))} "
                     f"iter={iteration_num} post_tool_generate_start seqs={len(prompt_completion_tool_ids)} "
                     f"global_seqs={global_active_tool_sequences}",
                     flush=True,
@@ -704,9 +706,9 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             post_tool_ids, post_tool_logprobs = self._generate_tool_continuations(
                 prompt_completion_tool_ids, loop_images, loop_multimodal_fields
             )
-            if getattr(self.accelerator, "is_main_process", True):
+            if self.debug_tool_loop and getattr(self.accelerator, "is_main_process", True):
                 print(
-                    f"[tool-loop] step={int(getattr(self.state, 'global_step', 0))} "
+                    f"[tool-loop] mode={mode} step={int(getattr(self.state, 'global_step', 0))} "
                     f"iter={iteration_num} post_tool_generate_done "
                     f"mean_new_tokens={sum(len(ids) for ids in post_tool_ids) / max(len(post_tool_ids), 1):.1f}",
                     flush=True,
@@ -750,9 +752,9 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             tool_calls = [completion.get("tool_calls") for completion in post_tool_completions]
             idxs_with_tool = [idx for idx, tool_call in zip(idxs_with_tool, tool_calls, strict=True) if tool_call]
             tool_calls = [tool_call for tool_call in tool_calls if tool_call]
-            if getattr(self.accelerator, "is_main_process", True):
+            if self.debug_tool_loop and getattr(self.accelerator, "is_main_process", True):
                 print(
-                    f"[tool-loop] step={int(getattr(self.state, 'global_step', 0))} "
+                    f"[tool-loop] mode={mode} step={int(getattr(self.state, 'global_step', 0))} "
                     f"iter={iteration_num} next_tool_seqs={len(idxs_with_tool)}",
                     flush=True,
                 )
@@ -1105,7 +1107,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
 
         if getattr(self.accelerator, "is_main_process", True):
             print(
-                f"[rollout-stage] step={int(getattr(self.state, 'global_step', 0))} "
+                f"[rollout-stage] mode={mode} step={int(getattr(self.state, 'global_step', 0))} "
                 f"generate_start prompts={len(prompts)}",
                 flush=True,
             )
@@ -1124,7 +1126,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             lengths = [len(ids) for ids in completion_ids_list]
             mean_len = sum(lengths) / max(len(lengths), 1)
             print(
-                f"[rollout-stage] step={int(getattr(self.state, 'global_step', 0))} "
+                f"[rollout-stage] mode={mode} step={int(getattr(self.state, 'global_step', 0))} "
                 f"generate_done completions={len(completion_ids_list)} mean_completion_tokens={mean_len:.1f} "
                 f"max_completion_tokens={max(lengths, default=0)}",
                 flush=True,
@@ -1206,14 +1208,14 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
 
         if getattr(self.accelerator, "is_main_process", True):
             print(
-                f"[rollout-stage] step={int(getattr(self.state, 'global_step', 0))} "
+                f"[rollout-stage] mode={mode} step={int(getattr(self.state, 'global_step', 0))} "
                 f"reward_start completions={len(completions)}",
                 flush=True,
             )
         rewards_per_func = self._calculate_rewards(inputs, prompts, completions, completion_ids_list)
         if getattr(self.accelerator, "is_main_process", True):
             print(
-                f"[rollout-stage] step={int(getattr(self.state, 'global_step', 0))} reward_done",
+                f"[rollout-stage] mode={mode} step={int(getattr(self.state, 'global_step', 0))} reward_done",
                 flush=True,
             )
         num_generations = self.num_generations if mode == "train" else self.num_generations_eval
@@ -1648,7 +1650,21 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
     def _generate_and_score_completions(self, inputs):
         # Eval / disabled → vanilla path.
         if not self.enable_dynamic_sampling or not self.model.training:
-            return super()._generate_and_score_completions(inputs)
+            mode = "train" if self.model.training else "eval"
+            if getattr(self.accelerator, "is_main_process", True):
+                print(
+                    f"[rollout-stage] mode={mode} step={int(getattr(self.state, 'global_step', 0))} "
+                    f"generate_score_start prompts={len(inputs)}",
+                    flush=True,
+                )
+            out = super()._generate_and_score_completions(inputs)
+            if getattr(self.accelerator, "is_main_process", True):
+                print(
+                    f"[rollout-stage] mode={mode} step={int(getattr(self.state, 'global_step', 0))} "
+                    "generate_score_done",
+                    flush=True,
+                )
+            return out
 
         num_generations = self.num_generations
         target_local_groups = len(inputs) // num_generations
