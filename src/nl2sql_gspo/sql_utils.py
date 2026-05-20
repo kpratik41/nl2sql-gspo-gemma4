@@ -42,7 +42,7 @@ def extract_completion_text(completion: Any) -> str:
 
 
 def clean_sql(sql: str) -> str:
-    sql = sql.strip().strip("`").strip()
+    sql = sql.strip()
     sql = re.sub(r"^\s*SQL\s*:\s*", "", sql, flags=re.IGNORECASE)
     sql = re.sub(r"</?(scratch_pad|final_answer|sql_code)>", "", sql, flags=re.IGNORECASE)
 

@@ -102,21 +102,21 @@ bash scripts/launch_inference.sh
 
 This launcher loads the checkpoint from `outputs/gemma4_31b_gspo_bird`, generates SQL for `outputs/dev-20251106-schema.jsonl`, writes official-style `predict_dev.json`, and computes BIRD-style execution accuracy against `databases/dev_databases` with difficulty breakdown from `data/bird_dev_data/raw/dev_20251106.json`.
 
-Standalone inference supports `--inference_backend transformers|vllm`. The shell launcher mirrors this through `INFERENCE_BACKEND`, and also forwards `MAX_PROMPT_LENGTH`, `MAX_NEW_TOKENS`, `TRANSFORMERS_DEVICE_MAP`, `TRANSFORMERS_DATA_PARALLEL_SIZE`, `VLLM_TENSOR_PARALLEL_SIZE`, `VLLM_DATA_PARALLEL_SIZE`, `VLLM_GPU_MEMORY_UTILIZATION`, and `VLLM_MAX_MODEL_LEN`.
+Standalone inference supports `--inference_backend vllm|vllm_async`. The shell launcher mirrors this through `INFERENCE_BACKEND`, and also forwards `MAX_PROMPT_LENGTH`, `MAX_NEW_TOKENS`, `VLLM_TENSOR_PARALLEL_SIZE`, `VLLM_DATA_PARALLEL_SIZE`, `VLLM_GPU_MEMORY_UTILIZATION`, `VLLM_MAX_MODEL_LEN`, and `VLLM_ASYNC_CONCURRENCY`.
 
-The launcher now appends a `YYYYMMDD_HHMMSS` timestamp suffix to `OUTPUT_DIR` by default for both backends. Set `APPEND_OUTPUT_TIMESTAMP=0` to keep the directory name unchanged, or set `OUTPUT_TIMESTAMP` explicitly to control the suffix.
+When `OUTPUT_DIR` is not set, the launcher creates a descriptive output directory under `outputs/inference/<split>/<input_stem>/<model_tag>/`. The final run folder includes backend, tensor/data parallel settings, async concurrency when applicable, context/prompt/output limits, tool-round budget, and a `YYYYMMDD_HHMMSS` timestamp suffix. If you set `OUTPUT_DIR` yourself, the launcher keeps that path and only appends the timestamp suffix by default. Set `APPEND_OUTPUT_TIMESTAMP=0` to keep the directory name unchanged, or set `OUTPUT_TIMESTAMP` explicitly to control the suffix.
 
-Standalone inference defaults to `max_prompt_length=30000` and `max_new_tokens=4096`, and filters out over-length prompts instead of truncating them. Filtered samples are printed during the run and also written to `filtered_examples.jsonl`.
+Standalone inference defaults to `max_prompt_length=34000`, `max_new_tokens=8000`, and `vllm_max_model_len=43000`, and filters out over-length prompts instead of truncating them. Filtered samples are printed during the run and also written to `filtered_examples.jsonl`.
 
 Standalone inference now uses the normalized `prompt` field when it is present. For older schema-built files that only contain `messages`, it strips any `assistant` turns before rendering the generation prompt so gold SQL is not leaked into the input context.
 
 The local BIRD evaluator now defaults to `eval_timeout=60` seconds per example and `eval_workers=16` concurrent evaluation workers.
 
-The `transformers` backend now defaults to explicit multi-process data parallel instead of `device_map=auto`. By default it starts one worker per visible GPU and each worker loads its own model replica, so this mode is intended for models that fit on a single GPU. To shard one model across the visible GPUs instead, set `TRANSFORMERS_DEVICE_MAP=auto`.
-
 Inference now fails fast if normalized rows are missing required metadata such as `db_id` or `gold_sql`, instead of silently running evaluation against the wrong database.
 
-For the local vLLM backend, the defaults are `tensor_parallel_size=4` and `data_parallel_size=2`, which is intended for an 8-GPU single-node run.
+For the local vLLM backend, the defaults are `tensor_parallel_size=2` and `data_parallel_size=4`, which is intended for an 8-GPU single-node run.
+
+For the async vLLM backend, the defaults are `tensor_parallel_size=8` and `data_parallel_size=1`. This path is intended primarily for tool-calling data and also accepts `VLLM_ASYNC_CONCURRENCY`.
 
 In this repository, local vLLM data parallel is implemented with explicit worker processes, each running a tensor-parallel vLLM engine on its own GPU group. This avoids the unsupported single-process `LLM(data_parallel_size=...)` path in vLLM 0.19.x.
 
@@ -125,12 +125,16 @@ For a quick smoke run, set `NUM_EXAMPLES=1` before launching inference.
 Example launcher invocations:
 
 ```bash
-INFERENCE_BACKEND=transformers NUM_EXAMPLES=2 bash scripts/launch_inference.sh
-INFERENCE_BACKEND=transformers TRANSFORMERS_DEVICE_MAP=auto MODEL_PATH=google/gemma-4-31B NUM_EXAMPLES=2 bash scripts/launch_inference.sh
 INFERENCE_BACKEND=vllm MODEL_PATH=google/gemma-4-E4B-it NUM_EXAMPLES=2 bash scripts/launch_inference.sh
+INFERENCE_BACKEND=vllm_async INPUT_FILE=outputs/dev-20251106-schema-tool.jsonl MODEL_PATH=google/gemma-4-E4B-it NUM_EXAMPLES=2 bash scripts/launch_inference.sh
 ```
 
-Inference outputs are written under the timestamped output directory selected by the launcher, for example `outputs/bird_dev_inference_20260501_071530/`:
+Inference outputs are written under the timestamped output directory selected by the launcher, for example:
+
+```text
+outputs/inference/dev/dev-20251106-schema/gemma4_31b_gspo_bird/vllm_tp2_dp4_ctx43k_p34k_o8k_r8_20260520_190000/
+outputs/inference/dev/dev-20251106-schema-tool/gemma4_31b_gspo_bird/vllm_async_tp8_dp1_c8_ctx43k_p34k_o8k_r8_20260520_190000/
+```
 
 - `predict_dev.json`: official BIRD prediction format (`SQL\t----- bird -----\tdb_id`)
 - `prediction_details.jsonl`: decoded completions and extracted SQL

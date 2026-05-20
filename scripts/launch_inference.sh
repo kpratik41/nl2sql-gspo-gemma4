@@ -4,31 +4,92 @@ set -euo pipefail
 export CUDA_VISIBLE_DEVICES="${INFERENCE_CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
 export TOKENIZERS_PARALLELISM=false
 export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
-PYTHON_BIN="${PYTHON_BIN:-python}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
-INFERENCE_BACKEND="${INFERENCE_BACKEND:-transformers}"
+INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
 MODEL_PATH="${MODEL_PATH:-outputs/gemma4_31b_gspo_bird}"
 INPUT_FILE="${INPUT_FILE:-outputs/dev-20251106-schema.jsonl}"
 DATABASE_DIR="${DATABASE_DIR:-databases/dev_databases}"
 DIFF_JSON_PATH="${DIFF_JSON_PATH:-data/bird_dev_data/raw/dev_20251106.json}"
-OUTPUT_DIR="${OUTPUT_DIR:-outputs/bird_dev_inference}"
+USER_OUTPUT_DIR="${OUTPUT_DIR:-}"
 NUM_EXAMPLES="${NUM_EXAMPLES:--1}"
-MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-30000}"
-MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-4096}"
+MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-34000}"
+MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-8000}"
 MAX_TOOL_ROUNDS="${MAX_TOOL_ROUNDS:-8}"
 TEMPERATURE="${TEMPERATURE:-0.0}"
 TOP_P="${TOP_P:-1.0}"
 EVAL_TIMEOUT="${EVAL_TIMEOUT:-60}"
 EVAL_WORKERS="${EVAL_WORKERS:-16}"
-TRANSFORMERS_DEVICE_MAP="${TRANSFORMERS_DEVICE_MAP:-none}"
-TRANSFORMERS_DATA_PARALLEL_SIZE="${TRANSFORMERS_DATA_PARALLEL_SIZE:-0}"
-VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-4}"
-VLLM_DATA_PARALLEL_SIZE="${VLLM_DATA_PARALLEL_SIZE:-2}"
 VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.90}"
-VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-}"
+VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-43000}"
 VLLM_ASYNC_CONCURRENCY="${VLLM_ASYNC_CONCURRENCY:-8}"
 APPEND_OUTPUT_TIMESTAMP="${APPEND_OUTPUT_TIMESTAMP:-1}"
 OUTPUT_TIMESTAMP="${OUTPUT_TIMESTAMP:-}"
+
+case "${INFERENCE_BACKEND}" in
+  vllm)
+    VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-2}"
+    VLLM_DATA_PARALLEL_SIZE="${VLLM_DATA_PARALLEL_SIZE:-4}"
+    ;;
+  vllm_async)
+    VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-8}"
+    VLLM_DATA_PARALLEL_SIZE="${VLLM_DATA_PARALLEL_SIZE:-1}"
+    ;;
+  *)
+    echo "[launcher] unsupported INFERENCE_BACKEND=${INFERENCE_BACKEND}; use vllm or vllm_async" >&2
+    exit 2
+    ;;
+esac
+
+sanitize_path_part() {
+  local value="$1"
+  value="${value##*/}"
+  value="${value%.*}"
+  value="$(printf '%s' "${value}" | tr -cs '[:alnum:]_.-' '_')"
+  value="${value##_}"
+  value="${value%%_}"
+  if [[ -z "${value}" ]]; then
+    value="unknown"
+  fi
+  printf '%s' "${value}"
+}
+
+infer_split_name() {
+  local input_name
+  input_name="$(basename "${INPUT_FILE}")"
+
+  case "${input_name}" in
+    train*) printf 'train' ;;
+    dev*) printf 'dev' ;;
+    test*) printf 'test' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
+build_default_output_dir() {
+  local split_name input_tag model_tag run_tag prompt_k output_k context_k
+
+  split_name="$(infer_split_name)"
+  input_tag="$(sanitize_path_part "${INPUT_FILE}")"
+  model_tag="$(sanitize_path_part "${MODEL_PATH}")"
+  prompt_k="$(( (MAX_PROMPT_LENGTH + 999) / 1000 ))k"
+  output_k="$(( (MAX_NEW_TOKENS + 999) / 1000 ))k"
+  context_k="$(( (VLLM_MAX_MODEL_LEN + 999) / 1000 ))k"
+
+  run_tag="${INFERENCE_BACKEND}_tp${VLLM_TENSOR_PARALLEL_SIZE}_dp${VLLM_DATA_PARALLEL_SIZE}"
+  if [[ "${INFERENCE_BACKEND}" == "vllm_async" ]]; then
+    run_tag="${run_tag}_c${VLLM_ASYNC_CONCURRENCY}"
+  fi
+  run_tag="${run_tag}_ctx${context_k}_p${prompt_k}_o${output_k}_r${MAX_TOOL_ROUNDS}"
+
+  printf 'outputs/inference/%s/%s/%s/%s' "${split_name}" "${input_tag}" "${model_tag}" "${run_tag}"
+}
+
+if [[ -n "${USER_OUTPUT_DIR}" ]]; then
+  OUTPUT_DIR="${USER_OUTPUT_DIR}"
+else
+  OUTPUT_DIR="$(build_default_output_dir)"
+fi
 
 if [[ "${APPEND_OUTPUT_TIMESTAMP}" == "1" ]]; then
   if [[ -z "${OUTPUT_TIMESTAMP}" ]]; then
@@ -59,8 +120,6 @@ cmd=(
   --top_p "${TOP_P}"
   --eval_timeout "${EVAL_TIMEOUT}"
   --eval_workers "${EVAL_WORKERS}"
-  --transformers_device_map "${TRANSFORMERS_DEVICE_MAP}"
-  --transformers_data_parallel_size "${TRANSFORMERS_DATA_PARALLEL_SIZE}"
   --overwrite
 )
 

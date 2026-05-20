@@ -60,9 +60,6 @@ def print_run_configuration(args: argparse.Namespace, output_dir: Path) -> None:
     print(f"[run] eval_workers={args.eval_workers}")
     print(f"[run] skip_generation={args.skip_generation}")
     print(f"[run] CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<unset>')}")
-    if args.inference_backend == "transformers":
-        print(f"[run] transformers_device_map={args.transformers_device_map}")
-        print(f"[run] transformers_data_parallel_size={args.transformers_data_parallel_size}")
     if args.inference_backend in {"vllm", "vllm_async"}:
         print(f"[run] vllm_tensor_parallel_size={args.vllm_tensor_parallel_size}")
         print(f"[run] vllm_data_parallel_size={args.vllm_data_parallel_size}")
@@ -106,30 +103,39 @@ def load_diff_rows(diff_json_path: str) -> List[Dict[str, Any]]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--inference_backend", type=str, choices=["transformers", "vllm", "vllm_async"], default="transformers")
+    parser.add_argument("--inference_backend", type=str, choices=["vllm", "vllm_async"], default="vllm")
     parser.add_argument("--model_name_or_path", type=str, default=None)
     parser.add_argument("--input_file", type=str, default="outputs/dev-20251106-schema.jsonl")
     parser.add_argument("--database_dir", type=str, default="databases/dev_databases")
     parser.add_argument("--diff_json_path", type=str, default="data/bird_dev_data/raw/dev_20251106.json")
     parser.add_argument("--output_dir", type=str, default="outputs/bird_dev_inference")
-    parser.add_argument("--max_prompt_length", type=int, default=30000)
-    parser.add_argument("--max_new_tokens", type=int, default=4096)
+    parser.add_argument("--max_prompt_length", type=int, default=34000)
+    parser.add_argument("--max_new_tokens", type=int, default=8000)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top_p", type=float, default=1.0)
     parser.add_argument("--num_examples", type=int, default=-1)
     parser.add_argument("--eval_timeout", type=float, default=60.0)
     parser.add_argument("--eval_workers", type=int, default=16)
-    parser.add_argument("--transformers_device_map", type=str, choices=["none", "auto"], default="none")
-    parser.add_argument("--transformers_data_parallel_size", type=int, default=0)
-    parser.add_argument("--vllm_tensor_parallel_size", type=int, default=4)
-    parser.add_argument("--vllm_data_parallel_size", type=int, default=2)
+    parser.add_argument("--vllm_tensor_parallel_size", type=int, default=None)
+    parser.add_argument("--vllm_data_parallel_size", type=int, default=None)
     parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.9)
-    parser.add_argument("--vllm_max_model_len", type=int, default=None)
+    parser.add_argument("--vllm_max_model_len", type=int, default=43000)
     parser.add_argument("--vllm_async_concurrency", type=int, default=8)
     parser.add_argument("--max_tool_rounds", type=int, default=8)
     parser.add_argument("--skip_generation", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.inference_backend == "vllm_async":
+        if args.vllm_tensor_parallel_size is None:
+            args.vllm_tensor_parallel_size = 8
+        if args.vllm_data_parallel_size is None:
+            args.vllm_data_parallel_size = 1
+    else:
+        if args.vllm_tensor_parallel_size is None:
+            args.vllm_tensor_parallel_size = 2
+        if args.vllm_data_parallel_size is None:
+            args.vllm_data_parallel_size = 4
+    return args
 
 
 def load_rows(input_file: str, num_examples: int) -> List[Dict[str, Any]]:
@@ -303,32 +309,11 @@ def shard_rows_for_data_parallel(rows: List[Dict[str, Any]], num_shards: int) ->
     return shards
 
 
-def plan_transformers_worker_devices(data_parallel_size: int) -> List[str]:
-    visible_devices = get_visible_devices()
-    worker_count = data_parallel_size if data_parallel_size > 0 else len(visible_devices)
-
-    if len(visible_devices) < worker_count:
-        raise ValueError(
-            "Not enough visible GPUs for the requested transformers multiprocessing setup: "
-            f"need {worker_count} workers, but CUDA_VISIBLE_DEVICES exposes "
-            f"{len(visible_devices)} ({','.join(visible_devices)})."
-        )
-
-    return visible_devices[:worker_count]
-
-
 def prepare_rows_for_generation(rows: List[Dict[str, Any]], tokenizer, max_prompt_length: int) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     rows, skipped_rows = filter_rows_by_prompt_length(rows, tokenizer, max_prompt_length)
     print(f"[inference] running generation for {len(rows)} prompts")
 
     return rows, skipped_rows
-
-
-def get_generation_eos_token_ids(model, tokenizer) -> Any:
-    eos_token_id = getattr(getattr(model, "generation_config", None), "eos_token_id", None)
-    if eos_token_id is None:
-        eos_token_id = getattr(tokenizer, "eos_token_id", None)
-    return eos_token_id
 
 
 def build_assistant_tool_message(
@@ -389,88 +374,6 @@ def build_generation_detail(
 
 def should_use_agentic_tool_loop(row: Dict[str, Any], max_tool_rounds: int) -> bool:
     return bool(row.get("tools")) and max_tool_rounds > 0
-
-
-def generate_one_with_transformers_tool_loop(
-    model,
-    tokenizer,
-    row: Dict[str, Any],
-    generation_device,
-    max_new_tokens: int,
-    max_tool_rounds: int,
-    eval_timeout: float,
-    temperature: float,
-    top_p: float,
-) -> Dict[str, Any]:
-    import torch
-
-    messages = [dict(message) for message in get_generation_messages(row)]
-    tools = row.get("tools")
-    generated_parts: List[str] = []
-    prompt_token_count = int(row["prompt_tokens"])
-    completion_token_count = 0
-    tool_rounds = 0
-    tool_call_count = 0
-    stop_reason = "finished"
-    do_sample = temperature > 0.0
-    eos_token_id = get_generation_eos_token_ids(model, tokenizer)
-
-    for round_index in range(max_tool_rounds + 1):
-        remaining_tokens = max_new_tokens - completion_token_count
-        if remaining_tokens <= 0:
-            stop_reason = "max_new_tokens"
-            break
-
-        prompt_text = render_prompt(tokenizer, messages, tools)
-        tokenized = tokenizer(prompt_text, return_tensors="pt", truncation=False)
-        tokenized = {key: value.to(generation_device) for key, value in tokenized.items()}
-        current_prompt_tokens = int(tokenized["input_ids"].shape[-1])
-        if round_index == 0:
-            prompt_token_count = current_prompt_tokens
-
-        with torch.inference_mode():
-            output_ids = model.generate(
-                **tokenized,
-                max_new_tokens=remaining_tokens,
-                do_sample=do_sample,
-                temperature=temperature if do_sample else None,
-                top_p=top_p if do_sample else None,
-                pad_token_id=tokenizer.pad_token_id,
-                eos_token_id=eos_token_id,
-            )
-
-        generated_ids = output_ids[0][current_prompt_tokens:]
-        completion_token_count += int(generated_ids.shape[0])
-        generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
-        if generated_text:
-            generated_parts.append(generated_text)
-
-        tool_calls = extract_tool_calls(generated_text)
-        if not tool_calls:
-            stop_reason = "max_new_tokens" if round_tokens >= remaining_tokens else "finished"
-            break
-
-        if round_index >= max_tool_rounds:
-            stop_reason = "max_tool_rounds"
-            break
-
-        tool_responses = execute_tool_calls(tool_calls, timeout_s=eval_timeout)
-        for response in tool_responses:
-            generated_parts.append(response["rendered"])
-        messages.append(build_assistant_tool_message(generated_text, tool_calls, tool_responses))
-        tool_rounds += 1
-        tool_call_count += len(tool_calls)
-
-    prediction_text = "\n".join(part for part in generated_parts if part).strip()
-    return build_generation_detail(
-        row=row,
-        prediction_text=prediction_text,
-        prompt_token_count=prompt_token_count,
-        completion_token_count=completion_token_count,
-        tool_rounds=tool_rounds,
-        tool_call_count=tool_call_count,
-        stop_reason=stop_reason,
-    )
 
 
 def generate_one_with_vllm_tool_loop(
@@ -641,214 +544,6 @@ async def generate_one_with_vllm_async_tool_loop(
         tool_call_count=tool_call_count,
         stop_reason=stop_reason,
     )
-
-
-def _transformers_generate_worker(
-    queue,
-    shard_id: int,
-    device: str,
-    rows: List[Dict[str, Any]],
-    worker_config: Dict[str, Any],
-) -> None:
-    try:
-        os.environ["CUDA_VISIBLE_DEVICES"] = device
-
-        import torch
-
-        from nl2sql_gspo.model_utils import load_inference_model_and_tokenizer
-
-        model, tokenizer = load_inference_model_and_tokenizer(
-            worker_config["model_name_or_path"],
-            device_map=None,
-        )
-
-        if torch.cuda.is_available():
-            torch.cuda.set_device(0)
-            generation_device = torch.device("cuda:0")
-        else:
-            generation_device = torch.device("cpu")
-
-        model.to(generation_device)
-        model.eval()
-        do_sample = worker_config["temperature"] > 0.0
-
-        results = []
-        for row in rows:
-            if should_use_agentic_tool_loop(row, worker_config["max_tool_rounds"]):
-                configure_tool_env(worker_config.get("database_dir", "databases"))
-                results.append(
-                    generate_one_with_transformers_tool_loop(
-                        model=model,
-                        tokenizer=tokenizer,
-                        row=row,
-                        generation_device=generation_device,
-                        max_new_tokens=worker_config["max_new_tokens"],
-                        max_tool_rounds=worker_config["max_tool_rounds"],
-                        eval_timeout=worker_config.get("eval_timeout", 60.0),
-                        temperature=worker_config["temperature"],
-                        top_p=worker_config["top_p"],
-                    )
-                )
-                continue
-
-            prompt_text = row["prompt_text"]
-            tokenized = tokenizer(prompt_text, return_tensors="pt", truncation=False)
-            tokenized = {key: value.to(generation_device) for key, value in tokenized.items()}
-            prompt_token_count = int(row["prompt_tokens"])
-
-            with torch.inference_mode():
-                output_ids = model.generate(
-                    **tokenized,
-                    max_new_tokens=worker_config["max_new_tokens"],
-                    do_sample=do_sample,
-                    temperature=worker_config["temperature"] if do_sample else None,
-                    top_p=worker_config["top_p"] if do_sample else None,
-                    pad_token_id=tokenizer.pad_token_id,
-                    eos_token_id=get_generation_eos_token_ids(model, tokenizer),
-                )
-
-            generated_ids = output_ids[0][prompt_token_count:]
-            prediction_text = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
-            if "call:" in prediction_text:
-                configure_tool_env(worker_config.get("database_dir", "databases"))
-                prediction_text = extract_and_execute_tools(
-                    prediction_text,
-                    timeout_s=worker_config.get("eval_timeout", 60.0),
-                )
-
-            results.append(
-                build_generation_detail(
-                    row=row,
-                    prediction_text=prediction_text,
-                    prompt_token_count=prompt_token_count,
-                    completion_token_count=int(generated_ids.shape[0]),
-                    tool_rounds=0,
-                    tool_call_count=len(extract_tool_calls(prediction_text)),
-                    stop_reason="finished",
-                )
-            )
-
-        queue.put({"status": "ok", "shard_id": shard_id, "results": results})
-    except Exception:
-        queue.put({"status": "error", "shard_id": shard_id, "error": traceback.format_exc()})
-
-
-def generate_predictions_with_transformers_data_parallel(
-    rows: List[Dict[str, Any]],
-    args: argparse.Namespace,
-    data_parallel_size: int,
-) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[Dict[str, Any]], List[Dict[str, Any]]]:
-    worker_devices = plan_transformers_worker_devices(data_parallel_size)
-    row_shards = shard_rows_for_data_parallel(rows, len(worker_devices))
-    active_shards = [
-        (shard_id, device, shard_rows)
-        for shard_id, (device, shard_rows) in enumerate(zip(worker_devices, row_shards))
-        if shard_rows
-    ]
-
-    print(
-        "[inference] loading transformers workers in multi-process data-parallel mode "
-        f"workers={len(active_shards)} devices={worker_devices}"
-    )
-
-    worker_config = {
-        "model_name_or_path": args.model_name_or_path,
-        "temperature": args.temperature,
-        "top_p": args.top_p,
-        "max_new_tokens": args.max_new_tokens,
-        "max_tool_rounds": args.max_tool_rounds,
-        "database_dir": args.database_dir,
-        "eval_timeout": args.eval_timeout,
-    }
-
-    ctx = mp.get_context("spawn")
-    queue = ctx.Queue()
-    processes = []
-    collect_error: Optional[BaseException] = None
-
-    for shard_id, device, shard_rows in active_shards:
-        print(
-            f"[inference] starting transformers shard {shard_id + 1}/{len(active_shards)} "
-            f"gpu={device} prompts={len(shard_rows)}"
-        )
-        process = ctx.Process(
-            target=_transformers_generate_worker,
-            args=(queue, shard_id, device, shard_rows, worker_config),
-        )
-        process.start()
-        processes.append(process)
-
-    collected_results: Dict[int, Dict[str, Any]] = {}
-    try:
-        for _ in processes:
-            message = queue.get()
-            if message.get("status") != "ok":
-                collect_error = RuntimeError(
-                    "Transformers data-parallel worker failed"
-                    + (f" (shard {message.get('shard_id')})" if "shard_id" in message else "")
-                    + ":\n"
-                    + message.get("error", "unknown error")
-                )
-                raise collect_error
-
-            for result in message["results"]:
-                collected_results[result["source_idx"]] = result
-    finally:
-        for process in processes:
-            process.join(timeout=30)
-            if process.is_alive() and collect_error is not None:
-                process.terminate()
-                process.join(timeout=5)
-
-    for process in processes:
-        if collect_error is None and process.exitcode in (0, None):
-            continue
-        if process.exitcode not in (0, None):
-            raise RuntimeError(f"Transformers data-parallel worker exited with code {process.exitcode}")
-
-    official_predictions: Dict[str, str] = {}
-    detailed_predictions: List[Dict[str, Any]] = []
-    log_each_example = should_log_each_example(len(rows))
-
-    for idx, row in enumerate(rows):
-        source_idx = row.get("source_idx", idx)
-        generated = collected_results.get(source_idx)
-        if generated is None:
-            raise RuntimeError(f"Missing transformers generation result for idx={source_idx}")
-
-        db_id = generated["db_id"]
-        pred_sql = generated["pred_sql"]
-        prediction_text = generated["prediction_text"]
-        prompt_token_count = generated["prompt_tokens"]
-        completion_token_count = generated["completion_token_count"]
-
-        official_predictions[str(source_idx)] = f"{pred_sql}{BIRD_SPLIT_MARKER}{db_id}"
-        detailed_predictions.append(
-            {
-                "idx": source_idx,
-                "db_id": db_id,
-                "prediction_text": prediction_text,
-                "pred_sql": pred_sql,
-                "gold_sql": extract_sql(row.get("gold_sql", "")),
-                "prompt_tokens": prompt_token_count,
-                "completion_token_count": completion_token_count,
-                "tool_rounds": generated.get("tool_rounds", 0),
-                "tool_call_count": generated.get("tool_call_count", 0),
-                "stop_reason": generated.get("stop_reason", ""),
-            }
-        )
-
-        if log_each_example:
-            print(
-                f"[inference] finished sample {idx + 1}/{len(rows)} "
-                f"idx={source_idx} completion_tokens={completion_token_count} "
-                f"pred_sql={preview_text(pred_sql, max_chars=120)}"
-            )
-
-        if should_log_progress_tick(idx, len(rows)):
-            print(f"[inference] generated {idx + 1}/{len(rows)} prompts")
-
-    return rows, official_predictions, detailed_predictions, []
 
 
 def _vllm_generate_worker(
@@ -1059,132 +754,6 @@ def generate_predictions_with_vllm_data_parallel(
             print(f"[inference] generated {idx + 1}/{len(rows)} prompts")
 
     return rows, official_predictions, detailed_predictions, []
-
-
-def generate_predictions_with_transformers(rows: List[Dict[str, Any]], args: argparse.Namespace) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[Dict[str, Any]], List[Dict[str, Any]]]:
-    import torch
-
-    from nl2sql_gspo.model_utils import load_inference_model_and_tokenizer, load_tokenizer
-
-    tokenizer = load_tokenizer(args.model_name_or_path)
-    rows, skipped_rows = prepare_rows_for_generation(rows, tokenizer, args.max_prompt_length)
-
-    if args.transformers_device_map == "auto":
-        model, _ = load_inference_model_and_tokenizer(
-            args.model_name_or_path,
-            device_map="auto",
-        )
-        generation_device = next(model.parameters()).device
-        print(f"[inference] model loaded on device={generation_device} using device_map='auto'")
-    else:
-        data_parallel_size = args.transformers_data_parallel_size
-        if data_parallel_size != 1 and len(get_visible_devices()) > 1:
-            return generate_predictions_with_transformers_data_parallel(rows, args, data_parallel_size)
-
-        model, _ = load_inference_model_and_tokenizer(
-            args.model_name_or_path,
-            device_map=None,
-        )
-        if torch.cuda.is_available():
-            torch.cuda.set_device(0)
-            generation_device = torch.device("cuda:0")
-        else:
-            generation_device = torch.device("cpu")
-        model.to(generation_device)
-        print(f"[inference] model loaded on device={generation_device} without device_map")
-
-    official_predictions: Dict[str, str] = {}
-    detailed_predictions: List[Dict[str, Any]] = []
-
-    do_sample = args.temperature > 0.0
-    log_each_example = should_log_each_example(len(rows))
-
-    for idx, row in enumerate(rows):
-        prompt_token_count = int(row["prompt_tokens"])
-        source_idx = row.get("source_idx", idx)
-        db_id = row.get("db_id", "")
-
-        if log_each_example:
-            print(
-                f"[inference] generating sample {idx + 1}/{len(rows)} "
-                f"idx={source_idx} db_id={db_id} prompt_tokens={prompt_token_count}"
-            )
-
-        if should_use_agentic_tool_loop(row, args.max_tool_rounds):
-            generated = generate_one_with_transformers_tool_loop(
-                model=model,
-                tokenizer=tokenizer,
-                row=row,
-                generation_device=generation_device,
-                max_new_tokens=args.max_new_tokens,
-                max_tool_rounds=args.max_tool_rounds,
-                eval_timeout=args.eval_timeout,
-                temperature=args.temperature,
-                top_p=args.top_p,
-            )
-            prediction_text = generated["prediction_text"]
-            pred_sql = generated["pred_sql"]
-            prompt_token_count = generated["prompt_tokens"]
-            completion_token_count = generated["completion_token_count"]
-        else:
-            prompt_text = row["prompt_text"]
-            tokenized = tokenizer(prompt_text, return_tensors="pt", truncation=False)
-            tokenized = {key: value.to(generation_device) for key, value in tokenized.items()}
-
-            with torch.inference_mode():
-                output_ids = model.generate(
-                    **tokenized,
-                    max_new_tokens=args.max_new_tokens,
-                    do_sample=do_sample,
-                    temperature=args.temperature if do_sample else None,
-                    top_p=args.top_p if do_sample else None,
-                    pad_token_id=tokenizer.pad_token_id,
-                    eos_token_id=get_generation_eos_token_ids(model, tokenizer),
-                )
-
-            generated_ids = output_ids[0][prompt_token_count:]
-            prediction_text = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
-            if "call:" in prediction_text:
-                prediction_text = extract_and_execute_tools(prediction_text, timeout_s=args.eval_timeout)
-            pred_sql = extract_sql(prediction_text)
-            completion_token_count = int(generated_ids.shape[0])
-            generated = build_generation_detail(
-                row=row,
-                prediction_text=prediction_text,
-                prompt_token_count=prompt_token_count,
-                completion_token_count=completion_token_count,
-                tool_rounds=0,
-                tool_call_count=len(extract_tool_calls(prediction_text)),
-                stop_reason="finished",
-            )
-
-        official_predictions[str(source_idx)] = f"{pred_sql}{BIRD_SPLIT_MARKER}{db_id}"
-        detailed_predictions.append(
-            {
-                "idx": source_idx,
-                "db_id": db_id,
-                "prediction_text": prediction_text,
-                "pred_sql": pred_sql,
-                "gold_sql": extract_sql(row.get("gold_sql", "")),
-                "prompt_tokens": prompt_token_count,
-                "completion_token_count": completion_token_count,
-                "tool_rounds": generated.get("tool_rounds", 0),
-                "tool_call_count": generated.get("tool_call_count", 0),
-                "stop_reason": generated.get("stop_reason", ""),
-            }
-        )
-
-        if log_each_example:
-            print(
-                f"[inference] finished sample {idx + 1}/{len(rows)} "
-                f"idx={source_idx} completion_tokens={completion_token_count} "
-                f"pred_sql={preview_text(pred_sql, max_chars=120)}"
-            )
-
-        if should_log_progress_tick(idx, len(rows)):
-            print(f"[inference] generated {idx + 1}/{len(rows)} prompts")
-
-    return rows, official_predictions, detailed_predictions, skipped_rows
 
 
 def generate_predictions_with_vllm(rows: List[Dict[str, Any]], args: argparse.Namespace) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -1462,9 +1031,6 @@ def generate_predictions_with_vllm_async(rows: List[Dict[str, Any]], args: argpa
 def generate_predictions(rows: List[Dict[str, Any]], args: argparse.Namespace) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[Dict[str, Any]], List[Dict[str, Any]]]:
     if not args.model_name_or_path:
         raise ValueError("--model_name_or_path is required unless --skip_generation is set")
-
-    if args.inference_backend == "transformers":
-        return generate_predictions_with_transformers(rows, args)
 
     if args.inference_backend == "vllm":
         return generate_predictions_with_vllm(rows, args)

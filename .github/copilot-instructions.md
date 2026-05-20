@@ -756,42 +756,50 @@ bash scripts/launch_inference.sh
 Default inference launcher values:
 
 ```text
-INFERENCE_BACKEND=transformers
+INFERENCE_BACKEND=vllm
 MODEL_PATH=outputs/gemma4_31b_gspo_bird
 INPUT_FILE=outputs/dev-20251106-schema.jsonl
 DATABASE_DIR=databases/dev_databases
 DIFF_JSON_PATH=data/bird_dev_data/raw/dev_20251106.json
-OUTPUT_DIR=outputs/bird_dev_inference_<timestamp>
+OUTPUT_DIR=outputs/inference/dev/dev-20251106-schema/gemma4_31b_gspo_bird/vllm_tp2_dp4_ctx43k_p34k_o8k_r8_<timestamp>
 NUM_EXAMPLES=-1
-MAX_PROMPT_LENGTH=30000
-MAX_NEW_TOKENS=4096
+MAX_PROMPT_LENGTH=34000
+MAX_NEW_TOKENS=8000
 MAX_TOOL_ROUNDS=8
 TEMPERATURE=0.0
 TOP_P=1.0
 EVAL_TIMEOUT=60
 EVAL_WORKERS=16
+VLLM_MAX_MODEL_LEN=43000
 ```
+
+Output directory naming:
+
+- If `OUTPUT_DIR` is unset, `scripts/launch_inference.sh` builds a descriptive default under `outputs/inference/<split>/<input_stem>/<model_tag>/`.
+- The final folder name includes backend, tensor/data parallel settings, async concurrency for `vllm_async`, context/prompt/output limits, tool-round budget, and a timestamp.
+- Default vLLM example: `outputs/inference/dev/dev-20251106-schema/gemma4_31b_gspo_bird/vllm_tp2_dp4_ctx43k_p34k_o8k_r8_<timestamp>`.
+- Default async tool example: `outputs/inference/dev/dev-20251106-schema-tool/gemma4_31b_gspo_bird/vllm_async_tp8_dp1_c8_ctx43k_p34k_o8k_r8_<timestamp>`.
+- If `OUTPUT_DIR` is set manually, the launcher preserves that path and appends the timestamp by default.
+- Set `APPEND_OUTPUT_TIMESTAMP=0` to disable timestamp suffixes, or set `OUTPUT_TIMESTAMP=YYYYMMDD_HHMMSS` to choose one explicitly.
 
 Supported inference backends:
 
-- `transformers`
 - `vllm`
 - `vllm_async`
 
-Transformers backend:
-
-- Defaults to `TRANSFORMERS_DEVICE_MAP=none`.
-- Defaults `TRANSFORMERS_DATA_PARALLEL_SIZE=0`, meaning one worker per visible GPU.
-- Intended for models that fit on a single GPU per worker.
-- Use `TRANSFORMERS_DEVICE_MAP=auto` to shard one model across visible GPUs.
-
 vLLM backend:
 
-- Defaults to `VLLM_TENSOR_PARALLEL_SIZE=4`.
-- Defaults to `VLLM_DATA_PARALLEL_SIZE=2`.
+- Defaults to `VLLM_TENSOR_PARALLEL_SIZE=2`.
+- Defaults to `VLLM_DATA_PARALLEL_SIZE=4`.
 - Uses explicit worker processes for local data parallelism.
 - Do not rely on single-process `LLM(data_parallel_size=...)` for vLLM 0.19.x.
-- `vllm_async` also accepts `VLLM_ASYNC_CONCURRENCY`.
+
+Async vLLM backend:
+
+- Defaults to `VLLM_TENSOR_PARALLEL_SIZE=8`.
+- Defaults to `VLLM_DATA_PARALLEL_SIZE=1`.
+- Intended primarily for tool-calling data.
+- Also accepts `VLLM_ASYNC_CONCURRENCY`.
 
 Inference filtering:
 
@@ -810,6 +818,8 @@ Inference outputs include:
 - `eval_results.jsonl`
 - `eval_summary.json`
 - `eval_summary.md`
+- `run_report.md`
+- `per_example_report.csv`
 - `eval_summary_by_difficulty.csv`
 - `eval_summary_by_db.csv`
 
