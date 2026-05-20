@@ -134,8 +134,8 @@ def parse_args(argv=None):
     parser.add_argument("--fsdp", type=str, default="full_shard auto_wrap")
     parser.add_argument("--fsdp_config", type=str, default="configs/fsdp_gemma4_bf16.json")
 
-    parser.add_argument("--logging_steps", type=int, default=5)
-    parser.add_argument("--save_steps", type=int, default=100)
+    parser.add_argument("--logging_steps", type=int, default=1)
+    parser.add_argument("--save_steps", type=int, default=10)
     parser.add_argument("--save_total_limit", type=int, default=3)
     parser.add_argument("--save_only_model", action="store_true")
     parser.add_argument("--save_latest_full_checkpoint", action="store_true")
@@ -148,8 +148,16 @@ def parse_args(argv=None):
             "optimizer-state checkpoint used for exact resume."
         ),
     )
-    parser.add_argument("--eval_steps", type=int, default=100)
+    parser.add_argument("--eval_steps", type=int, default=10)
     parser.add_argument("--eval_on_start", action="store_true")
+    parser.add_argument(
+        "--reward_only_eval",
+        action="store_true",
+        help=(
+            "Run validation as generation+reward only, skipping eval loss/logprob "
+            "forward passes. This is intended for NL2SQL reward tracking."
+        ),
+    )
     parser.add_argument("--log_completions", action="store_true")
     parser.add_argument("--num_completions_to_print", type=int, default=0)
 
@@ -586,6 +594,7 @@ def main():
         dynamic_sampling_reward_name=args.dynamic_sampling_reward_name,
         save_latest_full_checkpoint=args.save_latest_full_checkpoint,
         latest_full_checkpoint_dir_name=args.latest_full_checkpoint_dir_name,
+        reward_only_eval=args.reward_only_eval,
     )
 
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)

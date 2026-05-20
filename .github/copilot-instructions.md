@@ -93,12 +93,12 @@ Current default training launch values:
 
 ```text
 MODEL_NAME=google/gemma-4-31B-it
-OUTPUT_DIR=outputs/gemma4_31b_gspo_bird
+OUTPUT_DIR=outputs/training/<train_file_stem>/<model_tag>/<backend>_<distributed_backend>_p<max_prompt>_c<max_completion>_g<num_generations>_t<temperature>_bs<per_device_batch>_ga<grad_accum>_lr<learning_rate>_<timestamp>
 TRAIN_FILE=outputs/train-6601-schema-tool.jsonl
 EVAL_FILE=outputs/dev-20251106-schema-tool.jsonl
 DATABASE_DIR=databases
 TRAIN_LIMIT=-1
-EVAL_LIMIT=-1
+EVAL_LIMIT=32
 TRAINER_BACKEND=grpo
 DISTRIBUTED_BACKEND=deepspeed
 DEEPSPEED_CONFIG=configs/ds_zero3_bf16.json
@@ -106,10 +106,19 @@ FSDP="full_shard auto_wrap"
 FSDP_CONFIG=configs/fsdp_gemma4_bf16.json
 ```
 
+Training output directory naming:
+
+- If `OUTPUT_DIR` is unset, `scripts/launch_train.sh` creates a timestamped default under `outputs/training/<train_file_stem>/<model_tag>/`.
+- The run folder includes trainer backend, distributed backend, prompt/completion lengths, `num_generations`, temperature, per-device batch size, gradient accumulation, learning rate, and timestamp.
+- Full-schema tool default example: `outputs/training/train-6601-schema-tool/gemma-4-31B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_lr5e-7_<timestamp>`.
+- Bare-schema tool example: `outputs/training/train-6601-schema-bare-tool/gemma-4-31B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_lr5e-7_<timestamp>`.
+- If `OUTPUT_DIR` is set manually, the launcher preserves it exactly.
+- The default W&B `RUN_NAME` includes the train file stem and the same run tag, e.g. `train-6601-schema-tool-grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_lr5e-7_<timestamp>`.
+
 Rollout and sampling defaults:
 
 ```text
-MAX_PROMPT_LENGTH=13500
+MAX_PROMPT_LENGTH=15500
 MAX_COMPLETION_LENGTH=8000
 NUM_GENERATIONS=16
 TEMPERATURE=1.2
@@ -123,7 +132,7 @@ VLLM_GROUP_PORT=29600
 Optimization defaults:
 
 ```text
-PER_DEVICE_TRAIN_BATCH_SIZE=1
+PER_DEVICE_TRAIN_BATCH_SIZE=3
 GRADIENT_ACCUMULATION_STEPS=16
 LEARNING_RATE=5e-7
 NUM_TRAIN_EPOCHS=1
@@ -151,7 +160,7 @@ DAPO dynamic-sampling defaults:
 ENABLE_DYNAMIC_SAMPLING=1
 DYNAMIC_SAMPLING_MIN_STD=1e-6
 DAPO_MAX_ROUNDS=1
-DAPO_OVERSAMPLE_FACTOR=16
+DAPO_OVERSAMPLE_FACTOR=12
 DYNAMIC_SAMPLING_REWARD_NAME=result_reward
 ```
 
@@ -159,7 +168,7 @@ Reward-shaping defaults:
 
 ```text
 EXEC_TIMEOUT_S=60
-REWARD_WORKERS=1
+REWARD_WORKERS=4
 LENGTH_PENALTY_MAX=8000
 LENGTH_PENALTY_BUFFER=512
 REWARD_WEIGHTS=0.2,0.5,2.0,0.5,0.5,0.1,0.1
@@ -170,9 +179,9 @@ Logging and checkpoint defaults:
 ```text
 WANDB_PROJECT=gemma4-31b-bird-gspo
 REPORT_TO=wandb
-RUN_NAME=gemma4-31b-gspo-bird-<timestamp>
-LOGGING_DIR=outputs/gemma4_31b_gspo_bird/tb/<timestamp>
-LOGGING_STEPS=10
+RUN_NAME=<train_file_stem>-<run_tag>
+LOGGING_DIR=<OUTPUT_DIR>/tb/<timestamp>
+LOGGING_STEPS=1
 SAVE_STEPS=10
 SAVE_TOTAL_LIMIT=10
 SAVE_ONLY_MODEL=1
@@ -180,11 +189,15 @@ SAVE_LATEST_FULL_CHECKPOINT=1
 LATEST_FULL_CHECKPOINT_DIR_NAME=latest-full-checkpoint
 EVAL_STEPS=10
 EVAL_ON_START=0
+EVAL_MODE=reward_only
+REWARD_ONLY_EVAL=1
 LOG_COMPLETIONS=0
 NUM_COMPLETIONS_TO_PRINT=0
 DAPO_DEBUG_ROLLOUTS=0
 TOOL_LOOP_DEBUG=0
 ```
+
+`REWARD_ONLY_EVAL=1` makes validation generate every eval repeat in one rollout call and compute rewards only. For example, `EVAL_LIMIT=32` with `NUM_GENERATIONS=16` launches 512 validation generations together and skips eval loss/logprob/entropy forwards.
 
 The launcher writes terminal logs to `logs/train_<timestamp>.log`.
 

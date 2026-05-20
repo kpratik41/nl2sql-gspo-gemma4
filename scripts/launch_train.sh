@@ -66,8 +66,6 @@ fi
 
 export WANDB_PROJECT=gemma4-31b-bird-gspo
 REPORT_TO="${REPORT_TO:-wandb}"
-RUN_NAME="${RUN_NAME:-gemma4-31b-gspo-bird-${RUN_TIMESTAMP}}"
-LOGGING_DIR="${LOGGING_DIR:-outputs/gemma4_31b_gspo_bird/tb/${RUN_TIMESTAMP}}"
 TRAIN_LIMIT="${TRAIN_LIMIT:--1}"
 EVAL_LIMIT="${EVAL_LIMIT:-32}"
 TRAIN_FILE="${TRAIN_FILE:-outputs/train-6601-schema-tool.jsonl}"
@@ -83,7 +81,7 @@ LEARNING_RATE="${LEARNING_RATE:-${LR:-5e-7}}"
 MAX_STEPS="${MAX_STEPS:--1}"
 
 MODEL_NAME="${MODEL_NAME:-google/gemma-4-31B-it}"
-OUTPUT_DIR="${OUTPUT_DIR:-outputs/gemma4_31b_gspo_bird}"
+USER_OUTPUT_DIR="${OUTPUT_DIR:-}"
 VLLM_GROUP_PORT="${VLLM_GROUP_PORT:-29600}"
 TRAINER_BACKEND="${TRAINER_BACKEND:-grpo}"
 if [[ -z "${DISTRIBUTED_BACKEND:-}" ]]; then
@@ -97,6 +95,50 @@ DEEPSPEED_CONFIG="${DEEPSPEED_CONFIG:-configs/ds_zero3_bf16.json}"
 FSDP="${FSDP:-full_shard auto_wrap}"
 FSDP_CONFIG="${FSDP_CONFIG:-configs/fsdp_gemma4_bf16.json}"
 RESUME_ARGS=()
+
+sanitize_path_part() {
+  local value="$1"
+  value="${value##*/}"
+  value="${value%.*}"
+  value="$(printf '%s' "${value}" | tr -cs '[:alnum:]_.-' '_')"
+  value="${value##_}"
+  value="${value%%_}"
+  if [[ -z "${value}" ]]; then
+    value="unknown"
+  fi
+  printf '%s' "${value}"
+}
+
+format_number_tag() {
+  local value="$1"
+  printf '%s' "${value}" | sed -E 's/^-?([0-9]+)e-([0-9]+)$/\1e-\2/; s/\./p/g'
+}
+
+build_default_output_dir() {
+  local train_tag model_tag lr_tag temp_tag run_tag
+
+  train_tag="$(sanitize_path_part "${TRAIN_FILE}")"
+  model_tag="$(sanitize_path_part "${MODEL_NAME}")"
+  lr_tag="$(format_number_tag "${LEARNING_RATE}")"
+  temp_tag="$(format_number_tag "${TEMPERATURE}")"
+  run_tag="${TRAINER_BACKEND}_${DISTRIBUTED_BACKEND}_p${MAX_PROMPT_LENGTH}_c${MAX_COMPLETION_LENGTH}"
+  run_tag="${run_tag}_g${NUM_GENERATIONS}_t${temp_tag}_bs${PER_DEVICE_TRAIN_BATCH_SIZE}"
+  run_tag="${run_tag}_ga${GRADIENT_ACCUMULATION_STEPS}_lr${lr_tag}_${RUN_TIMESTAMP}"
+
+  printf 'outputs/training/%s/%s/%s' "${train_tag}" "${model_tag}" "${run_tag}"
+}
+
+if [[ -n "${USER_OUTPUT_DIR}" ]]; then
+  OUTPUT_DIR="${USER_OUTPUT_DIR}"
+else
+  OUTPUT_DIR="$(build_default_output_dir)"
+fi
+
+RUN_NAME="${RUN_NAME:-$(sanitize_path_part "${TRAIN_FILE}")-$(sanitize_path_part "${OUTPUT_DIR}")}"
+LOGGING_DIR="${LOGGING_DIR:-${OUTPUT_DIR}/tb/${RUN_TIMESTAMP}}"
+echo "[launch_train] output_dir=${OUTPUT_DIR}"
+echo "[launch_train] run_name=${RUN_NAME}"
+echo "[launch_train] logging_dir=${LOGGING_DIR}"
 
 is_model_only_checkpoint() {
   local checkpoint_dir="$1"
@@ -124,9 +166,18 @@ SAVE_ONLY_MODEL="${SAVE_ONLY_MODEL:-1}"
 SAVE_LATEST_FULL_CHECKPOINT="${SAVE_LATEST_FULL_CHECKPOINT:-1}"
 LATEST_FULL_CHECKPOINT_DIR_NAME="${LATEST_FULL_CHECKPOINT_DIR_NAME:-latest-full-checkpoint}"
 EVAL_STEPS="${EVAL_STEPS:-10}"
-LOGGING_STEPS="${LOGGING_STEPS:-2}"
+LOGGING_STEPS="${LOGGING_STEPS:-1}"
 LOG_COMPLETIONS="${LOG_COMPLETIONS:-0}"
 NUM_COMPLETIONS_TO_PRINT="${NUM_COMPLETIONS_TO_PRINT:-0}"
+EVAL_MODE="${EVAL_MODE:-reward_only}"
+REWARD_ONLY_EVAL="${REWARD_ONLY_EVAL:-}"
+if [[ -z "${REWARD_ONLY_EVAL}" ]]; then
+  if [[ "${EVAL_MODE}" == "reward_only" || "${EVAL_MODE}" == "reward-only" ]]; then
+    REWARD_ONLY_EVAL=1
+  else
+    REWARD_ONLY_EVAL=0
+  fi
+fi
 export DAPO_DEBUG_ROLLOUTS="${DAPO_DEBUG_ROLLOUTS:-0}"
 export TOOL_LOOP_DEBUG="${TOOL_LOOP_DEBUG:-0}"
 # Set EVAL_ON_START=1 to run the pre-training dev baseline.
@@ -140,6 +191,12 @@ if [[ "${LOG_COMPLETIONS}" == "1" ]]; then
 else
   LOG_COMPLETIONS_ARGS=()
 fi
+if [[ "${REWARD_ONLY_EVAL}" == "1" ]]; then
+  REWARD_ONLY_EVAL_ARGS=(--reward_only_eval)
+else
+  REWARD_ONLY_EVAL_ARGS=()
+fi
+echo "[launch_train] eval_mode=${EVAL_MODE} reward_only_eval=${REWARD_ONLY_EVAL}"
 if [[ "${SAVE_ONLY_MODEL}" == "1" ]]; then
   SAVE_ONLY_MODEL_ARGS=(--save_only_model)
 else
@@ -259,6 +316,7 @@ fi
   "${SAVE_LATEST_FULL_CHECKPOINT_ARGS[@]}" \
   --eval_steps "${EVAL_STEPS}" \
   ${EVAL_ON_START_ARG:+$EVAL_ON_START_ARG} \
+  "${REWARD_ONLY_EVAL_ARGS[@]}" \
   "${LOG_COMPLETIONS_ARGS[@]}" \
   --loss_type dapo \
   --scale_rewards batch \

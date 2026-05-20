@@ -143,6 +143,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         dynamic_sampling_reward_name: Optional[str] = None,
         save_latest_full_checkpoint: bool = False,
         latest_full_checkpoint_dir_name: str = "latest-full-checkpoint",
+        reward_only_eval: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -157,6 +158,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         self.latest_full_checkpoint_dir_name = (
             latest_full_checkpoint_dir_name.strip() or "latest-full-checkpoint"
         )
+        self.reward_only_eval = bool(reward_only_eval)
         self._dyn_pool_indices: List[int] = []
         self._dyn_pool_cursor: int = 0
         self._dyn_pool_pass: int = 0
@@ -1443,6 +1445,114 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         if ref_per_token_logps is not None:
             output["ref_per_token_logps"] = ref_per_token_logps
         return output
+
+    @staticmethod
+    def _reward_only_batch_to_examples(batch: Any) -> List[Dict[str, Any]]:
+        if isinstance(batch, list):
+            return list(batch)
+        if isinstance(batch, tuple):
+            return list(batch)
+        if not isinstance(batch, dict):
+            return [batch]
+
+        n = None
+        for value in batch.values():
+            if isinstance(value, (list, tuple)):
+                n = len(value)
+                break
+            if isinstance(value, torch.Tensor) and value.dim() > 0:
+                n = int(value.size(0))
+                break
+        if n is None:
+            return [batch]
+
+        examples: List[Dict[str, Any]] = []
+        for i in range(n):
+            example: Dict[str, Any] = {}
+            for key, value in batch.items():
+                if isinstance(value, (list, tuple)):
+                    example[key] = value[i]
+                elif isinstance(value, torch.Tensor) and value.dim() > 0:
+                    example[key] = value[i]
+                else:
+                    example[key] = value
+            examples.append(example)
+        return examples
+
+    def _collect_reward_only_eval_inputs(self, dataloader) -> List[Dict[str, Any]]:
+        inputs: List[Dict[str, Any]] = []
+        for batch in dataloader:
+            inputs.extend(self._reward_only_batch_to_examples(batch))
+        return inputs
+
+    def _mean_metric_values(self, mode: str, prefix: str) -> Dict[str, float]:
+        metrics: Dict[str, float] = {}
+        for key, values in self._metrics.get(mode, {}).items():
+            numeric_values = [
+                float(v)
+                for v in values
+                if isinstance(v, (int, float)) and v == v
+            ]
+            if numeric_values:
+                metrics[f"{prefix}_{key}"] = sum(numeric_values) / len(numeric_values)
+        return metrics
+
+    def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix: str = "eval"):
+        if not self.reward_only_eval:
+            return super().evaluate(
+                eval_dataset=eval_dataset,
+                ignore_keys=ignore_keys,
+                metric_key_prefix=metric_key_prefix,
+            )
+
+        dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
+        if isinstance(dataset, dict):
+            return super().evaluate(
+                eval_dataset=eval_dataset,
+                ignore_keys=ignore_keys,
+                metric_key_prefix=metric_key_prefix,
+            )
+
+        dataloader = self.get_eval_dataloader(eval_dataset)
+        inputs = self._collect_reward_only_eval_inputs(dataloader)
+        start_time = time.time()
+        was_training = self.model.training
+        self.model.eval()
+        if hasattr(self.optimizer, "eval") and callable(self.optimizer.eval):
+            self.optimizer.eval()
+
+        num_generations = int(getattr(self, "num_generations_eval", self.num_generations))
+        if getattr(self.accelerator, "is_main_process", True):
+            print(
+                f"[reward-only-eval] step={int(getattr(self.state, 'global_step', 0))} "
+                f"prompt_groups={len(inputs) / max(num_generations, 1):.0f} "
+                f"generations={len(inputs)}",
+                flush=True,
+            )
+
+        with torch.no_grad():
+            if inputs:
+                self._generate_and_score_candidates_no_policy_logps(inputs)
+
+        runtime = time.time() - start_time
+        reward_metrics = self._mean_metric_values("eval", metric_key_prefix)
+        samples_per_second = len(inputs) / runtime if runtime > 0 else 0.0
+        base_metrics = {
+            f"{metric_key_prefix}_runtime": runtime,
+            f"{metric_key_prefix}_samples_per_second": samples_per_second,
+            f"{metric_key_prefix}_num_generations": float(len(inputs)),
+            f"{metric_key_prefix}_num_prompt_groups": float(len(inputs) / max(num_generations, 1)),
+            f"{metric_key_prefix}_reward_only": 1.0,
+        }
+        metrics = {**base_metrics, **reward_metrics}
+        self.log(base_metrics)
+        self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, metrics)
+
+        if was_training:
+            self.model.train()
+            if hasattr(self.optimizer, "train") and callable(self.optimizer.train):
+                self.optimizer.train()
+        return metrics
 
     def training_step(self, model, inputs, num_items_in_batch):
         time_before = time.perf_counter()
