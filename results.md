@@ -1,5 +1,132 @@
 # Results
 
+## Old Dev Gemma 4 E4B Inference: Async vLLM, Temperature 0.0, 1534 Samples
+
+These runs evaluate one greedy/tool-calling generation per example over the full old-dev split. All four runs used `google/gemma-4-E4B-it`, async vLLM, `temperature=0.0`, `top_p=1.0`, `max_new_tokens=8000`, `max_tool_rounds=8`, `vllm_tensor_parallel_size=1`, and `vllm_async_concurrency=16`.
+
+The `old-dev-schema-consensus` run initially failed at `vllm_max_model_len=43000` because the tool-loop prompt reached at least `43001` tokens. It was rerun successfully with `vllm_max_model_len=45000` while overwriting the original output folder.
+
+Result folders:
+
+```text
+outputs/inference/dev/old-dev-schema-tool/google-gemma-4-E4B-it/vllm_async_tp1_dp1_c16_ctx43k_p34k_o8k_r8_temp0
+outputs/inference/dev/old-dev-schema-bare-tool/google-gemma-4-E4B-it/vllm_async_tp1_dp1_c16_ctx43k_p34k_o8k_r8_temp0
+outputs/inference/dev/old-dev-schema-consensus/google-gemma-4-E4B-it/vllm_async_tp1_dp1_c16_ctx43k_p34k_o8k_r8_temp0
+outputs/inference/dev/old-dev-schema-bare-consensus/google-gemma-4-E4B-it/vllm_async_tp1_dp1_c16_ctx43k_p34k_o8k_r8_temp0
+```
+
+### Main Results
+
+| input | accuracy | correct / total | pred executed | pred failed | pred missing SQL | total time |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `old-dev-schema-tool` | `64.86%` | `995 / 1534` | `1495` | `39` | `33` | `22.3 min` |
+| `old-dev-schema-bare-tool` | `63.43%` | `973 / 1534` | `1499` | `35` | `26` | `15.5 min` |
+| `old-dev-schema-consensus` | `64.60%` | `991 / 1534` | `1480` | `54` | `42` | `42.2 min` |
+| `old-dev-schema-bare-consensus` | `61.67%` | `946 / 1534` | `1467` | `67` | `53` | `33.5 min` |
+
+### By Difficulty
+
+| input | simple | moderate | challenging |
+| --- | ---: | ---: | ---: |
+| `old-dev-schema-tool` | `64.07%` | `63.66%` | `70.13%` |
+| `old-dev-schema-bare-tool` | `62.79%` | `63.21%` | `66.23%` |
+| `old-dev-schema-consensus` | `63.26%` | `65.01%` | `68.83%` |
+| `old-dev-schema-bare-consensus` | `60.47%` | `63.21%` | `63.20%` |
+
+### Tool Usage
+
+| input | avg calls / sample | `sqlite_query` | `sqlite_peek` | `bm25_search_sqlite` | `consensus_at_1` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `old-dev-schema-tool` | `1.289` | `1866` | `68` | `45` | `0` |
+| `old-dev-schema-bare-tool` | `1.332` | `1940` | `59` | `44` | `0` |
+| `old-dev-schema-consensus` | `2.734` | `1631` | `191` | `77` | `2297` |
+| `old-dev-schema-bare-consensus` | `2.779` | `1635` | `262` | `85` | `2288` |
+
+### Stop Reasons
+
+| input | finished | max tool rounds | max new tokens |
+| --- | ---: | ---: | ---: |
+| `old-dev-schema-tool` | `1523` | `10` | `1` |
+| `old-dev-schema-bare-tool` | `1525` | `9` | `0` |
+| `old-dev-schema-consensus` | `1508` | `20` | `6` |
+| `old-dev-schema-bare-consensus` | `1504` | `19` | `11` |
+
+## Old Dev Tool Pass@K Smoke Runs: Gemma 4 31B, Async vLLM, Temperature 1.2, 50 Samples
+
+These two runs use the updated Gemma-native tool-loop stopping behavior in `scripts/run_inference_bird.py`: stop token ids for `<tool_call|>`, `<|tool_response>`, `<turn|>`, and `<eos>`, plus a defensive fallback that keeps only the first parsed tool call in an assistant turn before executing the tool. Each run evaluates the first 50 examples with 16 generations per example, for 800 candidates per run.
+
+Result folders:
+
+```text
+outputs/passk/old-dev-schema-tool_stopids_limit50_temp1p2
+outputs/passk/old-dev-schema-bare-tool_stopids_limit50_temp1p2
+```
+
+### Run Configuration
+
+| setting | value |
+| --- | --- |
+| model | `google/gemma-4-31B-it` |
+| examples | `50` |
+| generations per example | `16` |
+| total candidates per run | `800` |
+| temperature | `1.2` |
+| top_p | `1.0` |
+| max_new_tokens | `8000` |
+| max_tool_rounds | `8` |
+| vLLM tensor parallel size | `4` |
+| vLLM async concurrency | `16` |
+
+### Pass@K
+
+| run | pass@1 | pass@2 | pass@3 | pass@4 | pass@5 | pass@8 | pass@12 | pass@16 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `old-dev-schema-tool` | `68.00%` | `69.80%` | `70.59%` | `71.09%` | `71.43%` | `71.90%` | `72.00%` | `72.00%` |
+| `old-dev-schema-bare-tool` | `70.50%` | `72.72%` | `73.64%` | `74.20%` | `74.66%` | `75.80%` | `76.99%` | `78.00%` |
+
+### Candidate And Tool Stats
+
+| run | correct candidates | candidate accuracy | pred executed | pred failed | stop: finished | stop: max_tool_rounds | total tool calls | avg tool calls / generation |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `old-dev-schema-tool` | `544 / 800` | `68.00%` | `783` | `17` | `783` | `17` | `1105` | `1.381` |
+| `old-dev-schema-bare-tool` | `564 / 800` | `70.50%` | `788` | `12` | `788` | `12` | `1099` | `1.374` |
+
+### Tool Call Distribution
+
+| run | `sqlite_query` | `sqlite_peek` | `bm25_search_sqlite` |
+| --- | ---: | ---: | ---: |
+| `old-dev-schema-tool` | `1046` | `38` | `21` |
+| `old-dev-schema-bare-tool` | `1049` | `29` | `21` |
+
+### Tool Round Distribution
+
+| tool rounds / generation | `old-dev-schema-tool` | `old-dev-schema-bare-tool` |
+| ---: | ---: | ---: |
+| 1 | `679` | `666` |
+| 2 | `65` | `78` |
+| 3 | `23` | `21` |
+| 4 | `8` | `11` |
+| 5 | `1` | `7` |
+| 6 | `1` | `0` |
+| 7 | `0` | `1` |
+| 8 | `23` | `16` |
+
+### Tool-Loop Sanity Checks
+
+| check | `old-dev-schema-tool` | `old-dev-schema-bare-tool` |
+| --- | ---: | ---: |
+| multiple tool calls before first tool response | `0` | `0` |
+| multiple tool calls between inserted tool responses | `0` | `0` |
+| continuation markers after call before response | `0` | `0` |
+| tool calls without response | `0` | `0` |
+| parse/tool error rows | `0` | `0` |
+| `<|im_end|>` leaked into output | `0` | `0` |
+| `<|turn|>` leaked into output | `0` | `0` |
+| `<tool_call|>` / `<|tool_call>` leaked into output | `0` | `0` |
+| `call:` count equals `<|tool_response>` count | `1105 = 1105` | `1099 = 1099` |
+
+The generated transcripts show the desired tool workflow: one assistant tool call, executor-inserted tool response, then resumed model generation. This is strong output-level evidence that the hallucinated multi-tool-call-before-response issue is resolved for these runs. Direct vLLM finish/stop telemetry is not persisted in these outputs, so proving the exact raw vLLM stop reason would require adding explicit debug logging around `AsyncLLMEngine.generate`.
+
 ## BIRD Dev Schema-Tool Pass@K: Gemma 4 31B, Async vLLM, Temperature 0.8
 
 Result folder:

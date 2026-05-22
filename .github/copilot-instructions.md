@@ -812,7 +812,9 @@ Async vLLM backend:
 - Defaults to `VLLM_TENSOR_PARALLEL_SIZE=8`.
 - Defaults to `VLLM_DATA_PARALLEL_SIZE=1`.
 - Intended primarily for tool-calling data.
-- Also accepts `VLLM_ASYNC_CONCURRENCY`.
+- Also accepts `VLLM_ASYNC_CONCURRENCY`, default `16`.
+- Uses one local `AsyncLLMEngine` plus an `asyncio.Semaphore`; it does not spawn data-parallel worker processes.
+- For full dev inference (`NUM_EXAMPLES=-1`) this is one generation per retained prompt, not pass@k sampling.
 
 Inference filtering:
 
@@ -856,6 +858,8 @@ Tool inference is agentic, not one-shot.
 - Appends assistant tool calls plus tool responses.
 - Re-renders the chat template.
 - Continues until no tool calls remain or `max_tool_rounds` is reached.
+- Passes Gemma-native `stop_token_ids` for `<tool_call|>`, `<|tool_response>`, `<turn|>`, and `<eos>` during agentic tool-loop turns.
+- Keeps only the first parsed tool call per assistant turn as a defensive fallback before executing the tool.
 
 This matters because Gemma 4 generation can stop at tool-response boundary tokens. A first tool call is not a final answer; the runner must feed tool results back and resume generation.
 

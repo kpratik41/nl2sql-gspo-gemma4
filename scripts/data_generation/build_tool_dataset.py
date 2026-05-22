@@ -20,7 +20,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from nl2sql_gspo.sql_utils import extract_sql  # noqa: E402
 from nl2sql_gspo.tool_calling import get_tool_definitions, tool_catalog_compact  # noqa: E402
-from prompts import SYSTEM_PROMPT_TEMPLATES  # noqa: E402
+from prompts import SYSTEM_PROMPT_TEMPLATES, SYSTEM_PROMPT_TEMPLATES_CONSENSUS  # noqa: E402
 
 
 DB_ID_TAG_RE = re.compile(r"<db_id>\s*([^<\n]+?)\s*</db_id>", re.IGNORECASE | re.DOTALL)
@@ -48,8 +48,12 @@ def extract_tag(pattern: re.Pattern[str], text: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def build_tool_system_prompt() -> str:
-    return SYSTEM_PROMPT_TEMPLATES.replace(
+def build_tool_system_prompt(prompt_template: str) -> str:
+    templates = {
+        "default": SYSTEM_PROMPT_TEMPLATES,
+        "consensus": SYSTEM_PROMPT_TEMPLATES_CONSENSUS,
+    }
+    return templates[prompt_template].replace(
         "{TOOL_CATALOG_COMPACT}",
         tool_catalog_compact(),
     ).strip()
@@ -108,6 +112,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--input", required=True, help="Input bare schema JSONL.")
     parser.add_argument("--output", required=True, help="Output tool-calling JSONL.")
+    parser.add_argument(
+        "--prompt-template",
+        choices=["default", "consensus"],
+        default="default",
+        help="System prompt template to embed in generated records.",
+    )
     parser.add_argument("--limit", type=int, default=-1, help="Rows to process (-1 = all).")
     parser.add_argument("--log-every", type=int, default=500, help="Progress interval.")
     return parser.parse_args()
@@ -119,8 +129,8 @@ def main() -> None:
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    system_prompt = build_tool_system_prompt()
-    tools = get_tool_definitions()
+    system_prompt = build_tool_system_prompt(args.prompt_template)
+    tools = get_tool_definitions(include_consensus=args.prompt_template == "consensus")
 
     written = 0
     missing: List[str] = []

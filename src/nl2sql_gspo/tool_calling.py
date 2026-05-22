@@ -19,10 +19,10 @@ def _object_schema(properties: Dict[str, Any], required: List[str]) -> Dict[str,
     }
 
 
-def get_tool_definitions() -> List[Dict[str, Any]]:
+def get_tool_definitions(include_consensus: bool = False) -> List[Dict[str, Any]]:
     """Return OpenAI/Transformers-style function declarations for Gemma tools."""
 
-    return [
+    tools = [
         {
             "type": "function",
             "function": {
@@ -130,6 +130,57 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
             },
         },
     ]
+    if include_consensus:
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": "consensus_at_1",
+                    "description": (
+                        "Execute multiple read-only SQLite SQL candidates, cluster equivalent "
+                        "result sets, and return the consensus SQL and result."
+                    ),
+                    "parameters": _object_schema(
+                        {
+                            "db_id": {
+                                "type": "string",
+                                "description": "Database identifier from <db_id>.",
+                            },
+                            "sqls": {
+                                "type": "array",
+                                "description": "Candidate SELECT or WITH...SELECT SQL strings to compare.",
+                                "items": {"type": "string"},
+                            },
+                            "timeout_s": {
+                                "type": "number",
+                                "description": "Wallclock timeout per candidate.",
+                            },
+                            "vm_step_limit": {
+                                "type": "integer",
+                                "description": "SQLite virtual-machine step limit per candidate.",
+                            },
+                            "busy_timeout_ms": {
+                                "type": "integer",
+                                "description": "SQLite busy timeout in milliseconds.",
+                            },
+                            "max_return_rows": {
+                                "type": "integer",
+                                "description": "Maximum result rows to compare and return.",
+                                "nullable": True,
+                            },
+                            "notes": {
+                                "type": "array",
+                                "description": "Optional notes for candidate provenance.",
+                                "items": {"type": "string"},
+                                "nullable": True,
+                            },
+                        },
+                        ["db_id", "sqls"],
+                    ),
+                },
+            }
+        )
+    return tools
 
 
 def tool_catalog_compact() -> str:

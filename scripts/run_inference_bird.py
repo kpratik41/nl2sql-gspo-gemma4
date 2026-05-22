@@ -120,7 +120,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vllm_data_parallel_size", type=int, default=None)
     parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.9)
     parser.add_argument("--vllm_max_model_len", type=int, default=43000)
-    parser.add_argument("--vllm_async_concurrency", type=int, default=8)
+    parser.add_argument("--vllm_async_concurrency", type=int, default=16)
     parser.add_argument("--max_tool_rounds", type=int, default=8)
     parser.add_argument("--skip_generation", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
@@ -376,6 +376,40 @@ def should_use_agentic_tool_loop(row: Dict[str, Any], max_tool_rounds: int) -> b
     return bool(row.get("tools")) and max_tool_rounds > 0
 
 
+def token_id_for_text(tokenizer, text: str) -> Optional[int]:
+    token_ids = tokenizer.encode(text, add_special_tokens=False)
+    if len(token_ids) != 1:
+        return None
+    return int(token_ids[0])
+
+
+def gemma_tool_loop_stop_token_ids(tokenizer) -> List[int]:
+    """Return Gemma-native stop tokens for one assistant/tool turn."""
+
+    stop_texts = [
+        "<tool_call|>",      # complete tool call; let Python execute it
+        "<|tool_response>",  # prevent the model from fabricating tool output
+        "<turn|>",           # normal assistant turn end
+        "<eos>",
+    ]
+    token_ids: List[int] = []
+    for text in stop_texts:
+        token_id = token_id_for_text(tokenizer, text)
+        if token_id is not None and token_id not in token_ids:
+            token_ids.append(token_id)
+    return token_ids
+
+
+def keep_first_tool_call_only(generated_text: str, tool_calls: List[Dict[str, Any]]) -> Tuple[str, List[Dict[str, Any]]]:
+    """Keep one tool call per assistant turn and drop speculative text after it."""
+
+    if not tool_calls:
+        return generated_text, []
+    first_call = dict(tool_calls[0])
+    end = int(first_call.get("end") or len(generated_text or ""))
+    return (generated_text or "")[:end].strip(), [first_call]
+
+
 def generate_one_with_vllm_tool_loop(
     llm,
     sampling_params_cls,
@@ -411,23 +445,30 @@ def generate_one_with_vllm_tool_loop(
             temperature=temperature,
             top_p=top_p,
             max_tokens=remaining_tokens,
+            stop_token_ids=gemma_tool_loop_stop_token_ids(tokenizer),
         )
         request_output = llm.generate([prompt_text], sampling_params=sampling_params, use_tqdm=False)[0]
         first_output = request_output.outputs[0] if request_output.outputs else None
         generated_text = (first_output.text or "").strip() if first_output else ""
         round_tokens = len(first_output.token_ids) if first_output else 0
-        completion_token_count += round_tokens
-        if generated_text:
-            generated_parts.append(generated_text)
-
         tool_calls = extract_tool_calls(generated_text)
         if not tool_calls:
+            completion_token_count += round_tokens
+            if generated_text:
+                generated_parts.append(generated_text)
             stop_reason = "max_new_tokens" if round_tokens >= remaining_tokens else "finished"
             break
 
         if round_index >= max_tool_rounds:
             stop_reason = "max_tool_rounds"
             break
+
+        generated_text, tool_calls = keep_first_tool_call_only(generated_text, tool_calls)
+        completion_token_count += len(
+            tokenizer(generated_text, truncation=False, add_special_tokens=False)["input_ids"]
+        )
+        if generated_text:
+            generated_parts.append(generated_text)
 
         tool_responses = execute_tool_calls(tool_calls, timeout_s=eval_timeout)
         for response in tool_responses:
@@ -456,11 +497,13 @@ async def _async_vllm_generate_text(
     temperature: float,
     top_p: float,
     request_prefix: str,
+    stop_token_ids: Optional[List[int]] = None,
 ) -> Tuple[str, int]:
     sampling_params = sampling_params_cls(
         temperature=temperature,
         top_p=top_p,
         max_tokens=max_tokens,
+        stop_token_ids=stop_token_ids,
     )
     request_id = f"{request_prefix}-{uuid.uuid4().hex}"
     final_output = None
@@ -513,19 +556,26 @@ async def generate_one_with_vllm_async_tool_loop(
             temperature=temperature,
             top_p=top_p,
             request_prefix=request_prefix,
+            stop_token_ids=gemma_tool_loop_stop_token_ids(tokenizer),
         )
-        completion_token_count += round_tokens
-        if generated_text:
-            generated_parts.append(generated_text)
-
         tool_calls = extract_tool_calls(generated_text)
         if not tool_calls:
+            completion_token_count += round_tokens
+            if generated_text:
+                generated_parts.append(generated_text)
             stop_reason = "max_new_tokens" if round_tokens >= remaining_tokens else "finished"
             break
 
         if round_index >= max_tool_rounds:
             stop_reason = "max_tool_rounds"
             break
+
+        generated_text, tool_calls = keep_first_tool_call_only(generated_text, tool_calls)
+        completion_token_count += len(
+            tokenizer(generated_text, truncation=False, add_special_tokens=False)["input_ids"]
+        )
+        if generated_text:
+            generated_parts.append(generated_text)
 
         tool_responses = await asyncio.to_thread(execute_tool_calls, tool_calls, eval_timeout)
         for response in tool_responses:
