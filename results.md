@@ -1,5 +1,35 @@
 # Results
 
+## Old Dev 1534 Inference Comparison: Gemma 4 31B vs E4B
+
+These are single-generation async vLLM inference runs over all 1534 old-dev samples with `temperature=0.0`, `top_p=1.0`, `max_new_tokens=8000`, `max_tool_rounds=8`, `eval_workers=16`, and `vllm_async_concurrency=16`.
+
+For `google/gemma-4-31B-it`, the two tool-format runs used tensor parallel size 4 with `vllm_max_model_len=43000`; the two consensus-format reruns used tensor parallel size 1 with `vllm_max_model_len=45000`. For `google/gemma-4-E4B-it`, all runs used tensor parallel size 1; `old-dev-schema-consensus` was rerun with `vllm_max_model_len=45000`.
+
+| model | input | accuracy | correct / total | pred executed | pred failed | pred missing SQL | total time |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `gemma-4-31B-it` | `old-dev-schema-tool` | `71.19%` | `1092 / 1534` | `1518` | `16` | `16` | `33.2 min` |
+| `gemma-4-31B-it` | `old-dev-schema-bare-tool` | `69.17%` | `1061 / 1534` | `1501` | `33` | `29` | `20.6 min` |
+| `gemma-4-31B-it` | `old-dev-schema-consensus` | `66.49%` | `1020 / 1534` | `1425` | `109` | `109` | `372.9 min` |
+| `gemma-4-31B-it` | `old-dev-schema-bare-consensus` | `64.02%` | `982 / 1534` | `1409` | `125` | `125` | `205.5 min` |
+| `gemma-4-E4B-it` | `old-dev-schema-tool` | `64.86%` | `995 / 1534` | `1495` | `39` | `33` | `22.3 min` |
+| `gemma-4-E4B-it` | `old-dev-schema-bare-tool` | `63.43%` | `973 / 1534` | `1499` | `35` | `26` | `15.5 min` |
+| `gemma-4-E4B-it` | `old-dev-schema-consensus` | `64.60%` | `991 / 1534` | `1480` | `54` | `42` | `42.2 min` |
+| `gemma-4-E4B-it` | `old-dev-schema-bare-consensus` | `61.67%` | `946 / 1534` | `1467` | `67` | `53` | `33.5 min` |
+
+## Old Dev Pass@K Summary
+
+These pass@k runs used `temperature=1.2`, `top_p=1.0`, `num_generations=16`, `max_new_tokens=8000`, `max_tool_rounds=8`, and async vLLM. Full-1534 pass@k summaries were found for `google/gemma-4-E4B-it`. For `google/gemma-4-31B-it`, only the earlier 50-sample tool/bare-tool pass@k runs were present.
+
+| model | input | samples | candidate acc / pass@1 | pass@8 | pass@16 | avg tool calls / candidate |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `gemma-4-E4B-it` | `old-dev-schema-tool` | `1534` | `63.60%` | `76.84%` | `78.94%` | `1.30` |
+| `gemma-4-E4B-it` | `old-dev-schema-bare-tool` | `1534` | `61.58%` | `74.81%` | `77.51%` | `1.34` |
+| `gemma-4-E4B-it` | `old-dev-schema-consensus` | `1534` | `60.77%` | `76.45%` | `78.68%` | `2.40` |
+| `gemma-4-E4B-it` | `old-dev-schema-bare-consensus` | `1534` | `58.66%` | `73.69%` | `76.34%` | `2.42` |
+| `gemma-4-31B-it` | `old-dev-schema-tool` | `50` | `68.00%` | `71.90%` | `72.00%` | `1.38` |
+| `gemma-4-31B-it` | `old-dev-schema-bare-tool` | `50` | `70.50%` | `75.80%` | `78.00%` | `1.37` |
+
 ## Old Dev Gemma 4 E4B Inference: Async vLLM, Temperature 0.0, 1534 Samples
 
 These runs evaluate one greedy/tool-calling generation per example over the full old-dev split. All four runs used `google/gemma-4-E4B-it`, async vLLM, `temperature=0.0`, `top_p=1.0`, `max_new_tokens=8000`, `max_tool_rounds=8`, `vllm_tensor_parallel_size=1`, and `vllm_async_concurrency=16`.

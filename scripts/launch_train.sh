@@ -28,7 +28,7 @@ if ! command -v "${ACCELERATE_BIN}" >/dev/null 2>&1 && [[ ! -x "${ACCELERATE_BIN
   exit 1
 fi
 
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5
+export CUDA_VISIBLE_DEVICES="${TRAIN_CUDA_VISIBLE_DEVICES:-${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5}}"
 export TOKENIZERS_PARALLELISM=false
 export NCCL_DEBUG=WARN
 export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
@@ -76,13 +76,16 @@ NUM_GENERATIONS="${NUM_GENERATIONS:-16}"
 TEMPERATURE="${TEMPERATURE:-1.2}"
 TOP_P="${TOP_P:-0.95}"
 PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-3}"
+PER_DEVICE_EVAL_BATCH_SIZE="${PER_DEVICE_EVAL_BATCH_SIZE:-8}"
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-16}"
-LEARNING_RATE="${LEARNING_RATE:-${LR:-5e-7}}"
+LEARNING_RATE="${LEARNING_RATE:-${LR:-1e-6}}"
 MAX_STEPS="${MAX_STEPS:--1}"
+ACCELERATE_NUM_PROCESSES="${ACCELERATE_NUM_PROCESSES:-6}"
 
 MODEL_NAME="${MODEL_NAME:-google/gemma-4-31B-it}"
 USER_OUTPUT_DIR="${OUTPUT_DIR:-}"
 VLLM_GROUP_PORT="${VLLM_GROUP_PORT:-29600}"
+VLLM_SERVER_BASE_URL="${VLLM_SERVER_BASE_URL:-http://127.0.0.1:8000}"
 TRAINER_BACKEND="${TRAINER_BACKEND:-grpo}"
 if [[ -z "${DISTRIBUTED_BACKEND:-}" ]]; then
   if [[ "${TRAINER_BACKEND}" == "async_grpo" ]]; then
@@ -282,7 +285,7 @@ if [[ -n "${TOOL_DB_EXTRA_ROOTS}" ]]; then
 fi
 
 "${ACCELERATE_BIN}" launch \
-  --num_processes 6 \
+  --num_processes "${ACCELERATE_NUM_PROCESSES}" \
   --mixed_precision bf16 \
   src/nl2sql_gspo/train_gspo_nl2sql.py \
   --model_name_or_path "${MODEL_NAME}" \
@@ -292,7 +295,7 @@ fi
   --eval_limit "${EVAL_LIMIT}" \
   --database_dir databases \
   --output_dir "${OUTPUT_DIR}" \
-  --vllm_server_base_url http://127.0.0.1:8000 \
+  --vllm_server_base_url "${VLLM_SERVER_BASE_URL}" \
   --vllm_group_port "${VLLM_GROUP_PORT}" \
   --max_prompt_length "${MAX_PROMPT_LENGTH}" \
   --max_completion_length "${MAX_COMPLETION_LENGTH}" \
@@ -300,6 +303,7 @@ fi
   --temperature "${TEMPERATURE}" \
   --top_p "${TOP_P}" \
   --per_device_train_batch_size "${PER_DEVICE_TRAIN_BATCH_SIZE}" \
+  --per_device_eval_batch_size "${PER_DEVICE_EVAL_BATCH_SIZE}" \
   --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS}" \
   --learning_rate "${LEARNING_RATE}" \
   --num_train_epochs 1 \

@@ -87,7 +87,7 @@ Generated `outputs/` and `logs/` are part of normal workflows but should not be 
 
 ## Current Training Launcher Defaults
 
-`scripts/launch_train.sh` is the active recipe. It starts 6 training processes on GPUs `0,1,2,3,4,5`; `scripts/launch_vllm.sh` starts the rollout server on GPUs `6,7`.
+`scripts/launch_train.sh` is the active recipe. By default it starts 6 training processes on GPUs `0,1,2,3,4,5`; override with `TRAIN_CUDA_VISIBLE_DEVICES` and `ACCELERATE_NUM_PROCESSES`. `scripts/launch_vllm.sh` starts the rollout server on GPUs `6,7` by default; override with `VLLM_CUDA_VISIBLE_DEVICES`.
 
 Current default training launch values:
 
@@ -110,10 +110,10 @@ Training output directory naming:
 
 - If `OUTPUT_DIR` is unset, `scripts/launch_train.sh` creates a timestamped default under `outputs/training/<train_file_stem>/<model_tag>/`.
 - The run folder includes trainer backend, distributed backend, prompt/completion lengths, `num_generations`, temperature, per-device batch size, gradient accumulation, learning rate, and timestamp.
-- Full-schema tool default example: `outputs/training/train-6601-schema-tool/gemma-4-31B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_lr5e-7_<timestamp>`.
-- Bare-schema tool example: `outputs/training/train-6601-schema-bare-tool/gemma-4-31B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_lr5e-7_<timestamp>`.
+- Full-schema tool default example: `outputs/training/train-6601-schema-tool/gemma-4-31B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_lr1e-6_<timestamp>`.
+- Bare-schema tool example: `outputs/training/train-6601-schema-bare-tool/gemma-4-31B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_lr1e-6_<timestamp>`.
 - If `OUTPUT_DIR` is set manually, the launcher preserves it exactly.
-- The default W&B `RUN_NAME` includes the train file stem and the same run tag, e.g. `train-6601-schema-tool-grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_lr5e-7_<timestamp>`.
+- The default W&B `RUN_NAME` includes the train file stem and the same run tag, e.g. `train-6601-schema-tool-grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_lr1e-6_<timestamp>`.
 
 Rollout and sampling defaults:
 
@@ -134,7 +134,7 @@ Optimization defaults:
 ```text
 PER_DEVICE_TRAIN_BATCH_SIZE=3
 GRADIENT_ACCUMULATION_STEPS=16
-LEARNING_RATE=5e-7
+LEARNING_RATE=1e-6
 NUM_TRAIN_EPOCHS=1
 MAX_STEPS=-1
 WARMUP_RATIO=0.03
@@ -241,10 +241,10 @@ Core behavior:
 - `num_items_in_batch` is recomputed from the final completion mask.
 - If all final groups are zero-masked, the trainer can skip the expensive policy loss path and return zero loss.
 
-Current default single-shot volume with 6 trainer ranks, `per_device_train_batch_size=1`, `num_generations=16`, and `dapo_oversample_factor=16`:
+Current default single-shot volume with 6 trainer ranks, `per_device_train_batch_size=1`, `num_generations=16`, and `dapo_oversample_factor=12`:
 
 ```text
-6 ranks * 1 group/rank * 16 generations/group * 16 oversample = 1536 candidate completions per generation step
+6 ranks * 1 group/rank * 16 generations/group * 12 oversample = 1152 candidate completions per generation step
 ```
 
 If `PER_DEVICE_TRAIN_BATCH_SIZE=2`, this doubles to `3072` candidate completions per generation step.

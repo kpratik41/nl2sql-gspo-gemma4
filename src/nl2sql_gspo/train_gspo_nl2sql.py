@@ -106,9 +106,10 @@ def parse_args(argv=None):
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top_p", type=float, default=0.95)
     parser.add_argument("--per_device_train_batch_size", type=int, default=1)
+    parser.add_argument("--per_device_eval_batch_size", type=int, default=8)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=64)
 
-    parser.add_argument("--learning_rate", type=float, default=5e-7)
+    parser.add_argument("--learning_rate", type=float, default=1e-6)
     parser.add_argument("--num_train_epochs", type=float, default=1.0)
     parser.add_argument("--max_steps", type=int, default=-1)
     parser.add_argument("--warmup_ratio", type=float, default=0.03)
@@ -473,6 +474,7 @@ def main():
             queue_maxsize=args.async_queue_maxsize,
             weight_sync_steps=args.async_weight_sync_steps,
             per_device_train_batch_size=args.per_device_train_batch_size,
+            per_device_eval_batch_size=args.per_device_eval_batch_size,
             gradient_accumulation_steps=args.gradient_accumulation_steps,
             learning_rate=args.learning_rate,
             warmup_ratio=args.warmup_ratio,
@@ -546,6 +548,7 @@ def main():
 
         # Training
         per_device_train_batch_size=args.per_device_train_batch_size,
+        per_device_eval_batch_size=args.per_device_eval_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=args.learning_rate,
         warmup_ratio=args.warmup_ratio,
