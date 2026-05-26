@@ -409,3 +409,75 @@ outputs/dev-20251106-schema-373.jsonl
 - At `k=16`, estimated and prefix pass@k match because both use all 16 candidates.
 - This run used the full `schema-tool` dev file, not the `schema-bare-tool` file. The prompt-token distribution confirms much larger prompts: p50 prompt length was `13707` tokens and p95 was `28920` tokens.
 - The gap between candidate accuracy (`69.76%`) and pass@16 (`75.68%`) shows about `5.93` points of recoverable headroom if a reranker or verifier can select the correct candidate from the sampled set.
+
+## GRPO E4B Bare-Tool Checkpoint Sweep: Checkpoints 0-150
+
+This sweep evaluates one async vLLM tool-calling generation per example over all 1534 old-dev samples for checkpoints `0, 10, ..., 150` from the GRPO E4B bare-tool training run.
+
+Result root:
+
+```text
+outputs/training/train-6601-schema-bare-tool/gemma-4-E4B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs4_ga8_lr2e-6_e4b_bare_lr2e6_20260524_130108
+```
+
+Each checkpoint folder contains `eval_summary.json`, `eval_summary.md`, `run_report.md`, `per_example_report.csv`, `eval_results.jsonl`, `prediction_details.jsonl`, and `predict_dev.json`.
+
+### Run Configuration
+
+| setting | value |
+| --- | --- |
+| base checkpoint-0 model | `google/gemma-4-E4B-it` |
+| input file | `outputs/old-dev-schema-tool.jsonl` |
+| examples | `1534` |
+| inference backend | `vllm_async` |
+| max prompt length | `35000` |
+| max new tokens | `8000` |
+| max tool rounds | `8` |
+| eval workers | `16` |
+| vLLM tensor parallel size | `1` |
+| vLLM data parallel size | `1` |
+| vLLM async concurrency | `16` |
+| vLLM max model length | `48000` |
+
+### Checkpoint Summary
+
+| ckpt | correct | EX acc | finished | max rounds | tool calls | `sqlite_query` | `sqlite_peek` | `bm25_search_sqlite` | avg calls | avg toks | pred missing | pred failed | both exec | total sec |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0` | `1003` | `65.38%` | `1526` | `8` | `2005` | `1899` | `65` | `41` | `1.307` | `710.0` | `22` | `25` | `1508` | `2644.8` |
+| `10` | `996` | `64.93%` | `1528` | `6` | `2024` | `1918` | `58` | `48` | `1.319` | `732.8` | `18` | `22` | `1511` | `2117.6` |
+| `20` | `985` | `64.21%` | `1522` | `12` | `2046` | `1920` | `78` | `48` | `1.334` | `735.1` | `26` | `31` | `1502` | `2047.6` |
+| `30` | `995` | `64.86%` | `1526` | `7` | `2024` | `1939` | `56` | `29` | `1.319` | `732.2` | `22` | `27` | `1506` | `2137.4` |
+| `40` | `1003` | `65.38%` | `1529` | `5` | `1991` | `1906` | `54` | `31` | `1.298` | `722.6` | `22` | `25` | `1508` | `2095.6` |
+| `50` | `996` | `64.93%` | `1527` | `6` | `1995` | `1914` | `54` | `27` | `1.301` | `730.5` | `25` | `33` | `1500` | `2039.0` |
+| `60` | `989` | `64.47%` | `1527` | `7` | `1995` | `1906` | `63` | `26` | `1.301` | `730.0` | `21` | `28` | `1505` | `2045.8` |
+| `70` | `992` | `64.67%` | `1528` | `6` | `1979` | `1898` | `52` | `29` | `1.290` | `728.7` | `25` | `30` | `1503` | `2125.2` |
+| `80` | `998` | `65.06%` | `1527` | `7` | `2039` | `1943` | `63` | `33` | `1.329` | `751.6` | `23` | `28` | `1505` | `2085.2` |
+| `90` | `1007` | `65.65%` | `1531` | `3` | `1966` | `1893` | `56` | `17` | `1.282` | `741.8` | `19` | `24` | `1509` | `2061.7` |
+| `100` | `1000` | `65.19%` | `1527` | `6` | `2013` | `1913` | `68` | `32` | `1.312` | `753.0` | `18` | `28` | `1505` | `2097.1` |
+| `110` | `999` | `65.12%` | `1531` | `3` | `1958` | `1881` | `51` | `26` | `1.276` | `744.1` | `24` | `33` | `1500` | `2074.9` |
+| `120` | `988` | `64.41%` | `1531` | `3` | `2005` | `1917` | `63` | `25` | `1.307` | `762.1` | `15` | `23` | `1510` | `2134.5` |
+| `130` | `998` | `65.06%` | `1529` | `5` | `1989` | `1899` | `60` | `30` | `1.297` | `747.9` | `20` | `27` | `1506` | `2122.8` |
+| `140` | `989` | `64.47%` | `1526` | `7` | `2019` | `1935` | `59` | `25` | `1.316` | `768.0` | `23` | `31` | `1502` | `2136.8` |
+| `150` | `992` | `64.67%` | `1526` | `8` | `2004` | `1936` | `48` | `20` | `1.306` | `762.0` | `18` | `24` | `1509` | `2125.8` |
+
+### Run Health
+
+- No checkpoint run appears to have failed globally: every checkpoint generated all `1534` examples and had `0` filtered examples.
+- Generation stop reasons were only `finished` and `max_tool_rounds`; no `max_new_tokens` or other stop reason appeared in these checkpoint summaries.
+- `checkpoint-90` had the best overall EX accuracy at `65.65%` (`1007 / 1534`) and only `3` max-tool-round stops.
+- `checkpoint-20` was the weakest checkpoint by accuracy at `64.21%` (`985 / 1534`), with the most tool calls (`2046`), most max-tool-round stops (`12`), and high predicted-SQL failure count (`31`).
+- `checkpoint-120` had the best SQL extraction/execution health by missing predicted SQL (`15`) and both-SQL-executed count (`1510`), but its EX accuracy was only `64.41%`.
+- `checkpoint-140` was the most verbose by average completion tokens (`768.0`) without an accuracy gain.
+- `checkpoint-150` finished below checkpoint 0 overall: `64.67%` vs `65.38%`, despite higher average completion tokens (`762.0` vs `710.0`).
+
+### Error Themes
+
+The non-OK per-example statuses are dominated by predicted-SQL issues rather than generation-level run failures:
+
+- `pred_error: empty sql` was the most common error at every checkpoint, ranging from `15` at checkpoint 120 to `26` at checkpoint 20.
+- Other recurring predicted-SQL failures included missing columns or tables, syntax errors, and a few interrupted predicted-SQL executions.
+- A recurring `gold_error: interrupted` appears once in every checkpoint run.
+
+### Recommendation
+
+Use `checkpoint-90` as the preferred checkpoint from this sweep. It has the best overall EX accuracy, strong run health, low max-tool-round count, and relatively low tool-call volume. The final checkpoint, `checkpoint-150`, is not better than checkpoint 0 or checkpoint 90 on overall EX accuracy.
