@@ -25,8 +25,9 @@ High-level loop inside ``_generate_and_score_completions`` (training only):
    with zero-masked groups so the output shape matches what TRL's
    training loop expects, and the loss contributes 0 from those slots.
 7. Concatenate all kept chunks → final output dict. Re-compute
-   ``num_items_in_batch`` from the final completion_mask (DAPO loss
-   normalizer = total non-pad completion tokens / num_processes).
+   ``num_items_in_batch`` from the final effective completion mask
+   (completion padding/truncation mask AND tool-observation mask; DAPO loss
+   normalizer = total policy-action completion tokens / num_processes).
 
 Key invariants
 --------------
@@ -36,8 +37,8 @@ Key invariants
   global batch — across rounds we accept slightly inconsistent
   advantage scales (for ``scale_rewards="batch"``); the per-group
   centering is unchanged because it uses intra-group means.
-* ``num_items_in_batch`` is recomputed at the end so DAPO loss
-  normalization matches the final kept set.
+* ``num_items_in_batch`` is recomputed at the end from the effective policy
+  mask so DAPO loss normalization matches the final kept set.
 """
 
 from __future__ import annotations
@@ -168,6 +169,9 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         self.debug_rollout_sample_chars = max(0, int(os.environ.get("DAPO_DEBUG_ROLLOUT_SAMPLE_CHARS", "500")))
         self.debug_rollout_every = max(1, int(os.environ.get("DAPO_DEBUG_ROLLOUT_EVERY", "1")))
         self.debug_tool_loop = os.environ.get("TOOL_LOOP_DEBUG", "0") != "0"
+        self.debug_attention_mask = os.environ.get("ATTENTION_MASK_DEBUG", "0") != "0"
+        self.debug_attention_mask_every = max(1, int(os.environ.get("ATTENTION_MASK_DEBUG_EVERY", "1")))
+        self.debug_attention_mask_samples = max(0, int(os.environ.get("ATTENTION_MASK_DEBUG_SAMPLES", "2")))
 
         # Resolve reward-name to column index on the registered reward funcs.
         self._dyn_reward_idx: Optional[int] = None
@@ -208,6 +212,12 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                     f"every={self.debug_rollout_every} "
                     f"samples={self.debug_rollout_samples} "
                     f"sample_chars={self.debug_rollout_sample_chars}"
+                )
+            if self.debug_attention_mask:
+                print(
+                    "[attention-mask-debug] enabled "
+                    f"every={self.debug_attention_mask_every} "
+                    f"samples={self.debug_attention_mask_samples}"
                 )
 
     def _wait_for_everyone(self) -> None:
@@ -307,6 +317,16 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         # heterogeneity check can read a single reward column if requested.
         self._last_rewards_per_func = rewards_per_func
         return rewards_per_func
+
+    @staticmethod
+    def _effective_completion_mask(output: Dict[str, Any]) -> torch.Tensor:
+        """Mask of policy-action tokens: completion padding/truncation AND tool observations."""
+
+        completion_mask = output["completion_mask"]
+        tool_mask = output.get("tool_mask")
+        if isinstance(tool_mask, torch.Tensor):
+            return completion_mask * tool_mask
+        return completion_mask
 
     def _global_sum_int(self, value: int) -> int:
         if not (torch.distributed.is_available() and torch.distributed.is_initialized()):
@@ -942,6 +962,128 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             )
             printed += 1
 
+    def _log_attention_mask_debug(self, output: Dict[str, Any], attention_mask: torch.Tensor) -> None:
+        """Validate whether tool observations are visible to logprob forwards."""
+
+        if not self.debug_attention_mask:
+            return
+        step = int(getattr(self.state, "global_step", 0))
+        if step % self.debug_attention_mask_every != 0:
+            return
+
+        completion_mask = output.get("completion_mask")
+        tool_mask = output.get("tool_mask")
+        completion_ids = output.get("completion_ids")
+        prompt_ids = output.get("prompt_ids")
+        if not (
+            isinstance(completion_mask, torch.Tensor)
+            and isinstance(tool_mask, torch.Tensor)
+            and isinstance(completion_ids, torch.Tensor)
+            and isinstance(prompt_ids, torch.Tensor)
+        ):
+            return
+
+        prompt_width = prompt_ids.size(1)
+        completion_attention = attention_mask[:, prompt_width:]
+        tool_positions = tool_mask == 0
+        effective_loss_mask = completion_mask * tool_mask
+        loss_masked_positions = effective_loss_mask == 0
+        attention_zero_positions = completion_attention == 0
+        tool_token_count = int(tool_positions.long().sum().item())
+        tool_tokens_hidden = int((tool_positions & attention_zero_positions).long().sum().item())
+        tool_tokens_visible = int((tool_positions & ~attention_zero_positions).long().sum().item())
+        loss_masked_tokens = int(loss_masked_positions.long().sum().item())
+        attention_zero_tokens = int(attention_zero_positions.long().sum().item())
+        rows_with_tool = int(tool_positions.any(dim=1).long().sum().item())
+
+        local_counts = torch.tensor(
+            [
+                completion_ids.size(0),
+                rows_with_tool,
+                tool_token_count,
+                tool_tokens_hidden,
+                tool_tokens_visible,
+                loss_masked_tokens,
+                attention_zero_tokens,
+            ],
+            device=completion_ids.device,
+            dtype=torch.long,
+        )
+        try:
+            totals = self.accelerator.gather(local_counts.unsqueeze(0)).sum(dim=0).tolist()
+        except Exception:
+            totals = local_counts.tolist()
+
+        if getattr(self.accelerator, "is_main_process", True):
+            hidden_frac = float(totals[3]) / float(totals[2]) if totals[2] else 0.0
+            print(
+                f"[attention-mask-debug] step={step} rows={totals[0]} "
+                f"rows_with_tool_response={totals[1]} tool_response_tokens={totals[2]} "
+                f"tool_response_hidden_by_attention={totals[3]}({hidden_frac:.1%}) "
+                f"tool_response_visible_to_attention={totals[4]} "
+                f"loss_masked_completion_tokens={totals[5]} "
+                f"attention_zero_completion_tokens={totals[6]}",
+                flush=True,
+            )
+
+        if self.debug_attention_mask_samples <= 0:
+            return
+
+        samples = []
+        for row in range(completion_ids.size(0)):
+            if len(samples) >= self.debug_attention_mask_samples:
+                break
+            zero_idxs = torch.nonzero(tool_positions[row], as_tuple=False).flatten()
+            if zero_idxs.numel() == 0:
+                continue
+            start = int(zero_idxs[0].item())
+            end = start
+            zero_set = set(int(x.item()) for x in zero_idxs[:256])
+            while end + 1 in zero_set:
+                end += 1
+            lo = max(0, start - 12)
+            hi = min(completion_ids.size(1), end + 13)
+            ids = completion_ids[row, lo:hi].detach().cpu().tolist()
+            try:
+                text = self.processing_class.decode(ids, skip_special_tokens=False)
+            except Exception:
+                text = str(ids)
+            samples.append(
+                {
+                    "rank": int(self.accelerator.process_index),
+                    "row": row,
+                    "span": [start, end],
+                    "span_len": end - start + 1,
+                    "attention_sum_on_span": int(completion_attention[row, start : end + 1].long().sum().item()),
+                    "loss_sum_on_span": int(effective_loss_mask[row, start : end + 1].long().sum().item()),
+                    "window": text[:500].replace("\n", "\\n"),
+                }
+            )
+
+        try:
+            gathered_samples = _flatten_gathered(gather_object([samples]))
+        except Exception:
+            gathered_samples = samples
+
+        if not getattr(self.accelerator, "is_main_process", True):
+            return
+        printed = 0
+        for sample in gathered_samples:
+            if printed >= self.debug_attention_mask_samples:
+                break
+            if not isinstance(sample, dict):
+                continue
+            print(
+                "[attention-mask-sample] "
+                f"step={step} rank={sample['rank']} row={sample['row']} "
+                f"tool_span={sample['span']} span_len={sample['span_len']} "
+                f"attention_sum_on_span={sample['attention_sum_on_span']} "
+                f"loss_sum_on_span={sample['loss_sum_on_span']} "
+                f"window={sample['window']!r}",
+                flush=True,
+            )
+            printed += 1
+
     # ------------------------------------------------------------------ #
     # Heterogeneity check
     # ------------------------------------------------------------------ #
@@ -1153,12 +1295,9 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         else:
             tool_mask = None
 
-        # TRL tool rollouts may include tool-response tokens in the generated
-        # continuation so later assistant tokens are conditioned on the actual
-        # observation. Those observation tokens are environment output, not
-        # policy actions, so they must not contribute to the policy loss.
-        if tool_mask is not None:
-            completion_mask = completion_mask * tool_mask
+        # Keep completion_mask as the attention/padding mask. Tool responses
+        # must remain visible to later assistant tokens, but they are excluded
+        # from the policy loss via completion_mask * tool_mask in TRL's loss.
 
         if self.mask_truncated_completions:
             eos_and_pad = [self._tokenizer.eos_token_id, self._tokenizer.pad_token_id]
@@ -1330,6 +1469,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         completion_mask = output["completion_mask"]
         prompt_completion_ids = torch.cat([prompt_ids, completion_ids], dim=1)
         attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)
+        self._log_attention_mask_debug(output, attention_mask)
         logits_to_keep = completion_ids.size(1)
         batch_size = self.args.per_device_train_batch_size
         num_images = output.get("num_images")
@@ -1681,12 +1821,14 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
 
         # Recompute num_items_in_batch (DAPO loss normalizer)
         try:
-            local_count = (out["completion_mask"] > 0).long().sum().to(device)
+            effective_mask = self._effective_completion_mask(out)
+            local_count = (effective_mask > 0).long().sum().to(device)
             agg = self.accelerator.gather(local_count.unsqueeze(0)).sum()
             skip_policy_loss = bool(agg.item() == 0)
             out["num_items_in_batch"] = agg.clamp(min=1)
         except Exception:
-            local_count = (out["completion_mask"] > 0).long().sum().to(device)
+            effective_mask = self._effective_completion_mask(out)
+            local_count = (effective_mask > 0).long().sum().to(device)
             skip_policy_loss = bool(local_count.item() == 0)
             out["num_items_in_batch"] = local_count.clamp(min=1)
         out["_skip_policy_loss"] = torch.full(
@@ -1850,12 +1992,14 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
 
         # Recompute num_items_in_batch (DAPO loss normalizer)
         try:
-            local_count = (out["completion_mask"] > 0).long().sum().to(device)
+            effective_mask = self._effective_completion_mask(out)
+            local_count = (effective_mask > 0).long().sum().to(device)
             agg = self.accelerator.gather(local_count.unsqueeze(0)).sum()
             skip_policy_loss = bool(agg.item() == 0)
             out["num_items_in_batch"] = agg.clamp(min=1)
         except Exception:
-            local_count = (out["completion_mask"] > 0).long().sum().to(device)
+            effective_mask = self._effective_completion_mask(out)
+            local_count = (effective_mask > 0).long().sum().to(device)
             skip_policy_loss = bool(local_count.item() == 0)
             out["num_items_in_batch"] = local_count.clamp(min=1)
         out["_skip_policy_loss"] = torch.full(
