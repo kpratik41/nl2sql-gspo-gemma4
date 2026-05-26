@@ -358,6 +358,7 @@ def build_generation_detail(
     tool_rounds: int,
     tool_call_count: int,
     stop_reason: str,
+    error_message: str = "",
 ) -> Dict[str, Any]:
     return {
         "source_idx": row.get("source_idx", -1),
@@ -369,6 +370,7 @@ def build_generation_detail(
         "tool_rounds": tool_rounds,
         "tool_call_count": tool_call_count,
         "stop_reason": stop_reason,
+        "error_message": error_message,
     }
 
 
@@ -522,6 +524,7 @@ async def generate_one_with_vllm_async_tool_loop(
     tokenizer,
     row: Dict[str, Any],
     max_new_tokens: int,
+    max_model_len: int,
     max_tool_rounds: int,
     eval_timeout: float,
     temperature: float,
@@ -544,15 +547,47 @@ async def generate_one_with_vllm_async_tool_loop(
             break
 
         prompt_text = render_prompt(tokenizer, messages, tools)
+        max_prompt_chars = max_model_len * 31
+        if len(prompt_text) > max_prompt_chars:
+            stop_reason = "context_length_exceeded"
+            print(
+                "[inference] skipping over-context tool-loop sample "
+                f"idx={row.get('source_idx', -1)} db_id={row.get('db_id', '')} "
+                f"round={round_index} prompt_chars={len(prompt_text)} "
+                f"max_prompt_chars={max_prompt_chars} max_model_len={max_model_len}"
+            )
+            break
+
         current_prompt_tokens = len(tokenizer(prompt_text, truncation=False)["input_ids"])
         if round_index == 0:
             prompt_token_count = current_prompt_tokens
+
+        available_context_tokens = max_model_len - current_prompt_tokens
+        if available_context_tokens <= 0:
+            stop_reason = "context_length_exceeded"
+            print(
+                "[inference] skipping over-context tool-loop sample "
+                f"idx={row.get('source_idx', -1)} db_id={row.get('db_id', '')} "
+                f"round={round_index} prompt_tokens={current_prompt_tokens} "
+                f"max_model_len={max_model_len}"
+            )
+            break
+
+        request_max_tokens = min(remaining_tokens, available_context_tokens)
+        if request_max_tokens < remaining_tokens:
+            print(
+                "[inference] limiting generation budget to remaining context "
+                f"idx={row.get('source_idx', -1)} db_id={row.get('db_id', '')} "
+                f"round={round_index} prompt_tokens={current_prompt_tokens} "
+                f"requested_max_tokens={remaining_tokens} "
+                f"request_max_tokens={request_max_tokens} max_model_len={max_model_len}"
+            )
 
         generated_text, round_tokens = await _async_vllm_generate_text(
             engine=engine,
             sampling_params_cls=sampling_params_cls,
             prompt_text=prompt_text,
-            max_tokens=remaining_tokens,
+            max_tokens=request_max_tokens,
             temperature=temperature,
             top_p=top_p,
             request_prefix=request_prefix,
@@ -563,7 +598,12 @@ async def generate_one_with_vllm_async_tool_loop(
             completion_token_count += round_tokens
             if generated_text:
                 generated_parts.append(generated_text)
-            stop_reason = "max_new_tokens" if round_tokens >= remaining_tokens else "finished"
+            if round_tokens >= remaining_tokens:
+                stop_reason = "max_new_tokens"
+            elif round_tokens >= request_max_tokens and request_max_tokens < remaining_tokens:
+                stop_reason = "context_window_limited"
+            else:
+                stop_reason = "finished"
             break
 
         if round_index >= max_tool_rounds:
@@ -991,42 +1031,83 @@ async def _generate_predictions_with_vllm_async_impl(
                     f"idx={source_idx} db_id={db_id} prompt_tokens={prompt_token_count}"
                 )
 
-            if should_use_agentic_tool_loop(row, args.max_tool_rounds):
-                generated = await generate_one_with_vllm_async_tool_loop(
-                    engine=engine,
-                    sampling_params_cls=SamplingParams,
-                    tokenizer=tokenizer,
-                    row=row,
-                    max_new_tokens=args.max_new_tokens,
-                    max_tool_rounds=args.max_tool_rounds,
-                    eval_timeout=args.eval_timeout,
-                    temperature=args.temperature,
-                    top_p=args.top_p,
-                )
-            else:
-                generated_text, completion_tokens = await _async_vllm_generate_text(
-                    engine=engine,
-                    sampling_params_cls=SamplingParams,
-                    prompt_text=row["prompt_text"],
-                    max_tokens=args.max_new_tokens,
-                    temperature=args.temperature,
-                    top_p=args.top_p,
-                    request_prefix=f"idx{source_idx}",
-                )
-                if "call:" in generated_text:
-                    generated_text = await asyncio.to_thread(
-                        extract_and_execute_tools,
-                        generated_text,
-                        args.eval_timeout,
+            try:
+                if should_use_agentic_tool_loop(row, args.max_tool_rounds):
+                    generated = await generate_one_with_vllm_async_tool_loop(
+                        engine=engine,
+                        sampling_params_cls=SamplingParams,
+                        tokenizer=tokenizer,
+                        row=row,
+                        max_new_tokens=args.max_new_tokens,
+                        max_model_len=vllm_max_model_len,
+                        max_tool_rounds=args.max_tool_rounds,
+                        eval_timeout=args.eval_timeout,
+                        temperature=args.temperature,
+                        top_p=args.top_p,
                     )
+                else:
+                    available_context_tokens = vllm_max_model_len - prompt_token_count
+                    if available_context_tokens <= 0:
+                        print(
+                            "[inference] skipping over-context sample "
+                            f"idx={source_idx} db_id={db_id} "
+                            f"prompt_tokens={prompt_token_count} max_model_len={vllm_max_model_len}"
+                        )
+                        generated = build_generation_detail(
+                            row=row,
+                            prediction_text="",
+                            prompt_token_count=prompt_token_count,
+                            completion_token_count=0,
+                            tool_rounds=0,
+                            tool_call_count=0,
+                            stop_reason="context_length_exceeded",
+                        )
+                    else:
+                        request_max_tokens = min(args.max_new_tokens, available_context_tokens)
+                        generated_text, completion_tokens = await _async_vllm_generate_text(
+                            engine=engine,
+                            sampling_params_cls=SamplingParams,
+                            prompt_text=row["prompt_text"],
+                            max_tokens=request_max_tokens,
+                            temperature=args.temperature,
+                            top_p=args.top_p,
+                            request_prefix=f"idx{source_idx}",
+                        )
+                        if "call:" in generated_text:
+                            generated_text = await asyncio.to_thread(
+                                extract_and_execute_tools,
+                                generated_text,
+                                args.eval_timeout,
+                            )
+                        generated = build_generation_detail(
+                            row=row,
+                            prediction_text=generated_text,
+                            prompt_token_count=prompt_token_count,
+                            completion_token_count=completion_tokens,
+                            tool_rounds=0,
+                            tool_call_count=len(extract_tool_calls(generated_text)),
+                            stop_reason=(
+                                "context_window_limited"
+                                if completion_tokens >= request_max_tokens
+                                and request_max_tokens < args.max_new_tokens
+                                else "finished"
+                            ),
+                        )
+            except Exception as exc:
+                error_message = f"{type(exc).__name__}: {exc}"
+                print(
+                    "[inference] generation failed for sample; marking failed and continuing "
+                    f"idx={source_idx} db_id={db_id} error={preview_text(error_message, max_chars=240)}"
+                )
                 generated = build_generation_detail(
                     row=row,
-                    prediction_text=generated_text,
+                    prediction_text="",
                     prompt_token_count=prompt_token_count,
-                    completion_token_count=completion_tokens,
+                    completion_token_count=0,
                     tool_rounds=0,
-                    tool_call_count=len(extract_tool_calls(generated_text)),
-                    stop_reason="finished",
+                    tool_call_count=0,
+                    stop_reason="generation_error",
+                    error_message=error_message,
                 )
 
             completed += 1
@@ -1068,6 +1149,7 @@ async def _generate_predictions_with_vllm_async_impl(
                 "tool_rounds": generated.get("tool_rounds", 0),
                 "tool_call_count": generated.get("tool_call_count", 0),
                 "stop_reason": generated.get("stop_reason", ""),
+                "error_message": generated.get("error_message", ""),
             }
         )
 
@@ -1320,6 +1402,46 @@ def build_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def build_generation_stats(
+    detailed_predictions: List[Dict[str, Any]],
+    filtered_rows: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    stop_reason_counts = Counter(
+        str(detail.get("stop_reason") or "unknown") for detail in detailed_predictions
+    )
+    tool_call_count_total = sum(int(detail.get("tool_call_count") or 0) for detail in detailed_predictions)
+    tool_round_count_total = sum(int(detail.get("tool_rounds") or 0) for detail in detailed_predictions)
+    completion_token_total = sum(
+        int(detail.get("completion_token_count") or 0) for detail in detailed_predictions
+    )
+    prompt_token_values = [
+        int(detail.get("prompt_tokens") or 0)
+        for detail in detailed_predictions
+        if detail.get("prompt_tokens") not in {"", None}
+    ]
+    tool_name_counts: Counter[str] = Counter()
+    for detail in detailed_predictions:
+        for call in extract_tool_calls(detail.get("prediction_text", "")):
+            name = call.get("function", {}).get("name", "")
+            if name:
+                tool_name_counts[name] += 1
+
+    total = len(detailed_predictions)
+    return {
+        "generated_examples": total,
+        "filtered_examples": len(filtered_rows),
+        "stop_reason_counts": dict(stop_reason_counts),
+        "tool_call_count_total": tool_call_count_total,
+        "tool_round_count_total": tool_round_count_total,
+        "avg_tool_calls_per_example": tool_call_count_total / max(1, total),
+        "avg_tool_rounds_per_example": tool_round_count_total / max(1, total),
+        "tool_name_counts": dict(tool_name_counts),
+        "completion_token_total": completion_token_total,
+        "avg_completion_tokens": completion_token_total / max(1, total),
+        "max_prompt_tokens": max(prompt_token_values) if prompt_token_values else 0,
+    }
+
+
 def render_markdown_table(title: str, rows: OrderedDict[str, Dict[str, Any]]) -> str:
     lines = [f"## {title}", "", "| Group | Correct | Count | Accuracy |", "| --- | ---: | ---: | ---: |"]
 
@@ -1364,6 +1486,27 @@ def print_summary_tables(summary: Dict[str, Any]) -> None:
         "both_sql_executed",
     ]:
         print(f"{metric_name:30} {execution_stats[metric_name]:>10}")
+
+    generation_stats = summary.get("generation_stats") or {}
+    if generation_stats:
+        print("Generation Stats")
+        print(f"{'metric':30} {'value':>10}")
+        for metric_name in [
+            "generated_examples",
+            "filtered_examples",
+            "tool_call_count_total",
+            "tool_round_count_total",
+            "avg_tool_calls_per_example",
+            "avg_tool_rounds_per_example",
+            "avg_completion_tokens",
+            "max_prompt_tokens",
+        ]:
+            value = generation_stats.get(metric_name, "")
+            if isinstance(value, float):
+                value = f"{value:.3f}"
+            print(f"{metric_name:30} {value:>10}")
+        print(f"stop_reason_counts: {generation_stats.get('stop_reason_counts', {})}")
+        print(f"tool_name_counts: {generation_stats.get('tool_name_counts', {})}")
 
 
 def _format_seconds(value: Any) -> str:
@@ -1413,6 +1556,7 @@ def build_per_example_report_rows(
                 "tool_rounds": detail.get("tool_rounds", ""),
                 "tool_call_count": detail.get("tool_call_count", ""),
                 "tool_order": _tool_order_from_detail(detail) if detail else "",
+                "generation_error": detail.get("error_message", ""),
                 "pred_sql_extracted": result.get("pred_sql_extracted", ""),
                 "pred_executed": result.get("pred_executed", ""),
                 "gold_sql_extracted": result.get("gold_sql_extracted", ""),
@@ -1440,6 +1584,7 @@ def write_per_example_report_csv(report_rows: List[Dict[str, Any]], csv_path: Pa
         "tool_rounds",
         "tool_call_count",
         "tool_order",
+        "generation_error",
         "pred_sql_extracted",
         "pred_executed",
         "gold_sql_extracted",
@@ -1488,6 +1633,28 @@ def render_timing(summary: Dict[str, Any]) -> List[str]:
         f"- generation_seconds: `{_format_seconds(timing.get('generation'))}`",
         f"- evaluation_seconds: `{_format_seconds(timing.get('evaluation'))}`",
         f"- total_seconds: `{_format_seconds(timing.get('total'))}`",
+        "",
+    ]
+
+
+def render_generation_stats(summary: Dict[str, Any]) -> List[str]:
+    stats = summary.get("generation_stats") or {}
+    if not stats:
+        return []
+    return [
+        "## Generation Stats",
+        "",
+        f"- generated_examples: `{stats.get('generated_examples', 0)}`",
+        f"- filtered_examples: `{stats.get('filtered_examples', 0)}`",
+        f"- stop_reason_counts: `{stats.get('stop_reason_counts', {})}`",
+        f"- tool_call_count_total: `{stats.get('tool_call_count_total', 0)}`",
+        f"- tool_round_count_total: `{stats.get('tool_round_count_total', 0)}`",
+        f"- avg_tool_calls_per_example: `{float(stats.get('avg_tool_calls_per_example', 0.0)):.3f}`",
+        f"- avg_tool_rounds_per_example: `{float(stats.get('avg_tool_rounds_per_example', 0.0)):.3f}`",
+        f"- tool_name_counts: `{stats.get('tool_name_counts', {})}`",
+        f"- completion_token_total: `{stats.get('completion_token_total', 0)}`",
+        f"- avg_completion_tokens: `{float(stats.get('avg_completion_tokens', 0.0)):.3f}`",
+        f"- max_prompt_tokens: `{stats.get('max_prompt_tokens', 0)}`",
         "",
     ]
 
@@ -1553,6 +1720,7 @@ def write_summary_markdown(
         "",
         *render_run_config(args, row_count),
         *render_timing(summary),
+        *render_generation_stats(summary),
         render_markdown_table("By Difficulty", summary["by_difficulty"]),
         "",
         render_markdown_table("By Database", summary["by_db"]),
@@ -1591,6 +1759,7 @@ def write_run_report_markdown(
         "",
         *render_run_config(args, row_count),
         *render_timing(summary),
+        *render_generation_stats(summary),
         render_markdown_table("By Difficulty", summary["by_difficulty"]),
         "",
         render_markdown_table("By Database", summary["by_db"]),
@@ -1813,6 +1982,7 @@ def main() -> None:
         "evaluation": evaluation_seconds,
         "total": total_seconds,
     }
+    summary["generation_stats"] = build_generation_stats(detailed_predictions, filtered_rows)
 
     with per_example_eval_path.open("w", encoding="utf-8") as handle:
         for record in per_example_results:
