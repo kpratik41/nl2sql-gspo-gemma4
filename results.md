@@ -78,18 +78,18 @@ The table uses estimated pass@k from `pass_at_k_estimated`; pass@1 is the same a
 
 These are the training reward means from the same logged training steps as the checkpoint rows above. `temp0 acc` is repeated from the inference sweep as an evaluation reference, not as a training reward.
 
-| checkpoint | temp0 acc | format reward | execution reward | result reward | table link reward | column link reward | nonnull reward | train reward |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 0 | `65.12%` | `0.9852` | `0.9644` | `0.7804` | `0.7804` | `0.8459` | `0.9462` | `5.303` |
-| 20 | `65.97%` | `0.9826` | `0.9783` | `0.7769` | `0.8455` | `0.8364` | `0.9401` | `5.36` |
-| 40 | `62.45%` | `0.9366` | `0.934` | `0.6997` | `0.8212` | `0.8103` | `0.9253` | `5.127` |
-| 60 | `66.82%` | `0.9861` | `0.987` | `0.7569` | `0.8455` | `0.8208` | `0.9792` | `5.375` |
-| 80 | `64.93%` | `0.9314` | `0.9288` | `0.7552` | `0.7648` | `0.781` | `0.9253` | `5.087` |
-| 100 | `66.17%` | `0.9748` | `0.9774` | `0.7457` | `0.8438` | `0.8405` | `0.9705` | `5.353` |
-| 120 | `66.36%` | `0.9766` | `0.9922` | `0.7205` | `0.8082` | `0.8571` | `0.9896` | `5.344` |
-| 140 | `65.78%` | `0.9826` | `0.9835` | `0.7743` | `0.855` | `0.8461` | `0.9688` | `5.41` |
-| 160 | `65.71%` | `0.8837` | `0.9844` | `0.7014` | `0.7648` | `0.8093` | `0.9696` | `5.112` |
-| 180 | `64.73%` | `0.9731` | `0.9705` | `0.8273` | `0.8828` | `0.8358` | `0.9592` | `5.449` |
+| checkpoint | temp0 acc | learning rate | format reward | execution reward | result reward | table link reward | column link reward | nonnull reward | train reward |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | `65.12%` | `0` | `0.9852` | `0.9644` | `0.7804` | `0.7804` | `0.8459` | `0.9462` | `5.303` |
+| 20 | `65.97%` | `1.9925e-6` | `0.9826` | `0.9783` | `0.7769` | `0.8455` | `0.8364` | `0.9401` | `5.36` |
+| 40 | `62.45%` | `1.91745e-6` | `0.9366` | `0.934` | `0.6997` | `0.8212` | `0.8103` | `0.9253` | `5.127` |
+| 60 | `66.82%` | `1.8424e-6` | `0.9861` | `0.987` | `0.7569` | `0.8455` | `0.8208` | `0.9792` | `5.375` |
+| 80 | `64.93%` | `1.76735e-6` | `0.9314` | `0.9288` | `0.7552` | `0.7648` | `0.781` | `0.9253` | `5.087` |
+| 100 | `66.17%` | `1.69231e-6` | `0.9748` | `0.9774` | `0.7457` | `0.8438` | `0.8405` | `0.9705` | `5.353` |
+| 120 | `66.36%` | `1.61726e-6` | `0.9766` | `0.9922` | `0.7205` | `0.8082` | `0.8571` | `0.9896` | `5.344` |
+| 140 | `65.78%` | `1.54221e-6` | `0.9826` | `0.9835` | `0.7743` | `0.855` | `0.8461` | `0.9688` | `5.41` |
+| 160 | `65.71%` | `1.46717e-6` | `0.8837` | `0.9844` | `0.7014` | `0.7648` | `0.8093` | `0.9696` | `5.112` |
+| 180 | `64.73%` | `1.39212e-6` | `0.9731` | `0.9705` | `0.8273` | `0.8828` | `0.8358` | `0.9592` | `5.449` |
 
 Entropy drops sharply from checkpoint `0` to `40`, then stays low with small rebounds at `100` and `120`. Accuracy does not improve monotonically: pass@1 bottoms at `40`, peaks at `100`, then gives some back at `120`; pass@16 is actually highest at `0` and remains below the starting point through `120`. This suggests the model is becoming less exploratory while the single-sample candidate accuracy gets a modest, noisy gain, and the marginal benefit from sampling is smaller after training.
 
