@@ -59,7 +59,7 @@ Each output folder contains `passk_summary.json`, `passk_summary.md`, `passk_can
 
 ### Pass@K And Self-Consistency Results
 
-The table uses estimated pass@k from `pass_at_k_estimated`; pass@1 is the same as candidate accuracy. Training entropy and grad norm come from `wandb/run-20260526_044814-gstnzv5s/files/output.log`, using rollout/logged train step `0` as checkpoint `0` as requested; this corresponds to the first trainer progress record, displayed as step 1 in the progress bar.
+The table uses estimated pass@k from `pass_at_k_estimated`; pass@1 is the same as candidate accuracy. Training entropy and grad norm come from saved `trainer_state.json` checkpoint metadata.
 
 | checkpoint | pass@1 | pass@2 | pass@4 | pass@8 | pass@16 | SC option 1 | SC option 2 | temp0 acc | correct candidates | candidate acc | train entropy | grad norm |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -70,6 +70,9 @@ The table uses estimated pass@k from `pass_at_k_estimated`; pass@1 is the same a
 | 80 | `64.85%` | `68.77%` | `71.69%` | `73.84%` | `75.42%` | `67.28%` | `67.28%` | `64.93%` | `15917 / 24544` | `64.85%` | `0.09862` | `0.2043` |
 | 100 | `66.22%` | `70.13%` | `73.11%` | `75.40%` | `77.25%` | `67.80%` | `67.93%` | `66.17%` | `16253 / 24544` | `66.22%` | `0.1573` | `0.02835` |
 | 120 | `65.40%` | `69.55%` | `72.80%` | `75.50%` | `77.84%` | `67.47%` | `67.80%` | `66.36%` | `16052 / 24544` | `65.40%` | `0.1665` | `0.0832` |
+| 140 | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `65.78%` | `n/a` | `n/a` | `0.1798` | `0.03216` |
+| 160 | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `65.71%` | `n/a` | `n/a` | `0.1530` | `0.08619` |
+| 180 | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` |
 
 ### Training Reward Metrics
 
@@ -84,12 +87,15 @@ These are the training reward means from the same logged training steps as the c
 | 80 | `64.93%` | `0.9314` | `0.9288` | `0.7552` | `0.7648` | `0.781` | `0.9253` | `5.087` |
 | 100 | `66.17%` | `0.9748` | `0.9774` | `0.7457` | `0.8438` | `0.8405` | `0.9705` | `5.353` |
 | 120 | `66.36%` | `0.9766` | `0.9922` | `0.7205` | `0.8082` | `0.8571` | `0.9896` | `5.344` |
+| 140 | `65.78%` | `0.9826` | `0.9835` | `0.7743` | `0.855` | `0.8461` | `0.9688` | `5.41` |
+| 160 | `65.71%` | `0.8837` | `0.9844` | `0.7014` | `0.7648` | `0.8093` | `0.9696` | `5.112` |
+| 180 | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` |
 
 Entropy drops sharply from checkpoint `0` to `40`, then stays low with small rebounds at `100` and `120`. Accuracy does not improve monotonically: pass@1 bottoms at `40`, peaks at `100`, then gives some back at `120`; pass@16 is actually highest at `0` and remains below the starting point through `120`. This suggests the model is becoming less exploratory while the single-sample candidate accuracy gets a modest, noisy gain, and the marginal benefit from sampling is smaller after training.
 
 Self-consistency was computed by executing the 16 sampled SQLs for each prompt and clustering them by execution result. Option 1 selects from the largest valid, non-empty execution-result cluster among the 16 sampled generations; ties are broken by the checkpoint's temperature-0 SQL when that SQL is also valid and non-empty. Option 2 adds the checkpoint's temperature-0 SQL as a 17th candidate before clustering, then selects from the largest valid, non-empty cluster. The full checkpoint sweep, `0` through `120` in increments of `20`, was rerun after patching the evaluator to never choose clusters whose SQL fails execution or executes to an empty result set.
 
-Self-consistency artifacts are in `outputs/analysis/maskfix_self_consistency`.
+Rows marked `n/a` do not have corresponding artifacts in this checkout. Pass@k/self-consistency artifacts are not present for checkpoints `140`, `160`, or `180`; temp-0 eval summaries are present for `140` and `160`, but not `180`. Self-consistency artifacts are in `outputs/analysis/maskfix_self_consistency`.
 
 ### Candidate And Tool Stats
 
