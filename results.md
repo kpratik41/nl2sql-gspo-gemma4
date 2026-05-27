@@ -1,5 +1,99 @@
 # Results
 
+## Maskfix Checkpoint Pass@K: Old Dev Schema Tool
+
+These runs evaluate checkpoints from the `maskfix` GRPO training run on `outputs/old-dev-schema-tool.jsonl`. Each checkpoint used 1 GPU, 16 sampled generations per example over all 1534 old-dev samples, and 24544 candidates per checkpoint.
+
+### Run Metadata
+
+| setting | value |
+| --- | --- |
+| training run | `outputs/training/train-6601-schema-bare-tool/gemma-4-E4B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs4_ga8_lr2e-6_e4b_bare_lr2e6_maskfix_20260526_044450` |
+| checkpoints summarized | `0`, `20`, `40`, `60`, `80`, `100`, `120` |
+| input file | `outputs/old-dev-schema-tool.jsonl` |
+| database dir | `/home/ec2-user/nl2sql-gspo-gemma4/databases/dev_databases` |
+| difficulty file | `data/bird_dev_data/raw/dev_20251106.json` |
+| examples | `1534` |
+| generations per example | `16` |
+| candidates per checkpoint | `24544` |
+| temperature | `1.2` |
+| top_p | `1.0` |
+| max_new_tokens | `8000` |
+| max_tool_rounds | `8` |
+| vLLM tensor parallel size | `1` |
+| GPUs per checkpoint run | `1` |
+| vLLM max model length | `45000` from run naming `ctx45k` |
+| vLLM async concurrency | `16` |
+| model path template | training run path plus `checkpoint-{step}` |
+
+Output folders:
+
+| checkpoint | output folder |
+| ---: | --- |
+| 0 | `outputs/passk/maskfix_ckpt-0_old-dev-schema-tool_full1534_temp1p2_tp1_ctx45k` |
+| 20 | `outputs/passk/maskfix_ckpt-20_old-dev-schema-tool_full1534_temp1p2_tp1_ctx45k` |
+| 40 | `outputs/passk/maskfix_ckpt-40_old-dev-schema-tool_full1534_temp1p2_tp1_ctx45k` |
+| 60 | `outputs/passk/maskfix_ckpt-60_old-dev-schema-tool_full1534_temp1p2_tp1_ctx45k` |
+| 80 | `outputs/passk/maskfix_ckpt-80_old-dev-schema-tool_full1534_temp1p2_tp1_ctx45k` |
+| 100 | `outputs/passk/maskfix_ckpt-100_old-dev-schema-tool_full1534_temp1p2_tp1_ctx45k` |
+| 120 | `outputs/passk/maskfix_ckpt-120_old-dev-schema-tool_full1534_temp1p2_tp1_ctx45k` |
+
+Each output folder contains `passk_summary.json`, `passk_summary.md`, `passk_candidates_raw.jsonl`, `passk_candidates.jsonl`, and `passk_per_example.jsonl`.
+
+### Pass@K Results
+
+The table uses estimated pass@k from `pass_at_k_estimated`; pass@1 is the same as candidate accuracy.
+
+| checkpoint | pass@1 | pass@2 | pass@4 | pass@8 | pass@16 | correct candidates | candidate acc |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | `63.64%` | `69.71%` | `73.79%` | `77.05%` | `79.79%` | `15619 / 24544` | `63.64%` |
+| 20 | `63.73%` | `70.13%` | `74.01%` | `76.89%` | `79.27%` | `15641 / 24544` | `63.73%` |
+| 40 | `62.04%` | `67.88%` | `71.52%` | `74.47%` | `76.92%` | `15226 / 24544` | `62.04%` |
+| 60 | `65.41%` | `70.09%` | `73.04%` | `75.25%` | `77.12%` | `16054 / 24544` | `65.41%` |
+| 80 | `64.85%` | `68.77%` | `71.69%` | `73.84%` | `75.42%` | `15917 / 24544` | `64.85%` |
+| 100 | `66.22%` | `70.13%` | `73.11%` | `75.40%` | `77.25%` | `16253 / 24544` | `66.22%` |
+| 120 | `65.40%` | `69.55%` | `72.80%` | `75.50%` | `77.84%` | `16052 / 24544` | `65.40%` |
+
+### Candidate And Tool Stats
+
+`total tool calls` and `avg calls / candidate` come from `passk_summary.json`. Per-tool counts are parsed from `passk_candidates_raw.jsonl`, so they reflect tool-call-looking names in the raw model text.
+
+| checkpoint | examples | candidates | pred executed | pred failed | total tool calls | avg calls / candidate | `sqlite_query` | `sqlite_peek` | `bm25_search_sqlite` | total time |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | `1534` | `24544` | `23370` | `1174` | `31969` | `1.303` | `29991` | `1102` | `868` | `5.44 h` |
+| 20 | `1534` | `24544` | `23385` | `1159` | `35310` | `1.439` | `33036` | `1340` | `913` | `4.18 h` |
+| 40 | `1534` | `24544` | `23130` | `1414` | `96882` | `3.947` | `80820` | `8673` | `7017` | `5.21 h` |
+| 60 | `1534` | `24544` | `23969` | `575` | `72767` | `2.965` | `68081` | `2792` | `1883` | `5.30 h` |
+| 80 | `1534` | `24544` | `23709` | `835` | `70463` | `2.871` | `65198` | `2923` | `2348` | `4.80 h` |
+| 100 | `1534` | `24544` | `24195` | `349` | `60399` | `2.461` | `55448` | `2710` | `2238` | `4.74 h` |
+| 120 | `1534` | `24544` | `24167` | `377` | `63513` | `2.588` | `57918` | `2657` | `2942` | `5.63 h` |
+
+### Approx Runtime
+
+These are approximate wall-clock runtimes from `timing_seconds`, with each checkpoint run using 1 GPU.
+
+| checkpoint | generation | evaluation | total |
+| ---: | ---: | ---: | ---: |
+| 0 | `5.33 h` | `0.11 h` | `5.44 h` |
+| 20 | `4.06 h` | `0.12 h` | `4.18 h` |
+| 40 | `5.10 h` | `0.10 h` | `5.21 h` |
+| 60 | `5.19 h` | `0.11 h` | `5.30 h` |
+| 80 | `4.67 h` | `0.13 h` | `4.80 h` |
+| 100 | `4.60 h` | `0.13 h` | `4.74 h` |
+| 120 | `5.48 h` | `0.15 h` | `5.63 h` |
+
+### Stop Reasons And Token Stats
+
+| checkpoint | finished | max tool rounds | context length exceeded | max new tokens | avg completion tokens | max prompt tokens |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | `24508` | `24` | `9` | `3` | `798.6` | `29692` |
+| 20 | `24483` | `57` | `3` | `1` | `588.8` | `29692` |
+| 40 | `23694` | `837` | `10` | `3` | `696.3` | `29692` |
+| 60 | `24300` | `229` | `3` | `12` | `736.0` | `29692` |
+| 80 | `23798` | `724` | `6` | `16` | `648.8` | `29692` |
+| 100 | `24301` | `227` | `6` | `10` | `658.1` | `29692` |
+| 120 | `24240` | `280` | `4` | `20` | `793.6` | `29692` |
+
 ## Old Dev 1534 Inference Comparison: Gemma 4 31B vs E4B
 
 These are single-generation async vLLM inference runs over all 1534 old-dev samples with `temperature=0.0`, `top_p=1.0`, `max_new_tokens=8000`, `max_tool_rounds=8`, `eval_workers=16`, and `vllm_async_concurrency=16`.
@@ -19,16 +113,90 @@ For `google/gemma-4-31B-it`, the two tool-format runs used tensor parallel size 
 
 ## Old Dev Pass@K Summary
 
-These pass@k runs used `temperature=1.2`, `top_p=1.0`, `num_generations=16`, `max_new_tokens=8000`, `max_tool_rounds=8`, and async vLLM. Full-1534 pass@k summaries were found for `google/gemma-4-E4B-it`. For `google/gemma-4-31B-it`, only the earlier 50-sample tool/bare-tool pass@k runs were present.
+These pass@k runs used `temperature=1.2`, `top_p=1.0`, `num_generations=16`, `max_new_tokens=8000`, `max_tool_rounds=8`, and async vLLM over all 1534 old-dev samples. Each full run generated `24544` candidates.
 
 | model | input | samples | candidate acc / pass@1 | pass@8 | pass@16 | avg tool calls / candidate |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `gemma-4-31B-it` | `old-dev-schema-tool` | `1534` | `68.68%` | `73.73%` | `74.97%` | `2.21` |
+| `gemma-4-31B-it` | `old-dev-schema-bare-tool` | `1534` | `66.17%` | `71.88%` | `73.14%` | `2.51` |
 | `gemma-4-E4B-it` | `old-dev-schema-tool` | `1534` | `63.60%` | `76.84%` | `78.94%` | `1.30` |
 | `gemma-4-E4B-it` | `old-dev-schema-bare-tool` | `1534` | `61.58%` | `74.81%` | `77.51%` | `1.34` |
 | `gemma-4-E4B-it` | `old-dev-schema-consensus` | `1534` | `60.77%` | `76.45%` | `78.68%` | `2.40` |
 | `gemma-4-E4B-it` | `old-dev-schema-bare-consensus` | `1534` | `58.66%` | `73.69%` | `76.34%` | `2.42` |
-| `gemma-4-31B-it` | `old-dev-schema-tool` | `50` | `68.00%` | `71.90%` | `72.00%` | `1.38` |
-| `gemma-4-31B-it` | `old-dev-schema-bare-tool` | `50` | `70.50%` | `75.80%` | `78.00%` | `1.37` |
+
+## Old Dev Tool Pass@K Full Runs: Gemma 4 31B, Async vLLM, Temperature 1.2
+
+These two runs evaluate `google/gemma-4-31B-it` on the full old-dev split with 16 sampled tool-calling generations per example. The generation artifacts were scored by executing predicted SQL against the BIRD dev databases and comparing execution results with the gold SQL.
+
+The first `old-dev-schema-tool` scoring pass initially produced an invalid all-zero summary because the relative `databases/dev_databases` path did not exist from this checkout. A `databases` symlink was added to the real database root, `/home/ec2-user/nl2sql-gspo-gemma4/databases`, and the run was re-scored from `passk_candidates_raw.jsonl` using the existing `scripts/run_passk_bird.py` post-generation scoring functions with `eval_workers=16`. The numbers below are the corrected summaries.
+
+Result folders:
+
+```text
+outputs/passk/gemma4_31b_old-dev-schema-tool_full1534_temp1p2_tp4_ctx45k
+outputs/passk/gemma4_31b_old-dev-schema-bare-tool_full1534_temp1p2_tp4_ctx45k
+```
+
+### Run Configuration
+
+| setting | value |
+| --- | --- |
+| model | `google/gemma-4-31B-it` |
+| input files | `outputs/old-dev-schema-tool.jsonl`, `outputs/old-dev-schema-bare-tool.jsonl` |
+| database dir | `databases/dev_databases` via symlink to `/home/ec2-user/nl2sql-gspo-gemma4/databases/dev_databases` |
+| difficulty file | `data/bird_dev_data/raw/dev_20251106.json` |
+| examples | `1534` |
+| generations per example | `16` |
+| candidates per run | `24544` |
+| temperature | `1.2` |
+| top_p | `1.0` |
+| max_prompt_length | `35000` |
+| max_new_tokens | `8000` |
+| max_tool_rounds | `8` |
+| vLLM tensor parallel size | `4` |
+| vLLM max model length | `45000` |
+| vLLM GPU memory utilization | `0.90` |
+| vLLM async concurrency | `16` |
+| eval workers | `16` |
+
+### Pass@K Results
+
+| input | candidate acc / pass@1 | prefix pass@1 | estimated pass@8 | prefix pass@8 | estimated pass@16 | prefix pass@16 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `old-dev-schema-tool` | `68.68%` | `68.58%` | `73.73%` | `73.60%` | `74.97%` | `74.97%` |
+| `old-dev-schema-bare-tool` | `66.17%` | `66.62%` | `71.88%` | `72.16%` | `73.14%` | `73.14%` |
+
+### Candidate And Execution Stats
+
+| input | correct candidates | pred executed | pred failed | stop: finished | stop: max tool rounds | stop: max new tokens | total time |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `old-dev-schema-tool` | `16858 / 24544` | `24277` | `267` | `24413` | `104` | `27` | `43292.0s` |
+| `old-dev-schema-bare-tool` | `16240 / 24544` | `24190` | `354` | `24349` | `169` | `26` | `42880.7s` |
+
+### Tool Usage
+
+| input | total tool calls | avg calls / candidate | `sqlite_query` | `sqlite_peek` | `bm25_search_sqlite` | other parsed names |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `old-dev-schema-tool` | `54185` | `2.21` | `51979` | `1123` | `1068` | `15` |
+| `old-dev-schema-bare-tool` | `61610` | `2.51` | `57825` | `2432` | `1319` | `35` |
+
+### Tool Round Distribution
+
+| tool rounds / candidate | `old-dev-schema-tool` | `old-dev-schema-bare-tool` |
+| ---: | ---: | ---: |
+| 0 | `6` | `4` |
+| 1 | `1875` | `1637` |
+| 2 | `17712` | `13522` |
+| 3 | `3837` | `6725` |
+| 4 | `726` | `1699` |
+| 5 | `155` | `398` |
+| 6 | `59` | `188` |
+| 7 | `50` | `128` |
+| 8 | `124` | `243` |
+
+Compared with the E4B pass@k runs below, `gemma-4-31B-it` has much higher candidate accuracy, but much smaller gain from additional samples. On `old-dev-schema-tool`, E4B improves from `63.60%` pass@1 to `78.94%` pass@16, a `+15.35 pp` lift; 31B improves from `68.68%` to `74.97%`, a `+6.28 pp` lift. On the bare-tool data, E4B improves by `+15.93 pp`, while 31B improves by `+6.98 pp`.
+
+A simple candidate-diversity check supports this: 31B produced fewer distinct SQL strings per example despite more tool calls. On `old-dev-schema-tool`, 31B averaged `3.37` unique SQL strings per 16 candidates, versus E4B at `6.31`. On `old-dev-schema-bare-tool`, 31B averaged `3.74`, versus E4B at `6.89`. The 31B model also had more examples where all 16 candidates were correct (`880` tool, `813` bare-tool), but more examples with zero correct candidates (`384` tool, `412` bare-tool) than E4B (`323` tool, `345` bare-tool). This pattern is consistent with higher single-sample accuracy but more correlated samples: when 31B knows the answer, it often repeats a correct family; when it misses, extra samples less often escape the same failure mode.
 
 ## Old Dev Gemma 4 E4B Inference: Async vLLM, Temperature 0.0, 1534 Samples
 

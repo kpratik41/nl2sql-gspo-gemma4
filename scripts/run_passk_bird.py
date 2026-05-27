@@ -198,6 +198,7 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
                         tokenizer=tokenizer,
                         row=row_for_sample,
                         max_new_tokens=args.max_new_tokens,
+                        max_model_len=max_model_len,
                         max_tool_rounds=args.max_tool_rounds,
                         eval_timeout=args.eval_timeout,
                         temperature=args.temperature,
