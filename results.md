@@ -42,17 +42,19 @@ Each output folder contains `passk_summary.json`, `passk_summary.md`, `passk_can
 
 ### Pass@K And Self-Consistency Results
 
-The table uses estimated pass@k from `pass_at_k_estimated`; pass@1 is the same as candidate accuracy.
+The table uses estimated pass@k from `pass_at_k_estimated`; pass@1 is the same as candidate accuracy. Training entropy and grad norm come from `wandb/run-20260526_044814-gstnzv5s/files/output.log`, using rollout/logged train step `0` as checkpoint `0` as requested; this corresponds to the first trainer progress record, displayed as step 1 in the progress bar.
 
-| checkpoint | pass@1 | pass@2 | pass@4 | pass@8 | pass@16 | SC option 1 | SC option 2 | temp0 acc | correct candidates | candidate acc |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 0 | `63.64%` | `69.71%` | `73.79%` | `77.05%` | `79.79%` | `67.86%` | `67.99%` | `65.12%` | `15619 / 24544` | `63.64%` |
-| 20 | `63.73%` | `70.13%` | `74.01%` | `76.89%` | `79.27%` | `68.77%` | `68.90%` | `65.97%` | `15641 / 24544` | `63.73%` |
-| 40 | `62.04%` | `67.88%` | `71.52%` | `74.47%` | `76.92%` | `66.30%` | `66.43%` | `62.45%` | `15226 / 24544` | `62.04%` |
-| 60 | `65.41%` | `70.09%` | `73.04%` | `75.25%` | `77.12%` | `68.58%` | `68.77%` | `66.82%` | `16054 / 24544` | `65.41%` |
-| 80 | `64.85%` | `68.77%` | `71.69%` | `73.84%` | `75.42%` | `67.28%` | `67.28%` | `64.93%` | `15917 / 24544` | `64.85%` |
-| 100 | `66.22%` | `70.13%` | `73.11%` | `75.40%` | `77.25%` | `67.80%` | `67.93%` | `66.17%` | `16253 / 24544` | `66.22%` |
-| 120 | `65.40%` | `69.55%` | `72.80%` | `75.50%` | `77.84%` | `67.47%` | `67.80%` | `66.36%` | `16052 / 24544` | `65.40%` |
+| checkpoint | pass@1 | pass@2 | pass@4 | pass@8 | pass@16 | SC option 1 | SC option 2 | temp0 acc | correct candidates | candidate acc | train entropy | grad norm |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | `63.64%` | `69.71%` | `73.79%` | `77.05%` | `79.79%` | `67.86%` | `67.99%` | `65.12%` | `15619 / 24544` | `63.64%` | `0.4026` | `0.005927` |
+| 20 | `63.73%` | `70.13%` | `74.01%` | `76.89%` | `79.27%` | `68.77%` | `68.90%` | `65.97%` | `15641 / 24544` | `63.73%` | `0.2822` | `0.04908` |
+| 40 | `62.04%` | `67.88%` | `71.52%` | `74.47%` | `76.92%` | `66.30%` | `66.43%` | `62.45%` | `15226 / 24544` | `62.04%` | `0.1049` | `0.1286` |
+| 60 | `65.41%` | `70.09%` | `73.04%` | `75.25%` | `77.12%` | `68.58%` | `68.77%` | `66.82%` | `16054 / 24544` | `65.41%` | `0.1079` | `0.1908` |
+| 80 | `64.85%` | `68.77%` | `71.69%` | `73.84%` | `75.42%` | `67.28%` | `67.28%` | `64.93%` | `15917 / 24544` | `64.85%` | `0.09862` | `0.2043` |
+| 100 | `66.22%` | `70.13%` | `73.11%` | `75.40%` | `77.25%` | `67.80%` | `67.93%` | `66.17%` | `16253 / 24544` | `66.22%` | `0.1573` | `0.02835` |
+| 120 | `65.40%` | `69.55%` | `72.80%` | `75.50%` | `77.84%` | `67.47%` | `67.80%` | `66.36%` | `16052 / 24544` | `65.40%` | `0.1665` | `0.0832` |
+
+Entropy drops sharply from checkpoint `0` to `40`, then stays low with small rebounds at `100` and `120`. Accuracy does not improve monotonically: pass@1 bottoms at `40`, peaks at `100`, then gives some back at `120`; pass@16 is actually highest at `0` and remains below the starting point through `120`. This suggests the model is becoming less exploratory while the single-sample candidate accuracy gets a modest, noisy gain, and the marginal benefit from sampling is smaller after training.
 
 Self-consistency was computed by executing the 16 sampled SQLs for each prompt and clustering them by execution result. Option 1 selects from the largest valid, non-empty execution-result cluster among the 16 sampled generations; ties are broken by the checkpoint's temperature-0 SQL when that SQL is also valid and non-empty. Option 2 adds the checkpoint's temperature-0 SQL as a 17th candidate before clustering, then selects from the largest valid, non-empty cluster. The full checkpoint sweep, `0` through `120` in increments of `20`, was rerun after patching the evaluator to never choose clusters whose SQL fails execution or executes to an empty result set.
 
