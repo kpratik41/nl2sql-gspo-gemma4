@@ -40,19 +40,23 @@ Output folders:
 
 Each output folder contains `passk_summary.json`, `passk_summary.md`, `passk_candidates_raw.jsonl`, `passk_candidates.jsonl`, and `passk_per_example.jsonl`.
 
-### Pass@K Results
+### Pass@K And Self-Consistency Results
 
 The table uses estimated pass@k from `pass_at_k_estimated`; pass@1 is the same as candidate accuracy.
 
-| checkpoint | pass@1 | pass@2 | pass@4 | pass@8 | pass@16 | correct candidates | candidate acc |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 0 | `63.64%` | `69.71%` | `73.79%` | `77.05%` | `79.79%` | `15619 / 24544` | `63.64%` |
-| 20 | `63.73%` | `70.13%` | `74.01%` | `76.89%` | `79.27%` | `15641 / 24544` | `63.73%` |
-| 40 | `62.04%` | `67.88%` | `71.52%` | `74.47%` | `76.92%` | `15226 / 24544` | `62.04%` |
-| 60 | `65.41%` | `70.09%` | `73.04%` | `75.25%` | `77.12%` | `16054 / 24544` | `65.41%` |
-| 80 | `64.85%` | `68.77%` | `71.69%` | `73.84%` | `75.42%` | `15917 / 24544` | `64.85%` |
-| 100 | `66.22%` | `70.13%` | `73.11%` | `75.40%` | `77.25%` | `16253 / 24544` | `66.22%` |
-| 120 | `65.40%` | `69.55%` | `72.80%` | `75.50%` | `77.84%` | `16052 / 24544` | `65.40%` |
+| checkpoint | pass@1 | pass@2 | pass@4 | pass@8 | pass@16 | SC option 1 | SC option 2 | temp0 acc | correct candidates | candidate acc |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | `63.64%` | `69.71%` | `73.79%` | `77.05%` | `79.79%` | `67.86%` | `67.99%` | `65.12%` | `15619 / 24544` | `63.64%` |
+| 20 | `63.73%` | `70.13%` | `74.01%` | `76.89%` | `79.27%` | `68.77%` | `68.90%` | `65.97%` | `15641 / 24544` | `63.73%` |
+| 40 | `62.04%` | `67.88%` | `71.52%` | `74.47%` | `76.92%` | `66.30%` | `66.43%` | `62.45%` | `15226 / 24544` | `62.04%` |
+| 60 | `65.41%` | `70.09%` | `73.04%` | `75.25%` | `77.12%` | `68.58%` | `68.77%` | `66.82%` | `16054 / 24544` | `65.41%` |
+| 80 | `64.85%` | `68.77%` | `71.69%` | `73.84%` | `75.42%` | `67.28%` | `67.28%` | `64.93%` | `15917 / 24544` | `64.85%` |
+| 100 | `66.22%` | `70.13%` | `73.11%` | `75.40%` | `77.25%` | `67.80%` | `67.93%` | `66.17%` | `16253 / 24544` | `66.22%` |
+| 120 | `65.40%` | `69.55%` | `72.80%` | `75.50%` | `77.84%` | `67.47%` | `67.80%` | `66.36%` | `16052 / 24544` | `65.40%` |
+
+Self-consistency was computed by executing the 16 sampled SQLs for each prompt and clustering them by execution result. Option 1 selects from the largest valid, non-empty execution-result cluster among the 16 sampled generations; ties are broken by the checkpoint's temperature-0 SQL when that SQL is also valid and non-empty. Option 2 adds the checkpoint's temperature-0 SQL as a 17th candidate before clustering, then selects from the largest valid, non-empty cluster. The full checkpoint sweep, `0` through `120` in increments of `20`, was rerun after patching the evaluator to never choose clusters whose SQL fails execution or executes to an empty result set.
+
+Self-consistency artifacts are in `outputs/analysis/maskfix_self_consistency`.
 
 ### Candidate And Tool Stats
 
