@@ -8,7 +8,24 @@ These runs evaluate checkpoints from the `maskfix` GRPO training run on `outputs
 
 | setting | value |
 | --- | --- |
+| documented date | `2026-05-27` |
 | training run | `outputs/training/train-6601-schema-bare-tool/gemma-4-E4B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs4_ga8_lr2e-6_e4b_bare_lr2e6_maskfix_20260526_044450` |
+| wandb run | `https://wandb.ai/kpratik41/gemma4-31b-bird-gspo/runs/gstnzv5s` |
+| base model | `google/gemma-4-E4B-it` |
+| train file | `outputs/train-6601-schema-bare-tool.jsonl` |
+| eval file during training | `outputs/dev-20251106-schema-bare-tool.jsonl` with `eval_limit=32` |
+| trainer backend | `grpo` with DeepSpeed ZeRO-3 |
+| training GPUs | `6` processes on CUDA devices `0,1,2,3,4,5` |
+| rollout vLLM server | `google/gemma-4-E4B-it`, tensor parallel size `2`, CUDA devices `6,7`, max model length `24576` |
+| train reward weights | `0.2,0.5,2.0,0.5,0.5,0.1,0.1` for format, execution, result, table_linking, column_linking, nonnull, length_penalty |
+| beta | `0.0` |
+| loss / reward scaling | `loss_type=dapo`, `scale_rewards=batch` |
+| clipping epsilons | `epsilon=0.2`, `epsilon_high=0.28` |
+| training batch settings | `per_device_train_batch_size=4`, `gradient_accumulation_steps=8`, `num_generations=16` |
+| training optimizer settings | `learning_rate=2e-6`, `num_train_epochs=1`, `max_steps=-1` |
+| DAPO dynamic sampling | enabled, `dynamic_sampling_reward_name=result_reward`, `dapo_oversample_factor=6`, `dapo_max_rounds=1`, `dynamic_sampling_min_std=1e-6` |
+| tool rollouts | enabled, `max_tool_calling_iterations=8`, `reward_workers=4`, `exec_timeout_s=60` |
+| training generation settings | `temperature=1.2`, `top_p=0.95`, `max_completion_length=8000`, `max_prompt_length=15500` |
 | checkpoints summarized | `0`, `20`, `40`, `60`, `80`, `100`, `120` |
 | input file | `outputs/old-dev-schema-tool.jsonl` |
 | database dir | `/home/ec2-user/nl2sql-gspo-gemma4/databases/dev_databases` |
