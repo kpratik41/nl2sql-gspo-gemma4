@@ -28,6 +28,37 @@ def parse_reward_weights(value: str | None) -> list[float]:
     return weights
 
 
+def parse_beta_schedule(value: str | None) -> list[tuple[int, float]]:
+    if not value:
+        return []
+
+    schedule: list[tuple[int, float]] = []
+    for raw_item in value.split(","):
+        item = raw_item.strip()
+        if not item:
+            continue
+        if ":" not in item:
+            raise argparse.ArgumentTypeError(
+                "Beta schedule entries must be formatted as step:beta, e.g. 0:0.005,40:0.001,80:0"
+            )
+        raw_step, raw_beta = item.split(":", 1)
+        step = int(raw_step.strip())
+        beta = float(raw_beta.strip())
+        if step < 0:
+            raise argparse.ArgumentTypeError("Beta schedule steps must be non-negative")
+        if beta < 0:
+            raise argparse.ArgumentTypeError("Beta schedule betas must be non-negative")
+        schedule.append((step, beta))
+
+    if not schedule:
+        return []
+
+    schedule.sort(key=lambda pair: pair[0])
+    if len({step for step, _ in schedule}) != len(schedule):
+        raise argparse.ArgumentTypeError("Beta schedule steps must be unique")
+    return schedule
+
+
 def weight_reward_functions(
     reward_functions: list[Callable],
     reward_weights: list[float],
@@ -171,6 +202,15 @@ def parse_args(argv=None):
     parser.add_argument("--async_weight_sync_steps", type=int, default=1)
 
     parser.add_argument("--beta", type=float, default=0.0)
+    parser.add_argument(
+        "--beta_schedule",
+        type=parse_beta_schedule,
+        default=[],
+        help=(
+            "Optional comma-separated step:beta schedule, e.g. "
+            "0:0.005,40:0.001,80:0. Overrides static --beta during GRPO training."
+        ),
+    )
     parser.add_argument("--epsilon", type=float, default=0.2)
     parser.add_argument("--epsilon_high", type=float, default=0.28)
     parser.add_argument("--loss_type", type=str, default="dapo")
@@ -455,6 +495,8 @@ def main():
             print("[async_grpo] AsyncGRPOConfig in TRL 1.4.0 has no top_p parameter; ignoring --top_p.")
         if args.save_latest_full_checkpoint:
             print("[async_grpo] save_latest_full_checkpoint is only implemented by DynamicSamplingGRPOTrainer; ignoring it.")
+        if args.beta_schedule:
+            print("[async_grpo] beta_schedule is only implemented by DynamicSamplingGRPOTrainer; ignoring it.")
 
         training_args = AsyncGRPOConfig(
             output_dir=args.output_dir,
@@ -514,11 +556,21 @@ def main():
     from nl2sql_gspo.dynamic_sampling_trainer import DynamicSamplingGRPOTrainer
     from trl import GRPOConfig
 
+    grpo_config_beta = args.beta
+    if args.beta_schedule and grpo_config_beta == 0.0:
+        positive_schedule_betas = [beta for _, beta in args.beta_schedule if beta > 0.0]
+        if positive_schedule_betas:
+            grpo_config_beta = max(positive_schedule_betas)
+            print(
+                f"[beta-schedule] initializing GRPOConfig beta={grpo_config_beta:g} "
+                "so TRL creates a reference model; runtime beta follows --beta_schedule."
+            )
+
     training_args = GRPOConfig(
         output_dir=args.output_dir,
 
         # GRPO/GSPO objective settings
-        beta=args.beta,
+        beta=grpo_config_beta,
         epsilon=args.epsilon,
         epsilon_high=args.epsilon_high,
         loss_type=args.loss_type,
@@ -598,6 +650,8 @@ def main():
         save_latest_full_checkpoint=args.save_latest_full_checkpoint,
         latest_full_checkpoint_dir_name=args.latest_full_checkpoint_dir_name,
         reward_only_eval=args.reward_only_eval,
+        beta_schedule=args.beta_schedule,
+        static_beta_fallback=args.beta,
     )
 
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)

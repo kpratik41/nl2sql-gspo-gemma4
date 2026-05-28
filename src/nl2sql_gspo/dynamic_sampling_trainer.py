@@ -51,7 +51,7 @@ import re
 import shutil
 import time
 from collections import Counter
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from accelerate.utils import DistributedType, broadcast_object_list
 from accelerate.utils.operations import gather_object
@@ -145,6 +145,8 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         save_latest_full_checkpoint: bool = False,
         latest_full_checkpoint_dir_name: str = "latest-full-checkpoint",
         reward_only_eval: bool = False,
+        beta_schedule: Optional[Sequence[Tuple[int, float]]] = None,
+        static_beta_fallback: Optional[float] = None,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -160,6 +162,13 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             latest_full_checkpoint_dir_name.strip() or "latest-full-checkpoint"
         )
         self.reward_only_eval = bool(reward_only_eval)
+        self.beta_schedule = sorted(
+            ((int(step), float(beta)) for step, beta in (beta_schedule or [])),
+            key=lambda item: item[0],
+        )
+        self._static_beta = float(
+            getattr(self, "beta", 0.0) if static_beta_fallback is None else static_beta_fallback
+        )
         self._dyn_pool_indices: List[int] = []
         self._dyn_pool_cursor: int = 0
         self._dyn_pool_pass: int = 0
@@ -219,6 +228,23 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                     f"every={self.debug_attention_mask_every} "
                     f"samples={self.debug_attention_mask_samples}"
                 )
+            if self.beta_schedule:
+                formatted = ",".join(f"{step}:{beta:g}" for step, beta in self.beta_schedule)
+                print(f"[beta-schedule] enabled {formatted} | static_beta_fallback={self._static_beta:g}")
+            else:
+                print(f"[beta-schedule] disabled | static_beta={self._static_beta:g}")
+
+    def _current_beta(self) -> float:
+        if not self.beta_schedule:
+            return self._static_beta
+
+        step = int(getattr(self.state, "global_step", 0))
+        current = self._static_beta
+        for start_step, beta in self.beta_schedule:
+            if step < start_step:
+                break
+            current = beta
+        return float(current)
 
     def _wait_for_everyone(self) -> None:
         wait_for_everyone = getattr(self.accelerator, "wait_for_everyone", None)
@@ -1556,7 +1582,8 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                     nanmax(self.accelerator.gather(max_is)).item()
                 )
 
-            if self.beta != 0.0:
+            current_beta = self._current_beta()
+            if current_beta != 0.0:
                 if self.ref_model is not None:
                     ref_per_token_logps, _ = self._get_per_token_logps_and_entropies(
                         self.ref_model,
@@ -1569,7 +1596,15 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                     )
                 else:
                     model = self.accelerator.unwrap_model(self.model)
-                    with use_adapter(model, adapter_name="ref" if "ref" in model.peft_config else None):
+                    peft_config = getattr(model, "peft_config", None)
+                    if peft_config is None:
+                        raise RuntimeError(
+                            "Current beta is nonzero, but no ref_model was initialized and the model "
+                            "does not expose PEFT adapters. If using --beta_schedule with a static "
+                            "--beta of 0, initialize GRPOConfig with a positive beta so TRL builds the "
+                            "reference model."
+                        )
+                    with use_adapter(model, adapter_name="ref" if "ref" in peft_config else None):
                         ref_per_token_logps, _ = self._get_per_token_logps_and_entropies(
                             self.model,
                             prompt_completion_ids,
@@ -1754,12 +1789,19 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         if return_outputs:
             raise ValueError("The GRPOTrainer does not support returning outputs")
-        return super().compute_loss(
-            model,
-            inputs,
-            return_outputs=return_outputs,
-            num_items_in_batch=num_items_in_batch,
-        )
+        original_beta = self.beta
+        current_beta = self._current_beta()
+        self.beta = current_beta
+        try:
+            self._metrics["train"]["beta"].append(current_beta)
+            return super().compute_loss(
+                model,
+                inputs,
+                return_outputs=return_outputs,
+                num_items_in_batch=num_items_in_batch,
+            )
+        finally:
+            self.beta = original_beta
 
     def _oversample_and_filter(self, inputs, target_local_groups: int):
         """Single-shot oversample by ``dapo_oversample_factor``.

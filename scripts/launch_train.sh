@@ -172,6 +172,8 @@ EVAL_STEPS="${EVAL_STEPS:-10}"
 LOGGING_STEPS="${LOGGING_STEPS:-1}"
 LOG_COMPLETIONS="${LOG_COMPLETIONS:-0}"
 NUM_COMPLETIONS_TO_PRINT="${NUM_COMPLETIONS_TO_PRINT:-0}"
+BETA="${BETA:-0.0}"
+BETA_SCHEDULE="${BETA_SCHEDULE:-}"
 EVAL_MODE="${EVAL_MODE:-reward_only}"
 REWARD_ONLY_EVAL="${REWARD_ONLY_EVAL:-}"
 if [[ -z "${REWARD_ONLY_EVAL}" ]]; then
@@ -196,6 +198,11 @@ if [[ "${LOG_COMPLETIONS}" == "1" ]]; then
   LOG_COMPLETIONS_ARGS=(--log_completions --num_completions_to_print "${NUM_COMPLETIONS_TO_PRINT}")
 else
   LOG_COMPLETIONS_ARGS=()
+fi
+if [[ -n "${BETA_SCHEDULE}" ]]; then
+  BETA_SCHEDULE_ARGS=(--beta_schedule "${BETA_SCHEDULE}")
+else
+  BETA_SCHEDULE_ARGS=()
 fi
 if [[ "${REWARD_ONLY_EVAL}" == "1" ]]; then
   REWARD_ONLY_EVAL_ARGS=(--reward_only_eval)
@@ -327,7 +334,8 @@ fi
   "${LOG_COMPLETIONS_ARGS[@]}" \
   --loss_type dapo \
   --scale_rewards batch \
-  --beta 0.0 \
+  --beta "${BETA}" \
+  "${BETA_SCHEDULE_ARGS[@]}" \
   --epsilon 0.2 \
   --epsilon_high 0.28 \
   "${DAPO_ARGS[@]}" \
