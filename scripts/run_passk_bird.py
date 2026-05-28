@@ -49,6 +49,41 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--diff_json_path", type=str, default="data/bird_dev_data/raw/dev_20251106.json")
     parser.add_argument("--output_dir", type=str, default="outputs/bird_dev_tool_passk16_vllm_async_temp08")
     parser.add_argument("--limit", type=int, default=-1, help="Number of examples to run; -1 means all examples.")
+    parser.add_argument(
+        "--shard_index",
+        type=int,
+        default=0,
+        help="Zero-based shard index. Use with --num_shards to split examples across processes/GPUs.",
+    )
+    parser.add_argument(
+        "--num_shards",
+        type=int,
+        default=1,
+        help="Total number of example shards. Each shard keeps original source_idx values.",
+    )
+    parser.add_argument(
+        "--no_append_shard_to_output_dir",
+        action="store_true",
+        help=(
+            "Do not append shard-XXXXX-of-YYYYY to output_dir when num_shards > 1. "
+            "Only use this when each shard already has a unique output_dir."
+        ),
+    )
+    parser.add_argument(
+        "--merge_shard_dirs",
+        nargs="*",
+        default=None,
+        help=(
+            "Merge already-evaluated shard output directories instead of running generation. "
+            "Each directory must contain passk_candidates.jsonl."
+        ),
+    )
+    parser.add_argument(
+        "--merge_output_dir",
+        type=str,
+        default=None,
+        help="Directory for merged pass@k outputs. Defaults to --output_dir.",
+    )
     parser.add_argument("--num_generations", type=int, default=16, help="Candidates sampled per example.")
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top_p", type=float, default=1.0)
@@ -62,13 +97,37 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vllm_max_model_len", type=int, default=None)
     parser.add_argument("--vllm_async_concurrency", type=int, default=16)
     parser.add_argument("--overwrite", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.num_shards < 1:
+        parser.error("--num_shards must be >= 1")
+    if args.shard_index < 0 or args.shard_index >= args.num_shards:
+        parser.error("--shard_index must satisfy 0 <= shard_index < num_shards")
+    return args
 
 
 def ensure_output_dir(path: Path, overwrite: bool) -> None:
     if path.exists() and any(path.iterdir()) and not overwrite:
         raise FileExistsError(f"Output directory already exists and is non-empty: {path}. Use --overwrite.")
     path.mkdir(parents=True, exist_ok=True)
+
+
+def resolve_output_dir(args: argparse.Namespace) -> Path:
+    output_dir = Path(args.output_dir)
+    if args.num_shards > 1 and not args.no_append_shard_to_output_dir:
+        shard_name = f"shard-{args.shard_index:05d}-of-{args.num_shards:05d}"
+        if output_dir.name != shard_name:
+            output_dir = output_dir / shard_name
+    return output_dir
+
+
+def shard_rows(rows: List[Dict[str, Any]], shard_index: int, num_shards: int) -> List[Dict[str, Any]]:
+    if num_shards == 1:
+        return rows
+    return [
+        row
+        for row in rows
+        if int(row.get("source_idx", -1)) % num_shards == shard_index
+    ]
 
 
 def pass_at_k(n: int, c: int, k: int) -> float:
@@ -93,6 +152,11 @@ def write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def read_jsonl(path: Path) -> List[Dict[str, Any]]:
+    with path.open("r", encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
 
 
 def load_difficulty_by_idx(diff_json_path: str, limit: int) -> Dict[int, str]:
@@ -366,6 +430,8 @@ def build_passk_summary(
             "database_dir": args.database_dir,
             "diff_json_path": args.diff_json_path,
             "limit": args.limit,
+            "shard_index": args.shard_index,
+            "num_shards": args.num_shards,
             "num_generations": args.num_generations,
             "temperature": args.temperature,
             "top_p": args.top_p,
@@ -464,9 +530,78 @@ def write_markdown_summary(path: Path, summary: Dict[str, Any]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def merge_shard_outputs(args: argparse.Namespace) -> None:
+    shard_dirs = [Path(path) for path in args.merge_shard_dirs or []]
+    if not shard_dirs:
+        raise ValueError("--merge_shard_dirs requires at least one shard output directory")
+
+    output_dir = Path(args.merge_output_dir or args.output_dir)
+    ensure_output_dir(output_dir, args.overwrite)
+
+    rows = load_rows(args.input_file, args.limit)
+    difficulty_by_idx = load_difficulty_by_idx(args.diff_json_path, args.limit)
+    for row in rows:
+        row["difficulty"] = difficulty_by_idx.get(int(row.get("source_idx", -1)), "unknown")
+
+    evaluated: List[Dict[str, Any]] = []
+    seen = set()
+    duplicate_keys = []
+    for shard_dir in shard_dirs:
+        candidates_path = shard_dir / "passk_candidates.jsonl"
+        if not candidates_path.exists():
+            raise FileNotFoundError(candidates_path)
+        shard_rows = read_jsonl(candidates_path)
+        print(f"[passk] merging {len(shard_rows)} candidates from {shard_dir}")
+        for candidate in shard_rows:
+            key = (int(candidate["idx"]), int(candidate["sample_id"]))
+            if key in seen:
+                duplicate_keys.append(key)
+            seen.add(key)
+            evaluated.append(candidate)
+
+    if duplicate_keys:
+        preview = ", ".join(f"{idx}:{sample}" for idx, sample in duplicate_keys[:10])
+        raise ValueError(f"Duplicate shard candidates found for idx:sample keys: {preview}")
+
+    evaluated.sort(key=lambda row: (int(row["idx"]), int(row["sample_id"])))
+    timing = {
+        "generation": sum(
+            float(json.loads((shard_dir / "passk_summary.json").read_text()).get("timing_seconds", {}).get("generation", 0.0))
+            for shard_dir in shard_dirs
+            if (shard_dir / "passk_summary.json").exists()
+        ),
+        "evaluation": sum(
+            float(json.loads((shard_dir / "passk_summary.json").read_text()).get("timing_seconds", {}).get("evaluation", 0.0))
+            for shard_dir in shard_dirs
+            if (shard_dir / "passk_summary.json").exists()
+        ),
+        "total": sum(
+            float(json.loads((shard_dir / "passk_summary.json").read_text()).get("timing_seconds", {}).get("total", 0.0))
+            for shard_dir in shard_dirs
+            if (shard_dir / "passk_summary.json").exists()
+        ),
+    }
+
+    summary = build_passk_summary(evaluated, rows, args, timing)
+    summary["merged_shards"] = [str(path) for path in shard_dirs]
+
+    write_jsonl(output_dir / "passk_candidates.jsonl", evaluated)
+    write_jsonl(output_dir / "passk_per_example.jsonl", summary["per_example"])
+    with (output_dir / "passk_summary.json").open("w", encoding="utf-8") as handle:
+        json.dump({key: value for key, value in summary.items() if key != "per_example"}, handle, indent=2)
+    write_markdown_summary(output_dir / "passk_summary.md", summary)
+    print(f"[passk] merged {len(evaluated)} candidates into {output_dir}")
+    print(f"[passk] wrote {output_dir / 'passk_summary.md'}")
+
+
 def main() -> None:
     args = parse_args()
-    output_dir = Path(args.output_dir)
+    if args.merge_shard_dirs is not None:
+        merge_shard_outputs(args)
+        return
+
+    output_dir = resolve_output_dir(args)
+    args.output_dir = str(output_dir)
     ensure_output_dir(output_dir, args.overwrite)
     configure_tool_env(args.database_dir)
 
@@ -475,6 +610,7 @@ def main() -> None:
     print(f"[passk] input={args.input_file}")
     print(f"[passk] output_dir={output_dir}")
     print(f"[passk] limit={args.limit} num_generations={args.num_generations} temperature={args.temperature}")
+    print(f"[passk] shard_index={args.shard_index} num_shards={args.num_shards}")
     print(f"[passk] CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<unset>')}")
 
     start_time = time.time()
@@ -482,6 +618,17 @@ def main() -> None:
     difficulty_by_idx = load_difficulty_by_idx(args.diff_json_path, args.limit)
     for row in rows:
         row["difficulty"] = difficulty_by_idx.get(int(row.get("source_idx", -1)), "unknown")
+    original_row_count = len(rows)
+    rows = shard_rows(rows, args.shard_index, args.num_shards)
+    if not rows:
+        raise ValueError(
+            f"Shard {args.shard_index}/{args.num_shards} received no rows from "
+            f"{original_row_count} loaded examples."
+        )
+    print(
+        f"[passk] shard rows={len(rows)}/{original_row_count} "
+        f"first_idx={rows[0].get('source_idx')} last_idx={rows[-1].get('source_idx')}"
+    )
 
     generation_start = time.time()
     candidates = asyncio.run(generate_candidates(args, rows))
