@@ -271,7 +271,13 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         self._wait_for_everyone()
 
     def _save_checkpoint(self, model, trial) -> None:
-        super()._save_checkpoint(model, trial)
+        original_save_only_model = self.args.save_only_model
+        if self.save_latest_full_checkpoint:
+            self.args.save_only_model = True
+        try:
+            super()._save_checkpoint(model, trial)
+        finally:
+            self.args.save_only_model = original_save_only_model
         if self.save_latest_full_checkpoint:
             self._save_latest_restart_checkpoint(trial=trial)
 
