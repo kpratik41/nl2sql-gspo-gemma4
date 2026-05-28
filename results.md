@@ -97,6 +97,67 @@ Self-consistency was computed by executing the 16 sampled SQLs for each prompt a
 
 Rows marked `n/a` do not have corresponding artifacts in this checkout. Pass@k/self-consistency artifacts are not present for checkpoints `140`, `160`, or `180`. Temp-0 eval summaries are present directly under checkpoints `140` and `160`; checkpoint `180` stores its temp-0 eval summary under `checkpoint-180/temp0_old-dev-schema-tool_full1534_vllm_async_tp1_ctx45k_p35k_o8k`. Self-consistency artifacts are in `outputs/analysis/maskfix_self_consistency`.
 
+## Beta Schedule With Basic DAPO - 2026-05-28
+
+Current E4B bare-tool GRPO/DAPO run with in-process beta scheduling. The run uses `beta=0.005` for steps `0-39`, `beta=0.001` for steps `40-79`, and `beta=0` from step `80` onward. DAPO uses `dynamic_sampling_reward_name=result_reward`, `dapo_oversample_factor=6`, `dapo_max_rounds=1`, `num_generations=16`, `per_device_train_batch_size=4`, `gradient_accumulation_steps=8`, and `learning_rate=1e-6`.
+
+| setting | value |
+| --- | --- |
+| training run | `outputs/training/train-6601-schema-bare-tool/gemma-4-E4B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs4_ga8_lr1e-6_inprocess_beta0p005_s0-40_beta0p001_s40-80_beta0_s80plus_olddev32_refinitfix_nods_20260527_204225` |
+| wandb run | `https://wandb.ai/kpratik41/gemma4-31b-bird-gspo/runs/kyh0txsp` |
+| train file | `outputs/train-6601-schema-bare-tool.jsonl` |
+| eval file during training | `outputs/old-dev-schema-bare-tool.jsonl` with `eval_limit=32`, `eval_steps=350` |
+| reward weights | `0.2,0.5,2.0,0.5,0.5,0.1,0.1` for format, execution, result, table_linking, column_linking, nonnull, length_penalty |
+| checkpoint rows | `0`, `10`, `20`, ..., `160`; rows after `90` are pending in the current log |
+
+### Pass@K And Self-Consistency Results
+
+Pass@k and self-consistency columns are left empty until the full sampled evaluation artifacts are produced. Training entropy and grad norm come from the live training log at the corresponding logged step.
+
+| checkpoint | pass@1 | pass@2 | pass@4 | pass@8 | pass@16 | SC option 1 | SC option 2 | temp0 acc | correct candidates | candidate acc | train entropy | grad norm |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 |  |  |  |  |  |  |  |  |  |  | `0.4057` | `0.009281` |
+| 10 |  |  |  |  |  |  |  |  |  |  | `0.4092` | `0.00278` |
+| 20 |  |  |  |  |  |  |  |  |  |  | `0.3964` | `0.005587` |
+| 30 |  |  |  |  |  |  |  |  |  |  | `0.3584` | `0.01246` |
+| 40 |  |  |  |  |  |  |  |  |  |  | `0.2766` | `0.01284` |
+| 50 |  |  |  |  |  |  |  |  |  |  | `0.3696` | `0.01213` |
+| 60 |  |  |  |  |  |  |  |  |  |  | `0.1876` | `0.0144` |
+| 70 |  |  |  |  |  |  |  |  |  |  | `0.4164` | `0.005197` |
+| 80 |  |  |  |  |  |  |  |  |  |  | `0.3325` | `0.00641` |
+| 90 |  |  |  |  |  |  |  |  |  |  | `0.2575` | `0.04708` |
+| 100 |  |  |  |  |  |  |  |  |  |  | `pending` | `pending` |
+| 110 |  |  |  |  |  |  |  |  |  |  | `pending` | `pending` |
+| 120 |  |  |  |  |  |  |  |  |  |  | `pending` | `pending` |
+| 130 |  |  |  |  |  |  |  |  |  |  | `pending` | `pending` |
+| 140 |  |  |  |  |  |  |  |  |  |  | `pending` | `pending` |
+| 150 |  |  |  |  |  |  |  |  |  |  | `pending` | `pending` |
+| 160 |  |  |  |  |  |  |  |  |  |  | `pending` | `pending` |
+
+### Training Reward Metrics
+
+Training reward means come from the live training log. `temp0 acc` is included when the full 1534-sample checkpoint eval is already available.
+
+| checkpoint | temp0 acc | learning rate | beta | format reward | execution reward | result reward | table link reward | column link reward | nonnull reward | train reward |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | `65.12%` | `5.882e-08` | `0.005` | `0.9852` | `0.9748` | `0.7812` | `0.7656` | `0.841` | `0.9592` | `5.307` |
+| 10 | `65.45%` | `6.471e-07` | `0.005` | `0.9948` | `0.9957` | `0.6944` | `0.7925` | `0.8326` | `0.9818` | `5.292` |
+| 20 | `65.65%` | `9.925e-07` | `0.005` | `0.9913` | `0.974` | `0.763` | `0.8698` | `0.8354` | `0.9479` | `5.381` |
+| 30 | `65.91%` | `9.737e-07` | `0.005` | `0.9826` | `0.9818` | `0.7899` | `0.8394` | `0.8605` | `0.9583` | `5.413` |
+| 40 | `65.25%` | `9.55e-07` | `0.001` | `0.9948` | `0.9965` | `0.7292` | `0.8446` | `0.8563` | `0.9835` | `5.405` |
+| 50 | `65.91%` | `9.362e-07` | `0.001` | `0.9774` | `0.9757` | `0.7257` | `0.8368` | `0.8501` | `0.9679` | `5.334` |
+| 60 | `65.58%` | `9.174e-07` | `0.001` | `0.9922` | `0.9844` | `0.75` | `0.8177` | `0.822` | `0.9705` | `5.337` |
+| 70 | `66.82%` | `8.987e-07` | `0.001` | `0.9809` | `0.9688` | `0.7083` | `0.8325` | `0.8226` | `0.9531` | `5.266` |
+| 80 | `65.45%` | `8.799e-07` | `0` | `0.9757` | `0.9792` | `0.7405` | `0.7951` | `0.8306` | `0.9627` | `5.284` |
+| 90 |  | `8.612e-07` | `0` | `0.9896` | `0.9896` | `0.7101` | `0.7951` | `0.7774` | `0.98` | `5.242` |
+| 100 | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` |
+| 110 | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` |
+| 120 | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` |
+| 130 | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` |
+| 140 | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` |
+| 150 | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` |
+| 160 | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` |
+
 ### Candidate And Tool Stats
 
 `total tool calls` and `avg calls / candidate` come from `passk_summary.json`. Per-tool counts are parsed from `passk_candidates_raw.jsonl`, so they reflect tool-call-looking names in the raw model text.
@@ -692,3 +753,60 @@ The non-OK per-example statuses are dominated by predicted-SQL issues rather tha
 ### Recommendation
 
 Use `checkpoint-90` as the preferred checkpoint from this sweep. It has the best overall EX accuracy, strong run health, low max-tool-round count, and relatively low tool-call volume. The final checkpoint, `checkpoint-150`, is not better than checkpoint 0 or checkpoint 90 on overall EX accuracy.
+
+## AER Hard-Prompt Entropy Run - 2026-05-28
+
+Current E4B bare-tool GRPO/DAPO run with Adaptive Entropy Regularization (AER) enabled. This experiment follows the AER idea from [Revisiting Entropy Regularization: Adaptive Coefficient Unlocks Its Potential for LLM Reinforcement Learning](https://arxiv.org/abs/2510.10959): allocate stronger entropy pressure to harder prompt groups, anchor target entropy to the initial entropy, and update a global entropy coefficient dynamically.
+
+| setting | value |
+| --- | --- |
+| training run | `outputs/training/train-6601-schema-bare-tool/gemma-4-E4B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs4_ga8_lr1e-6_20260527_234257` |
+| wandb run | `https://wandb.ai/kpratik41/gemma4-31b-bird-gspo/runs/owdhmcij` |
+| train log | `logs/train_20260527_234257.log` |
+| train file | `outputs/train-6601-schema-bare-tool.jsonl` |
+| eval mode | reward-only eval, `prompt_groups=6`, `generations=96` |
+| model | `google/gemma-4-E4B-it` |
+| loss / reward scaling | `loss_type=dapo`, `scale_rewards=batch`, `beta=0` |
+| DAPO dynamic sampling | enabled, `dynamic_sampling_reward_name=result_reward`, `dapo_oversample_factor=4`, `dapo_max_rounds=1`, `num_generations=16` |
+| AER settings | `rho=0.25`, `tau=0.7`, `eta=0.001`, `alpha_init=0.005`, `alpha_max=0.1`, `reward=result_reward` |
+| AER implementation | sequence-level entropy bonus on hard groups; coefficient is `alpha * max(rho - group_accuracy, 0) / rho` |
+| target entropy | `initial_entropy=0.362`, `target_entropy=0.2534` |
+| checkpoint rows | `0`, `10`, ..., `100`; rows after `0` use the completed metric row at that global step |
+
+AER adds a negative sequence-entropy term for hard prompt groups, so minimizing the loss encourages less overconfident next-token distributions on those groups. In this run, measured entropy stayed above the anchored target, so the controller decayed `alpha` to `0` by checkpoint `10`. Entropy-only padding groups were nonzero only at early train steps `1-3` with a total of `4` groups, so most of this run is effectively DAPO with the new mask plumbing rather than active entropy pressure.
+
+### Pass@K And Self-Consistency Results
+
+Pass@k and self-consistency columns are left empty until sampled checkpoint evaluation artifacts are produced. Training entropy and grad norm come from the live training log; checkpoint `100` uses the metric row emitted when the run reached `100/550`.
+
+| checkpoint | pass@1 | pass@2 | pass@4 | pass@8 | pass@16 | SC option 1 | SC option 2 | temp0 acc | correct candidates | candidate acc | train entropy | grad norm |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 |  |  |  |  |  |  |  |  |  |  | `0.3661` | `0.04755` |
+| 10 |  |  |  |  |  |  |  |  |  |  | `0.3692` | `0.03323` |
+| 20 |  |  |  |  |  |  |  |  |  |  | `0.3659` | `0.001106` |
+| 30 |  |  |  |  |  |  |  |  |  |  | `0.4527` | `0.002961` |
+| 40 |  |  |  |  |  |  |  |  |  |  | `0.3889` | `0.003334` |
+| 50 |  |  |  |  |  |  |  |  |  |  | `0.4218` | `0.005332` |
+| 60 |  |  |  |  |  |  |  |  |  |  | `0.4064` | `0.003557` |
+| 70 |  |  |  |  |  |  |  |  |  |  | `0.4022` | `0.001301` |
+| 80 |  |  |  |  |  |  |  |  |  |  | `0.388` | `0.01097` |
+| 90 |  |  |  |  |  |  |  |  |  |  | `0.4538` | `0.007232` |
+| 100 |  |  |  |  |  |  |  |  |  |  | `0.5388` | `0.00192` |
+
+### Training Reward Metrics
+
+Training reward means come from the completed metric rows in the same log. `aer alpha`, `aer loss`, and `entropy-only groups` are included to show whether AER was actively applying entropy pressure at each checkpoint row.
+
+| checkpoint | learning rate | format reward | execution reward | result reward | table link reward | column link reward | nonnull reward | train reward | aer alpha | aer loss | entropy-only groups |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | `0` | `0.9883` | `0.9609` | `0.7305` | `0.7318` | `0.8509` | `0.9466` | `5.209` | `0.004` | `0` | `0` |
+| 10 | `8.127e-07` | `0.9909` | `0.9805` | `0.6875` | `0.7695` | `0.8154` | `0.9661` | `5.21` | `0` | `0` | `0` |
+| 20 | `9.962e-07` | `0.9805` | `0.9674` | `0.6641` | `0.7526` | `0.7772` | `0.9648` | `5.106` | `0` | `0` | `0` |
+| 30 | `9.775e-07` | `0.9922` | `0.9714` | `0.7057` | `0.8112` | `0.8775` | `0.9492` | `5.307` | `0` | `0` | `0` |
+| 40 | `9.587e-07` | `0.987` | `0.9635` | `0.7669` | `0.7773` | `0.8583` | `0.9544` | `5.308` | `0` | `0` | `0` |
+| 50 | `9.4e-07` | `0.9935` | `0.9857` | `0.6901` | `0.8906` | `0.8316` | `0.9831` | `5.375` | `0` | `0` | `0` |
+| 60 | `9.212e-07` | `0.9922` | `0.9779` | `0.6367` | `0.7005` | `0.7508` | `0.9674` | `5.026` | `0` | `0` | `0` |
+| 70 | `9.024e-07` | `0.9857` | `0.9857` | `0.75` | `0.8802` | `0.8173` | `0.9818` | `5.401` | `0` | `0` | `0` |
+| 80 | `8.837e-07` | `0.9935` | `0.987` | `0.7591` | `0.8633` | `0.849` | `0.9831` | `5.435` | `0` | `0` | `0` |
+| 90 | `8.649e-07` | `0.9974` | `0.9974` | `0.7682` | `0.793` | `0.8376` | `0.9896` | `5.383` | `0` | `0` | `0` |
+| 100 | `8.462e-07` | `0.9896` | `0.9648` | `0.6576` | `0.8945` | `0.8483` | `0.9375` | `5.292` | `0` | `0` | `0` |

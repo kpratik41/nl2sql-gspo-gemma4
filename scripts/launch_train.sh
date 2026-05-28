@@ -233,6 +233,17 @@ DAPO_OVERSAMPLE_FACTOR="${DAPO_OVERSAMPLE_FACTOR:-12}"  # K: single-shot oversam
 DYNAMIC_SAMPLING_REWARD_NAME="${DYNAMIC_SAMPLING_REWARD_NAME:-result_reward}"
 MASK_TRUNCATED_COMPLETIONS="${MASK_TRUNCATED_COMPLETIONS:-0}"
 
+# Adaptive Entropy Regularization (AER). Disabled by default; set
+# ENABLE_AER=1 to add entropy pressure to hard prompt groups while keeping
+# DAPO policy-gradient filtering.
+ENABLE_AER="${ENABLE_AER:-0}"
+AER_REWARD_NAME="${AER_REWARD_NAME:-result_reward}"
+AER_RHO="${AER_RHO:-0.0}"
+AER_TAU="${AER_TAU:-0.4}"
+AER_ETA="${AER_ETA:-0.005}"
+AER_ALPHA_INIT="${AER_ALPHA_INIT:-0.0}"
+AER_ALPHA_MAX="${AER_ALPHA_MAX:-0.1}"
+
 # Reward shaping.
 EXEC_TIMEOUT_S="${EXEC_TIMEOUT_S:-60}"
 REWARD_WORKERS="${REWARD_WORKERS:-4}"
@@ -279,6 +290,17 @@ if [[ -n "${STEPS_PER_GENERATION:-}" ]]; then
 fi
 if [[ -n "${DYNAMIC_SAMPLING_REWARD_NAME:-}" ]]; then
   DAPO_ARGS+=(--dynamic_sampling_reward_name "${DYNAMIC_SAMPLING_REWARD_NAME}")
+fi
+if [[ "${ENABLE_AER}" == "1" ]]; then
+  DAPO_ARGS+=(
+    --enable_aer
+    --aer_reward_name "${AER_REWARD_NAME}"
+    --aer_rho "${AER_RHO}"
+    --aer_tau "${AER_TAU}"
+    --aer_eta "${AER_ETA}"
+    --aer_alpha_init "${AER_ALPHA_INIT}"
+    --aer_alpha_max "${AER_ALPHA_MAX}"
+  )
 fi
 if [[ "${ENABLE_TOOL_ROLLOUTS}" == "1" ]]; then
   DAPO_ARGS+=(--enable_tool_rollouts)

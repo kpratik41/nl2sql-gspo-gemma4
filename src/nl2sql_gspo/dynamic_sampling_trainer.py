@@ -22,8 +22,9 @@ High-level loop inside ``_generate_and_score_completions`` (training only):
 5. Repeat until every rank has filled its kept buffer or
    ``--dapo_max_rounds`` is exhausted.
 6. If the budget is exhausted before some ranks fill, pad the buffer
-   with zero-masked groups so the output shape matches what TRL's
-   training loop expects, and the loss contributes 0 from those slots.
+   with policy-masked groups so the output shape matches what TRL's
+   training loop expects, and the policy-gradient loss contributes 0
+   from those slots. Completion tokens remain visible to attention.
 7. Concatenate all kept chunks → final output dict. Re-compute
    ``num_items_in_batch`` from the final effective completion mask
    (completion padding/truncation mask AND tool-observation mask; DAPO loss
@@ -60,7 +61,15 @@ from trl.chat_template_utils import parse_response
 from trl.data_utils import apply_chat_template, is_conversational, prepare_multimodal_messages
 from trl.models.utils import disable_gradient_checkpointing
 from trl import GRPOTrainer
-from trl.trainer.utils import nanmax, nanmin, nanstd, pad, use_adapter
+from trl.trainer.utils import (
+    entropy_from_logits,
+    nanmax,
+    nanmin,
+    nanstd,
+    pad,
+    selective_log_softmax,
+    use_adapter,
+)
 from transformers.trainer import clear_device_cache, is_sagemaker_mp_enabled
 from transformers.training_args import OptimizerNames
 
@@ -142,6 +151,13 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         dapo_max_rounds: int = 6,
         dapo_oversample_factor: int = 1,
         dynamic_sampling_reward_name: Optional[str] = None,
+        enable_aer: bool = False,
+        aer_reward_name: str = "result_reward",
+        aer_rho: float = 0.0,
+        aer_tau: float = 0.4,
+        aer_eta: float = 0.005,
+        aer_alpha_init: float = 0.0,
+        aer_alpha_max: float = 0.1,
         save_latest_full_checkpoint: bool = False,
         latest_full_checkpoint_dir_name: str = "latest-full-checkpoint",
         reward_only_eval: bool = False,
@@ -155,6 +171,16 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         self.dynamic_sampling_reward_name = (
             dynamic_sampling_reward_name if dynamic_sampling_reward_name else None
         )
+        self.enable_aer = bool(enable_aer)
+        self.aer_reward_name = (aer_reward_name or "result_reward").strip()
+        self.aer_rho = min(1.0, max(0.0, float(aer_rho)))
+        self.aer_tau = max(0.0, float(aer_tau))
+        self.aer_eta = max(0.0, float(aer_eta))
+        self.aer_alpha = max(0.0, float(aer_alpha_init))
+        self.aer_alpha_max = max(self.aer_alpha, float(aer_alpha_max))
+        self.aer_initial_entropy: Optional[float] = None
+        self.aer_target_entropy: Optional[float] = None
+        self._aer_last_alpha_update_step: Optional[int] = None
         self.save_latest_full_checkpoint = bool(save_latest_full_checkpoint)
         self.latest_full_checkpoint_dir_name = (
             latest_full_checkpoint_dir_name.strip() or "latest-full-checkpoint"
@@ -189,6 +215,18 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                     )
                 self.dynamic_sampling_reward_name = None
 
+        self._aer_reward_idx: Optional[int] = None
+        if self.enable_aer:
+            try:
+                self._aer_reward_idx = list(self.reward_func_names).index(self.aer_reward_name)
+            except ValueError:
+                if getattr(self.accelerator, "is_main_process", True):
+                    print(
+                        f"[aer] WARNING: reward name '{self.aer_reward_name}' not found in "
+                        f"{list(self.reward_func_names)}; disabling AER."
+                    )
+                self.enable_aer = False
+
         if getattr(self.accelerator, "is_main_process", True):
             criterion = (
                 f"single reward '{self.dynamic_sampling_reward_name}'"
@@ -206,6 +244,12 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 f"criterion={criterion} | num_generations={self.num_generations} | "
                 f"max_tool_calling_iterations={self.max_tool_calling_iterations}"
             )
+            if self.enable_aer:
+                print(
+                    f"[aer] enabled=True | reward={self.aer_reward_name} | rho={self.aer_rho} | "
+                    f"tau={self.aer_tau} | eta={self.aer_eta} | "
+                    f"alpha_init={self.aer_alpha} | alpha_max={self.aer_alpha_max}"
+                )
             if self.debug_rollouts:
                 print(
                     "[rollout-debug] enabled "
@@ -320,13 +364,54 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
 
     @staticmethod
     def _effective_completion_mask(output: Dict[str, Any]) -> torch.Tensor:
-        """Mask of policy-action tokens: completion padding/truncation AND tool observations."""
+        """Mask of policy-action tokens used by DAPO's loss normalizer."""
 
-        completion_mask = output["completion_mask"]
+        completion_mask = output.get("policy_mask")
+        if not isinstance(completion_mask, torch.Tensor):
+            completion_mask = output["completion_mask"]
         tool_mask = output.get("tool_mask")
         if isinstance(tool_mask, torch.Tensor):
             return completion_mask * tool_mask
         return completion_mask
+
+    @staticmethod
+    def _effective_entropy_mask(inputs: Dict[str, Any]) -> torch.Tensor:
+        """Mask for entropy regularization.
+
+        This keeps normal generated tokens active even for entropy-only DAPO
+        groups, while still excluding padding, truncation-masked completions,
+        and tool responses from the entropy loss. Tool responses remain visible
+        in attention through ``completion_mask``.
+        """
+
+        completion_mask = inputs["completion_mask"]
+        tool_mask = inputs.get("tool_mask")
+        mask = completion_mask * tool_mask if isinstance(tool_mask, torch.Tensor) else completion_mask
+        aer_entropy_mask = inputs.get("aer_entropy_mask")
+        if isinstance(aer_entropy_mask, torch.Tensor):
+            mask = mask * aer_entropy_mask
+        return mask
+
+    @staticmethod
+    def _base_entropy_mask(inputs: Dict[str, Any]) -> torch.Tensor:
+        """Completion/tool mask used for entropy measurement and controller state."""
+
+        completion_mask = inputs["completion_mask"]
+        tool_mask = inputs.get("tool_mask")
+        return completion_mask * tool_mask if isinstance(tool_mask, torch.Tensor) else completion_mask
+
+    def _has_aer_entropy_loss(self, inputs: Dict[str, Any]) -> bool:
+        if not getattr(self, "enable_aer", False):
+            return False
+        coeffs = inputs.get("aer_coefficients")
+        if not isinstance(coeffs, torch.Tensor) or coeffs.numel() == 0:
+            return False
+        if not bool((coeffs > 0).any().item()):
+            return False
+        try:
+            return bool((self._effective_entropy_mask(inputs) > 0).any().item())
+        except Exception:
+            return True
 
     def _global_sum_int(self, value: int) -> int:
         if not (torch.distributed.is_available() and torch.distributed.is_initialized()):
@@ -972,6 +1057,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             return
 
         completion_mask = output.get("completion_mask")
+        policy_mask = output.get("policy_mask")
         tool_mask = output.get("tool_mask")
         completion_ids = output.get("completion_ids")
         prompt_ids = output.get("prompt_ids")
@@ -986,7 +1072,8 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         prompt_width = prompt_ids.size(1)
         completion_attention = attention_mask[:, prompt_width:]
         tool_positions = tool_mask == 0
-        effective_loss_mask = completion_mask * tool_mask
+        policy_loss_mask = policy_mask if isinstance(policy_mask, torch.Tensor) else completion_mask
+        effective_loss_mask = policy_loss_mask * tool_mask
         loss_masked_positions = effective_loss_mask == 0
         attention_zero_positions = completion_attention == 0
         tool_token_count = int(tool_positions.long().sum().item())
@@ -1132,6 +1219,41 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             int((group_max <= 1e-6).long().sum().item()),
         )
 
+    def _aer_group_stats(
+        self, round_out: Dict[str, torch.Tensor]
+    ) -> tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+        """Return per-group AER coefficients and group accuracies for this rank."""
+
+        if (
+            not getattr(self, "enable_aer", False)
+            or getattr(self, "_aer_reward_idx", None) is None
+            or self._last_rewards_per_func is None
+        ):
+            return None, None
+        advantages = round_out["advantages"]
+        local_n = advantages.shape[0]
+        num_generations = self.num_generations
+        if local_n == 0 or local_n % num_generations != 0:
+            return None, None
+
+        rpf = self._last_rewards_per_func
+        start = self.accelerator.process_index * local_n
+        local_rewards = rpf[start : start + local_n, self._aer_reward_idx]
+        grouped = local_rewards.view(-1, num_generations).float().to(advantages.device)
+        group_accuracy = torch.nan_to_num(grouped, nan=0.0).mean(dim=1).clamp(0.0, 1.0)
+
+        rho = float(self.aer_rho)
+        alpha = float(self.aer_alpha)
+        if rho <= 0.0:
+            coeffs = torch.where(
+                group_accuracy <= 1e-8,
+                torch.full_like(group_accuracy, alpha),
+                torch.zeros_like(group_accuracy),
+            )
+        else:
+            coeffs = alpha * torch.clamp(rho - group_accuracy, min=0.0) / (rho + 1e-8)
+        return coeffs, group_accuracy
+
     # ------------------------------------------------------------------ #
     # Group extraction / concat
     # ------------------------------------------------------------------ #
@@ -1140,6 +1262,8 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         round_out: Dict[str, Any],
         group_idx: List[int],
         zero_mask: bool = False,
+        aer_coefficients: Optional[torch.Tensor] = None,
+        aer_group_accuracy: Optional[torch.Tensor] = None,
     ) -> Optional[Dict[str, Any]]:
         if not group_idx:
             return None
@@ -1157,8 +1281,27 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             else:
                 chunk[k] = v  # scalars / non-row tensors carry through
 
-        if zero_mask and "completion_mask" in chunk and isinstance(chunk["completion_mask"], torch.Tensor):
-            chunk["completion_mask"] = torch.zeros_like(chunk["completion_mask"])
+        if "completion_mask" in chunk and isinstance(chunk["completion_mask"], torch.Tensor):
+            if zero_mask:
+                # Preserve completion_mask for attention. DAPO padding should
+                # remove policy-gradient loss, not hide generated tokens from
+                # the forward pass or from optional entropy regularization.
+                chunk["policy_mask"] = torch.zeros_like(chunk["completion_mask"])
+            elif "policy_mask" not in chunk:
+                chunk["policy_mask"] = chunk["completion_mask"].clone()
+
+        if aer_coefficients is not None:
+            group_rows = torch.tensor(group_idx, dtype=torch.long, device=aer_coefficients.device)
+            row_coeffs = aer_coefficients[group_rows].repeat_interleave(num_generations)
+            chunk["aer_coefficients"] = row_coeffs.to(round_out["advantages"].device)
+            if "completion_mask" in chunk and isinstance(chunk["completion_mask"], torch.Tensor):
+                active = (row_coeffs > 0).to(chunk["completion_mask"].device, dtype=chunk["completion_mask"].dtype)
+                chunk["aer_entropy_mask"] = chunk["completion_mask"] * active.unsqueeze(1)
+
+        if aer_group_accuracy is not None:
+            group_rows = torch.tensor(group_idx, dtype=torch.long, device=aer_group_accuracy.device)
+            row_acc = aer_group_accuracy[group_rows].repeat_interleave(num_generations)
+            chunk["aer_group_accuracy"] = row_acc.to(round_out["advantages"].device)
         return chunk
 
     def _concat_chunks(self, chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -1506,7 +1649,8 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
 
             if self.use_vllm and self.vllm_importance_sampling_correction:
                 sampling_per_token_logps = output["sampling_per_token_logps"]
-                mask = completion_mask if "tool_mask" not in output else completion_mask * output["tool_mask"]
+                policy_mask = output.get("policy_mask", completion_mask)
+                mask = policy_mask if "tool_mask" not in output else policy_mask * output["tool_mask"]
                 per_token_logps_diff = (old_per_token_logps - sampling_per_token_logps) * mask
                 sequence_level_is = self.vllm_importance_sampling_mode in ["sequence_mask", "sequence_truncate"]
                 if sequence_level_is:
@@ -1716,7 +1860,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 self.optimizer.train()
 
             inputs = self._prepare_inputs(inputs)
-            if self._all_skip_policy_loss(inputs.get("_skip_policy_loss", False)):
+            if self._all_skip_policy_loss(inputs.get("_skip_policy_loss", False)) and not self._has_aer_entropy_loss(inputs):
                 return torch.zeros((), device=self.accelerator.device)
 
             if is_sagemaker_mp_enabled():
@@ -1761,6 +1905,303 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             num_items_in_batch=num_items_in_batch,
         )
 
+    def _get_per_token_logps_and_entropies_for_loss(
+        self,
+        model,
+        input_ids,
+        attention_mask,
+        logits_to_keep,
+        batch_size=None,
+        compute_entropy=False,
+        entropy_with_grad=False,
+        pixel_values=None,
+        image_grid_thw=None,
+        num_images=None,
+        pixel_attention_mask=None,
+        image_sizes=None,
+        token_type_ids=None,
+        mm_token_type_ids=None,
+        image_position_ids=None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Compute completion log-probs and optionally differentiable entropy."""
+
+        batch_size = batch_size or input_ids.size(0)
+        all_logps = []
+        all_entropies = []
+        for start in range(0, input_ids.size(0), batch_size):
+            input_ids_batch = input_ids[start : start + batch_size]
+            attention_mask_batch = attention_mask[start : start + batch_size]
+
+            model_inputs = {"input_ids": input_ids_batch, "attention_mask": attention_mask_batch}
+            if image_grid_thw is not None and pixel_values is not None:
+                rows_per_image = image_grid_thw.prod(dim=-1)
+                rows_per_sample = torch.split(rows_per_image, num_images)
+                rows_per_sample = torch.stack([s.sum() for s in rows_per_sample])
+                cum_rows = torch.cat([torch.tensor([0], device=rows_per_sample.device), rows_per_sample.cumsum(0)])
+                row_start, row_end = cum_rows[start].item(), cum_rows[start + batch_size].item()
+                model_inputs["pixel_values"] = pixel_values[row_start:row_end]
+                cum_imgs = torch.tensor([0] + num_images).cumsum(0)
+                img_start, img_end = cum_imgs[start], cum_imgs[start + batch_size]
+                model_inputs["image_grid_thw"] = image_grid_thw[img_start:img_end]
+            elif image_position_ids is not None and pixel_values is not None:
+                cum_imgs = torch.tensor([0] + num_images).cumsum(0)
+                img_start, img_end = cum_imgs[start], cum_imgs[start + batch_size]
+                model_inputs["pixel_values"] = pixel_values[img_start:img_end]
+                model_inputs["image_position_ids"] = image_position_ids[img_start:img_end]
+            elif pixel_values is not None:
+                model_inputs["pixel_values"] = pixel_values[start : start + batch_size]
+            if pixel_attention_mask is not None:
+                model_inputs["pixel_attention_mask"] = pixel_attention_mask[start : start + batch_size]
+            if image_sizes is not None:
+                model_inputs["image_sizes"] = image_sizes[start : start + batch_size]
+            if token_type_ids is not None:
+                model_inputs["token_type_ids"] = token_type_ids[start : start + batch_size]
+            if mm_token_type_ids is not None:
+                model_inputs["mm_token_type_ids"] = mm_token_type_ids[start : start + batch_size]
+            if "logits_to_keep" in self.model_kwarg_keys:
+                model_inputs["logits_to_keep"] = logits_to_keep + 1
+            model_inputs["use_cache"] = False
+
+            logits = model(**model_inputs).logits
+            logits = logits[:, :-1, :]
+            logits = logits[:, -logits_to_keep:, :]
+            logits.div_(self.temperature)
+            completion_ids = input_ids_batch[:, -logits_to_keep:]
+            all_logps.append(selective_log_softmax(logits, completion_ids))
+
+            if compute_entropy:
+                if entropy_with_grad:
+                    entropies = entropy_from_logits(logits)
+                else:
+                    with torch.no_grad():
+                        entropies = entropy_from_logits(logits)
+                all_entropies.append(entropies)
+
+        logps = torch.cat(all_logps, dim=0)
+        entropies = torch.cat(all_entropies, dim=0) if compute_entropy else None
+        return logps, entropies
+
+    def _update_aer_controller(self, mean_entropy: torch.Tensor, mode: str) -> None:
+        if not self.enable_aer or mode != "train":
+            return
+        current_entropy = float(self.accelerator.gather(mean_entropy.detach()).nanmean().item())
+        if self.aer_initial_entropy is None:
+            self.aer_initial_entropy = current_entropy
+            self.aer_target_entropy = self.aer_tau * current_entropy
+
+        target = float(self.aer_target_entropy or 0.0)
+        step = int(getattr(self.state, "global_step", 0))
+        if self._aer_last_alpha_update_step != step:
+            if current_entropy < target:
+                self.aer_alpha = min(self.aer_alpha_max, self.aer_alpha + self.aer_eta)
+            elif current_entropy > target:
+                self.aer_alpha = max(0.0, self.aer_alpha - self.aer_eta)
+            self._aer_last_alpha_update_step = step
+
+        self._metrics[mode]["aer/alpha"].append(float(self.aer_alpha))
+        self._metrics[mode]["aer/current_entropy"].append(current_entropy)
+        self._metrics[mode]["aer/initial_entropy"].append(float(self.aer_initial_entropy or 0.0))
+        self._metrics[mode]["aer/target_entropy"].append(target)
+
+    def _compute_loss(self, model, inputs):
+        prompt_ids, prompt_mask = inputs["prompt_ids"], inputs["prompt_mask"]
+        completion_ids, completion_mask = inputs["completion_ids"], inputs["completion_mask"]
+        input_ids = torch.cat([prompt_ids, completion_ids], dim=1)
+        attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)
+        logits_to_keep = completion_ids.size(1)
+
+        policy_mask = inputs.get("policy_mask", completion_mask)
+        tool_mask = inputs.get("tool_mask")
+        mask = policy_mask * tool_mask if isinstance(tool_mask, torch.Tensor) else policy_mask
+        entropy_measurement_mask = self._base_entropy_mask(inputs)
+        entropy_loss_mask = self._effective_entropy_mask(inputs)
+
+        per_token_logps, entropies = self._get_per_token_logps_and_entropies_for_loss(
+            model,
+            input_ids,
+            attention_mask,
+            logits_to_keep,
+            compute_entropy=True,
+            entropy_with_grad=bool(self.enable_aer and model.training),
+            pixel_values=inputs.get("pixel_values"),
+            image_grid_thw=inputs.get("image_grid_thw"),
+            num_images=inputs.get("num_images"),
+            pixel_attention_mask=inputs.get("pixel_attention_mask"),
+            image_sizes=inputs.get("image_sizes"),
+            token_type_ids=inputs.get("token_type_ids"),
+            mm_token_type_ids=inputs.get("mm_token_type_ids"),
+            image_position_ids=inputs.get("image_position_ids"),
+        )
+
+        if self.top_entropy_quantile < 1.0:
+            entropy_mask = self.get_high_entropy_mask(entropies.detach(), mask, 1 - self.top_entropy_quantile)
+        else:
+            entropy_mask = None
+
+        advantages = inputs["advantages"]
+        if advantages.dim() == 1:
+            advantages = advantages.unsqueeze(1)
+
+        old_per_token_logps = inputs.get("old_per_token_logps")
+        old_per_token_logps = per_token_logps.detach() if old_per_token_logps is None else old_per_token_logps
+
+        if self.off_policy_mask_threshold is not None:
+            sampling_per_token_logps = inputs.get("sampling_per_token_logps", old_per_token_logps)
+            off_policy_mask = self.get_off_policy_mask(
+                advantages=advantages,
+                per_token_logps=per_token_logps,
+                sampling_per_token_logps=sampling_per_token_logps,
+                mask=mask,
+                off_policy_threshold=self.off_policy_mask_threshold,
+            )
+
+        log_ratio = per_token_logps - old_per_token_logps
+        if self.importance_sampling_level == "token":
+            log_importance_weights = log_ratio
+        elif self.importance_sampling_level == "sequence":
+            log_importance_weights = (log_ratio * mask).sum(-1) / mask.sum(-1).clamp(min=1.0)
+            log_importance_weights = log_importance_weights.unsqueeze(-1)
+        else:
+            raise ValueError(
+                f"Unknown importance_sampling_level: {self.importance_sampling_level}. "
+                "Possible values are 'token' and 'sequence'."
+            )
+
+        coef_1 = torch.exp(log_importance_weights)
+
+        if self.beta != 0.0:
+            ref_per_token_logps = inputs["ref_per_token_logps"]
+            per_token_kl = (
+                torch.exp(ref_per_token_logps - per_token_logps) - (ref_per_token_logps - per_token_logps) - 1
+            )
+            if self.args.use_bias_correction_kl:
+                per_token_kl = per_token_kl * coef_1
+
+        if self.loss_type == "cispo":
+            clamped_ratios = torch.clamp(coef_1, max=self.epsilon_high).detach()
+            per_token_loss = -clamped_ratios * advantages * per_token_logps
+        elif self.loss_type in ["grpo", "bnpo", "dr_grpo", "dapo", "luspo"]:
+            coef_2 = torch.clamp(coef_1, 1 - self.epsilon_low, 1 + self.epsilon_high)
+            if self.args.delta is not None:
+                coef_1 = torch.clamp(coef_1, max=self.args.delta)
+            per_token_loss1 = coef_1 * advantages
+            per_token_loss2 = coef_2 * advantages
+            per_token_loss = -torch.min(per_token_loss1, per_token_loss2)
+        elif self.loss_type == "sapo":
+            temperatures = torch.where(advantages > 0, self.args.sapo_temperature_pos, self.args.sapo_temperature_neg)
+            soft_coef_1 = torch.sigmoid(temperatures * (coef_1 - 1)) * 4 / temperatures
+            per_token_loss = -soft_coef_1 * advantages
+        elif self.loss_type == "vespo":
+            phi_seq = self.get_gamma_weights(
+                advantages=advantages,
+                log_ratio_per_token=log_ratio,
+                mask=mask,
+                importance_sampling_ratio=inputs.get("importance_sampling_ratio"),
+                k_pos=self.args.vespo_k_pos,
+                lambda_pos=self.args.vespo_lambda_pos,
+                k_neg=self.args.vespo_k_neg,
+                lambda_neg=self.args.vespo_lambda_neg,
+            )
+            per_token_loss = -phi_seq * advantages * per_token_logps
+        else:
+            raise ValueError(f"Unknown loss type: {self.loss_type}")
+
+        if self.off_policy_mask_threshold is not None:
+            per_token_loss = per_token_loss * off_policy_mask
+        if entropy_mask is not None:
+            per_token_loss = per_token_loss * entropy_mask
+        if self.use_vllm and self.vllm_importance_sampling_correction and self.loss_type != "vespo":
+            per_token_loss = per_token_loss * inputs["importance_sampling_ratio"]
+        if self.beta != 0.0:
+            per_token_loss = per_token_loss + self.beta * per_token_kl
+
+        mode = "train" if self.model.training else "eval"
+        if self.loss_type in ["grpo", "sapo"]:
+            loss = ((per_token_loss * mask).sum(-1) / mask.sum(-1).clamp(min=1.0)).mean()
+            normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0
+            loss = loss / normalizer
+        elif self.loss_type == "bnpo":
+            loss = (per_token_loss * mask).sum() / mask.sum().clamp(min=1.0)
+            normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0
+            loss = loss / normalizer
+        elif self.loss_type == "dr_grpo":
+            loss = (per_token_loss * mask).sum() / (per_token_loss.size(0) * self.max_completion_length)
+            normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0
+            loss = loss / normalizer
+        elif self.loss_type in ["cispo", "dapo", "vespo"]:
+            normalizer = inputs["num_items_in_batch"] / self.accelerator.num_processes
+            loss = (per_token_loss * mask).sum() / normalizer.clamp(min=1.0)
+        elif self.loss_type == "luspo":
+            loss = (per_token_loss * mask.sum(1, keepdim=True)).mean()
+            normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0
+            loss = loss / normalizer
+        else:
+            raise ValueError(f"Unknown loss type: {self.loss_type}")
+
+        completion_token_count = entropy_measurement_mask.sum().clamp(min=1.0)
+
+        def masked_batch_mean(x):
+            if x.shape[1] == 1:
+                return x.mean()
+            return (x * entropy_measurement_mask).sum() / completion_token_count
+
+        mean_entropy = masked_batch_mean(entropies)
+        self._metrics[mode]["entropy"].append(self.accelerator.gather(mean_entropy.detach()).nanmean().item())
+        self._update_aer_controller(mean_entropy, mode)
+
+        aer_loss = None
+        if self.enable_aer and mode == "train":
+            aer_coeffs = inputs.get("aer_coefficients")
+            if isinstance(aer_coeffs, torch.Tensor) and aer_coeffs.numel() > 0:
+                aer_coeffs = aer_coeffs.to(entropies.device, dtype=entropies.dtype)
+                row_mask = (entropy_loss_mask > 0).any(dim=1)
+                seq_entropy = (entropies * entropy_loss_mask).sum(dim=1) / entropy_loss_mask.sum(dim=1).clamp(min=1.0)
+                active = row_mask & (aer_coeffs > 0)
+                if bool(active.any().item()):
+                    aer_loss = -(aer_coeffs[active] * seq_entropy[active]).mean()
+                    loss = loss + aer_loss
+                    self._metrics[mode]["aer/loss"].append(float(aer_loss.detach().item()))
+                    self._metrics[mode]["aer/active_fraction"].append(float(active.float().mean().item()))
+                    self._metrics[mode]["aer/mean_coeff"].append(float(aer_coeffs[active].detach().mean().item()))
+                    if "aer_group_accuracy" in inputs:
+                        acc = inputs["aer_group_accuracy"].to(entropies.device)
+                        self._metrics[mode]["aer/active_group_accuracy"].append(float(acc[active].detach().mean().item()))
+                else:
+                    self._metrics[mode]["aer/loss"].append(0.0)
+                    self._metrics[mode]["aer/active_fraction"].append(0.0)
+
+        if self.beta != 0.0:
+            mean_kl = (per_token_kl * mask).sum() / mask.sum().clamp(min=1.0)
+            self._metrics[mode]["kl"].append(self.accelerator.gather(mean_kl.detach()).nanmean().item())
+
+        if self.loss_type in ["grpo", "bnpo", "dr_grpo", "dapo", "luspo"]:
+            is_low_clipped = (coef_1 < 1 - self.epsilon_low) & (advantages < 0)
+            is_high_clipped = (coef_1 > 1 + self.epsilon_high) & (advantages > 0)
+            is_region_clipped = is_low_clipped | is_high_clipped
+            policy_token_count = mask.sum().clamp(min=1.0)
+            low_clip = (is_low_clipped.float() * mask).sum() / policy_token_count
+            high_clip = (is_high_clipped.float() * mask).sum() / policy_token_count
+            clip_ratio = (is_region_clipped.float() * mask).sum() / policy_token_count
+            gathered_low_clip = self.accelerator.gather(low_clip.detach())
+            self._metrics[mode]["clip_ratio/low_mean"].append(gathered_low_clip.nanmean().item())
+            self._metrics[mode]["clip_ratio/low_min"].append(nanmin(gathered_low_clip).item())
+            gathered_high_clip = self.accelerator.gather(high_clip.detach())
+            self._metrics[mode]["clip_ratio/high_mean"].append(gathered_high_clip.nanmean().item())
+            self._metrics[mode]["clip_ratio/high_max"].append(nanmax(gathered_high_clip).item())
+            gathered_clip_ratio = self.accelerator.gather(clip_ratio.detach())
+            self._metrics[mode]["clip_ratio/region_mean"].append(gathered_clip_ratio.nanmean().item())
+        elif self.loss_type == "cispo":
+            policy_token_count = mask.sum().clamp(min=1.0)
+            is_cispo_clipped = (coef_1 > self.epsilon_high) & (advantages > 0)
+            cispo_clip_ratio = (is_cispo_clipped.float() * mask).sum() / policy_token_count
+            gathered_cispo_clip_ratio = self.accelerator.gather(cispo_clip_ratio.detach())
+            self._metrics[mode]["cispo_clip_ratio"].append(gathered_cispo_clip_ratio.nanmean().item())
+        elif self.loss_type == "vespo":
+            gathered_phi_seq = self.accelerator.gather(phi_seq.detach())
+            self._metrics[mode]["vespo/phi_seq_mean"].append(gathered_phi_seq.nanmean().item())
+
+        return loss
+
     def _oversample_and_filter(self, inputs, target_local_groups: int):
         """Single-shot oversample by ``dapo_oversample_factor``.
 
@@ -1769,7 +2210,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         queue, consumed from the tail in all-rank blocks. Per rank we keep
         the first ``target_local_groups`` heterogeneous groups; if fewer
         are found we fill the remainder with random
-        non-het groups whose ``completion_mask`` is zeroed (no gradient
+        non-het groups whose policy mask is zeroed (no policy-gradient
         contribution). Same shape on every rank by construction.
         """
         device = self.accelerator.device
@@ -1785,6 +2226,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         round_out = self._generate_and_score_candidates_no_policy_logps(big_inputs)
 
         het = self._het_mask_for_round(round_out)  # [local_groups]
+        aer_coeffs, aer_acc = self._aer_group_stats(round_out)
         local_groups = int(het.numel())
         het_idx = torch.nonzero(het).flatten().tolist()
         nonhet_idx = torch.nonzero(~het).flatten().tolist()
@@ -1792,27 +2234,68 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         take_het = het_idx[:target_local_groups]
         chunks: List[Dict[str, Any]] = []
         if take_het:
-            ck = self._extract_groups(round_out, take_het)
+            ck = self._extract_groups(
+                round_out,
+                take_het,
+                aer_coefficients=aer_coeffs,
+                aer_group_accuracy=aer_acc,
+            )
             if ck is not None:
                 chunks.append(ck)
 
         deficit = target_local_groups - len(take_het)
         n_padded_local = 0
+        n_entropy_only_local = 0
+        used_pad_idx: set[int] = set()
+        if deficit > 0 and aer_coeffs is not None:
+            hard_nonhet_idx = [
+                idx
+                for idx in nonhet_idx
+                if float(aer_coeffs[idx].detach().item()) > 0.0
+            ][:deficit]
+            if hard_nonhet_idx:
+                ck = self._extract_groups(
+                    round_out,
+                    hard_nonhet_idx,
+                    zero_mask=True,
+                    aer_coefficients=aer_coeffs,
+                    aer_group_accuracy=aer_acc,
+                )
+                if ck is not None:
+                    chunks.append(ck)
+                    n_padded_local += len(hard_nonhet_idx)
+                    n_entropy_only_local += len(hard_nonhet_idx)
+                    used_pad_idx.update(hard_nonhet_idx)
+                deficit -= len(hard_nonhet_idx)
+
         if deficit > 0 and nonhet_idx:
             step = int(getattr(self.state, "global_step", 0))
             rng = random.Random(step * 1000 + int(self.accelerator.process_index) + 53)
-            take_pad = rng.sample(nonhet_idx, min(deficit, len(nonhet_idx)))
-            ck = self._extract_groups(round_out, take_pad, zero_mask=True)
+            available_nonhet = [idx for idx in nonhet_idx if idx not in used_pad_idx]
+            take_pad = rng.sample(available_nonhet, min(deficit, len(available_nonhet)))
+            ck = self._extract_groups(
+                round_out,
+                take_pad,
+                zero_mask=True,
+                aer_coefficients=aer_coeffs,
+                aer_group_accuracy=aer_acc,
+            )
             if ck is not None:
                 chunks.append(ck)
-                n_padded_local = len(take_pad)
+                n_padded_local += len(take_pad)
             deficit -= len(take_pad)
 
         # Pathological: not enough groups generated at all (dataset tiny).
         # Fall back to first available group with zero-mask.
         if deficit > 0 and local_groups > 0:
             fallback_idx = list(range(min(deficit, local_groups)))
-            ck = self._extract_groups(round_out, fallback_idx, zero_mask=True)
+            ck = self._extract_groups(
+                round_out,
+                fallback_idx,
+                zero_mask=True,
+                aer_coefficients=aer_coeffs,
+                aer_group_accuracy=aer_acc,
+            )
             if ck is not None:
                 chunks.append(ck)
                 n_padded_local += len(fallback_idx)
@@ -1845,7 +2328,15 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             local_all_correct = reward_bucket_counts[0] if reward_bucket_counts is not None else -1
             local_all_wrong = reward_bucket_counts[1] if reward_bucket_counts is not None else -1
             counters = torch.tensor(
-                [local_groups, local_candidate_het, len(take_het), n_padded_local, local_all_correct, local_all_wrong],
+                [
+                    local_groups,
+                    local_candidate_het,
+                    len(take_het),
+                    n_padded_local,
+                    local_all_correct,
+                    local_all_wrong,
+                    n_entropy_only_local,
+                ],
                 device=device,
                 dtype=torch.long,
             )
@@ -1856,6 +2347,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             g_padded = int(gathered[:, 3].sum().item())
             g_all_correct = None if (gathered[:, 4] < 0).any() else int(gathered[:, 4].sum().item())
             g_all_wrong = None if (gathered[:, 5] < 0).any() else int(gathered[:, 5].sum().item())
+            g_entropy_only = int(gathered[:, 6].sum().item())
         except Exception:
             g_attempted = local_groups
             g_candidate_het = int(het.long().sum().item())
@@ -1864,6 +2356,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             reward_bucket_counts = self._group_reward_bucket_counts(round_out)
             g_all_correct = reward_bucket_counts[0] if reward_bucket_counts is not None else None
             g_all_wrong = reward_bucket_counts[1] if reward_bucket_counts is not None else None
+            g_entropy_only = n_entropy_only_local
 
         candidate_het_rate = (g_candidate_het / g_attempted) if g_attempted > 0 else 0.0
         fill_rate = (g_kept / (g_kept + g_padded)) if (g_kept + g_padded) > 0 else 0.0
@@ -1874,6 +2367,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         self._metrics["train"]["dapo/groups_padded"].append(float(g_padded))
         self._metrics["train"]["dapo/heterogeneity_rate"].append(candidate_het_rate)
         self._metrics["train"]["dapo/selection_fill_rate"].append(fill_rate)
+        self._metrics["train"]["aer/entropy_only_groups"].append(float(g_entropy_only))
 
         if getattr(self.accelerator, "is_main_process", True):
             step = int(getattr(self.state, "global_step", 0))
@@ -1887,12 +2381,13 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             bucket_suffix = ""
             if g_all_correct is not None and g_all_wrong is not None:
                 bucket_suffix = f" all_correct={g_all_correct} all_wrong={g_all_wrong}"
+            aer_suffix = f" aer_entropy_only={g_entropy_only}" if self.enable_aer else ""
             print(
                 f"[dapo] step={step} mode=oversample K={K} "
                 f"attempted={g_attempted} candidate_het={g_candidate_het} "
                 f"candidate_het_rate={candidate_het_rate:.2%} "
                 f"selected={g_kept}/{g_kept + g_padded} padded={g_padded} "
-                f"fill_rate={fill_rate:.2%}{bucket_suffix}{reward_suffix}"
+                f"fill_rate={fill_rate:.2%}{bucket_suffix}{aer_suffix}{reward_suffix}"
             )
         return self._add_policy_logps_for_kept(out)
 
@@ -1936,6 +2431,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         total_groups_attempted = 0
         total_groups_heterogeneous = 0
         total_groups_kept = 0
+        total_entropy_only_kept = 0
 
         for r in range(self.dapo_max_rounds):
             round_out = self._generate_and_score_candidates_no_policy_logps(round_inputs)
@@ -1943,6 +2439,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             rounds_used += 1
 
             het = self._het_mask_for_round(round_out)
+            aer_coeffs, aer_acc = self._aer_group_stats(round_out)
             local_groups_this_round = int(het.numel())
             total_groups_attempted += local_groups_this_round
             total_groups_heterogeneous += int(het.long().sum().item()) if het is not None else 0
@@ -1952,10 +2449,37 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
 
             het_idx = torch.nonzero(het).flatten().tolist()[:slots_remaining]
             if het_idx:
-                chunk = self._extract_groups(round_out, het_idx)
+                chunk = self._extract_groups(
+                    round_out,
+                    het_idx,
+                    aer_coefficients=aer_coeffs,
+                    aer_group_accuracy=aer_acc,
+                )
                 if chunk is not None:
                     kept_chunks.append(chunk)
                     total_groups_kept += len(het_idx)
+
+            kept_so_far = sum(c["_n_groups"] for c in kept_chunks)
+            need_local = target_local_groups - kept_so_far
+
+            if need_local > 0 and aer_coeffs is not None:
+                nonhet_idx = torch.nonzero(~het).flatten().tolist()
+                hard_nonhet_idx = [
+                    idx
+                    for idx in nonhet_idx
+                    if float(aer_coeffs[idx].detach().item()) > 0.0
+                ][:need_local]
+                if hard_nonhet_idx:
+                    chunk = self._extract_groups(
+                        round_out,
+                        hard_nonhet_idx,
+                        zero_mask=True,
+                        aer_coefficients=aer_coeffs,
+                        aer_group_accuracy=aer_acc,
+                    )
+                    if chunk is not None:
+                        kept_chunks.append(chunk)
+                        total_entropy_only_kept += len(hard_nonhet_idx)
 
             kept_so_far = sum(c["_n_groups"] for c in kept_chunks)
             need_local = target_local_groups - kept_so_far
@@ -1973,7 +2497,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 break  # backup pool exhausted
             round_inputs = self._build_round_inputs(replacement_unique)
 
-        # Pad with zero-masked groups if still short.
+        # Pad with policy-masked groups if still short.
         kept_so_far = sum(c["_n_groups"] for c in kept_chunks)
         padded_groups = 0
         if kept_so_far < target_local_groups and last_round_out is not None:
@@ -1981,8 +2505,13 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             available = last_round_out["prompt_ids"].shape[0] // num_generations
             take = min(deficit, available)
             if take > 0:
+                aer_coeffs, aer_acc = self._aer_group_stats(last_round_out)
                 pad_chunk = self._extract_groups(
-                    last_round_out, list(range(take)), zero_mask=True
+                    last_round_out,
+                    list(range(take)),
+                    zero_mask=True,
+                    aer_coefficients=aer_coeffs,
+                    aer_group_accuracy=aer_acc,
                 )
                 if pad_chunk is not None:
                     kept_chunks.append(pad_chunk)
@@ -2023,6 +2552,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                     padded_groups,
                     local_all_correct,
                     local_all_wrong,
+                    total_entropy_only_kept,
                 ],
                 device=device,
                 dtype=torch.long,
@@ -2035,6 +2565,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             g_padded = int(gathered[:, 4].sum().item())
             g_all_correct = None if (gathered[:, 5] < 0).any() else int(gathered[:, 5].sum().item())
             g_all_wrong = None if (gathered[:, 6] < 0).any() else int(gathered[:, 6].sum().item())
+            g_entropy_only = int(gathered[:, 7].sum().item())
         except Exception:
             g_rounds_max = rounds_used
             g_attempted = total_groups_attempted
@@ -2044,6 +2575,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             reward_bucket_counts = self._group_reward_bucket_counts(last_round_out) if last_round_out is not None else None
             g_all_correct = reward_bucket_counts[0] if reward_bucket_counts is not None else None
             g_all_wrong = reward_bucket_counts[1] if reward_bucket_counts is not None else None
+            g_entropy_only = total_entropy_only_kept
 
         candidate_het_rate = (g_candidate_het / g_attempted) if g_attempted > 0 else 0.0
         fill_rate = (g_kept / (g_kept + g_padded)) if (g_kept + g_padded) > 0 else 0.0
@@ -2054,18 +2586,20 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         self._metrics["train"]["dapo/groups_padded"].append(float(g_padded))
         self._metrics["train"]["dapo/heterogeneity_rate"].append(candidate_het_rate)
         self._metrics["train"]["dapo/selection_fill_rate"].append(fill_rate)
+        self._metrics["train"]["aer/entropy_only_groups"].append(float(g_entropy_only))
 
         if getattr(self.accelerator, "is_main_process", True):
             step = int(getattr(self.state, "global_step", 0))
             bucket_suffix = ""
             if g_all_correct is not None and g_all_wrong is not None:
                 bucket_suffix = f" all_correct={g_all_correct} all_wrong={g_all_wrong}"
+            aer_suffix = f" aer_entropy_only={g_entropy_only}" if self.enable_aer else ""
             print(
                 f"[dapo] step={step} rounds={g_rounds_max}/{self.dapo_max_rounds} "
                 f"attempted={g_attempted} candidate_het={g_candidate_het} "
                 f"candidate_het_rate={candidate_het_rate:.2%} "
                 f"selected={g_kept}/{g_kept + g_padded} padded={g_padded} "
-                f"fill_rate={fill_rate:.2%}{bucket_suffix}"
+                f"fill_rate={fill_rate:.2%}{bucket_suffix}{aer_suffix}"
             )
 
         return self._add_policy_logps_for_kept(out)

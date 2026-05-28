@@ -227,7 +227,7 @@ def parse_args(argv=None):
             "generates K * target_local_groups groups in ONE round and "
             "keeps the first target_local_groups heterogeneous ones; "
             "remaining slots are filled with random non-het groups whose "
-            "completion_mask is zeroed (no gradient contribution). "
+            "policy mask is zeroed (no policy-gradient contribution). "
             "Preferred over iterative resampling when collective-ops "
             "constraints make multi-round inefficient."
         ),
@@ -240,6 +240,57 @@ def parse_args(argv=None):
             "Optional reward function name (e.g. result_reward) to use for the "
             "heterogeneity check. Default uses the aggregated/normalized advantages."
         ),
+    )
+
+    # Adaptive Entropy Regularization (AER).
+    parser.add_argument(
+        "--enable_aer",
+        action="store_true",
+        help=(
+            "Enable Adaptive Entropy Regularization. AER adds a sequence-level "
+            "entropy bonus to hard prompt groups, using group accuracy from a "
+            "binary reward such as result_reward."
+        ),
+    )
+    parser.add_argument(
+        "--aer_reward_name",
+        type=str,
+        default="result_reward",
+        help="Reward function used to estimate AER group accuracy.",
+    )
+    parser.add_argument(
+        "--aer_rho",
+        type=float,
+        default=0.0,
+        help=(
+            "AER difficulty pivot rho. With num_generations=16, rho=0 only "
+            "targets all-wrong groups; rho=0.2 targets groups with <=3/16 "
+            "correct rollouts."
+        ),
+    )
+    parser.add_argument(
+        "--aer_tau",
+        type=float,
+        default=0.4,
+        help="AER target entropy ratio: H_target = tau * initial_entropy.",
+    )
+    parser.add_argument(
+        "--aer_eta",
+        type=float,
+        default=0.005,
+        help="AER global coefficient controller step size.",
+    )
+    parser.add_argument(
+        "--aer_alpha_init",
+        type=float,
+        default=0.0,
+        help="Initial AER global entropy coefficient alpha.",
+    )
+    parser.add_argument(
+        "--aer_alpha_max",
+        type=float,
+        default=0.1,
+        help="Safety cap for AER global entropy coefficient alpha.",
     )
 
     # Reward shaping.
@@ -595,6 +646,13 @@ def main():
         dapo_max_rounds=args.dapo_max_rounds,
         dapo_oversample_factor=args.dapo_oversample_factor,
         dynamic_sampling_reward_name=args.dynamic_sampling_reward_name,
+        enable_aer=args.enable_aer,
+        aer_reward_name=args.aer_reward_name,
+        aer_rho=args.aer_rho,
+        aer_tau=args.aer_tau,
+        aer_eta=args.aer_eta,
+        aer_alpha_init=args.aer_alpha_init,
+        aer_alpha_max=args.aer_alpha_max,
         save_latest_full_checkpoint=args.save_latest_full_checkpoint,
         latest_full_checkpoint_dir_name=args.latest_full_checkpoint_dir_name,
         reward_only_eval=args.reward_only_eval,

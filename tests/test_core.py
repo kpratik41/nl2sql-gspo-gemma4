@@ -668,6 +668,10 @@ class DynamicSamplingTrainerHelperTests(unittest.TestCase):
         trainer.dynamic_sampling_min_std = min_std
         trainer.dynamic_sampling_reward_name = None
         trainer._dyn_reward_idx = None
+        trainer.enable_aer = False
+        trainer._aer_reward_idx = None
+        trainer.aer_rho = 0.0
+        trainer.aer_alpha = 0.0
         trainer.pad_token_id = pad_token_id
         trainer.train_dataset = None
         trainer._dyn_pool_indices = []
@@ -738,14 +742,15 @@ class DynamicSamplingTrainerHelperTests(unittest.TestCase):
             self.assertAlmostEqual(got, want, places=5)
         self.assertEqual(chunk["num_items_in_batch"], 99)
 
-    def test_extract_groups_with_zero_mask_zeros_completion_mask(self):
+    def test_extract_groups_with_zero_mask_preserves_attention_and_zeros_policy_mask(self):
         trainer, torch = self._make_bare_trainer(num_generations=2)
         round_out = {
             "prompt_ids": torch.tensor([[1, 1], [1, 1], [2, 2], [2, 2]]),
             "completion_mask": torch.ones(4, 3, dtype=torch.long),
         }
         chunk = trainer._extract_groups(round_out, [1], zero_mask=True)
-        self.assertEqual(chunk["completion_mask"].sum().item(), 0)
+        self.assertEqual(chunk["completion_mask"].sum().item(), 6)
+        self.assertEqual(chunk["policy_mask"].sum().item(), 0)
         self.assertEqual(chunk["prompt_ids"].tolist(), [[2, 2], [2, 2]])
 
     def test_extract_groups_returns_none_for_empty_index(self):
@@ -891,7 +896,8 @@ class DynamicSamplingTrainerHelperTests(unittest.TestCase):
 
         trainer._generate_and_score_candidates_no_policy_logps.assert_called_once()
         trainer._get_per_token_logps_and_entropies.assert_not_called()
-        self.assertEqual(out["completion_mask"].sum().item(), 0)
+        self.assertEqual(out["completion_mask"].sum().item(), 6)
+        self.assertEqual(out["policy_mask"].sum().item(), 0)
         self.assertTrue(out["_skip_policy_loss"].all().item())
         self.assertEqual(out["importance_sampling_ratio"].tolist(), [[1.0] * 3] * 2)
 
@@ -962,6 +968,10 @@ class TrainScriptDefaultsTests(unittest.TestCase):
         self.assertEqual(args.length_penalty_max, 4096)
         self.assertEqual(args.length_penalty_buffer, 512)
         self.assertEqual(args.dapo_max_rounds, 6)
+        self.assertFalse(args.enable_aer)
+        self.assertEqual(args.aer_reward_name, "result_reward")
+        self.assertEqual(args.aer_rho, 0.0)
+        self.assertEqual(args.aer_tau, 0.4)
 
 
 if __name__ == "__main__":
