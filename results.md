@@ -753,3 +753,60 @@ The non-OK per-example statuses are dominated by predicted-SQL issues rather tha
 ### Recommendation
 
 Use `checkpoint-90` as the preferred checkpoint from this sweep. It has the best overall EX accuracy, strong run health, low max-tool-round count, and relatively low tool-call volume. The final checkpoint, `checkpoint-150`, is not better than checkpoint 0 or checkpoint 90 on overall EX accuracy.
+
+## AER Hard-Prompt Entropy Run - 2026-05-28
+
+Current E4B bare-tool GRPO/DAPO run with Adaptive Entropy Regularization (AER) enabled. This experiment follows the AER idea from [Revisiting Entropy Regularization: Adaptive Coefficient Unlocks Its Potential for LLM Reinforcement Learning](https://arxiv.org/abs/2510.10959): allocate stronger entropy pressure to harder prompt groups, anchor target entropy to the initial entropy, and update a global entropy coefficient dynamically.
+
+| setting | value |
+| --- | --- |
+| training run | `outputs/training/train-6601-schema-bare-tool/gemma-4-E4B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs4_ga8_lr1e-6_20260527_234257` |
+| wandb run | `https://wandb.ai/kpratik41/gemma4-31b-bird-gspo/runs/owdhmcij` |
+| train log | `logs/train_20260527_234257.log` |
+| train file | `outputs/train-6601-schema-bare-tool.jsonl` |
+| eval mode | reward-only eval, `prompt_groups=6`, `generations=96` |
+| model | `google/gemma-4-E4B-it` |
+| loss / reward scaling | `loss_type=dapo`, `scale_rewards=batch`, `beta=0` |
+| DAPO dynamic sampling | enabled, `dynamic_sampling_reward_name=result_reward`, `dapo_oversample_factor=4`, `dapo_max_rounds=1`, `num_generations=16` |
+| AER settings | `rho=0.25`, `tau=0.7`, `eta=0.001`, `alpha_init=0.005`, `alpha_max=0.1`, `reward=result_reward` |
+| AER implementation | sequence-level entropy bonus on hard groups; coefficient is `alpha * max(rho - group_accuracy, 0) / rho` |
+| target entropy | `initial_entropy=0.362`, `target_entropy=0.2534` |
+| checkpoint rows | `0`, `10`, ..., `100`; rows after `0` use the completed metric row at that global step |
+
+AER adds a negative sequence-entropy term for hard prompt groups, so minimizing the loss encourages less overconfident next-token distributions on those groups. In this run, measured entropy stayed above the anchored target, so the controller decayed `alpha` to `0` by checkpoint `10`. Entropy-only padding groups were nonzero only at early train steps `1-3` with a total of `4` groups, so most of this run is effectively DAPO with the new mask plumbing rather than active entropy pressure.
+
+### Pass@K And Self-Consistency Results
+
+Pass@k and self-consistency columns are left empty until sampled checkpoint evaluation artifacts are produced. Training entropy and grad norm come from the live training log; checkpoint `100` uses the metric row emitted when the run reached `100/550`.
+
+| checkpoint | pass@1 | pass@2 | pass@4 | pass@8 | pass@16 | SC option 1 | SC option 2 | temp0 acc | correct candidates | candidate acc | train entropy | grad norm |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 |  |  |  |  |  |  |  |  |  |  | `0.3661` | `0.04755` |
+| 10 |  |  |  |  |  |  |  |  |  |  | `0.3692` | `0.03323` |
+| 20 |  |  |  |  |  |  |  |  |  |  | `0.3659` | `0.001106` |
+| 30 |  |  |  |  |  |  |  |  |  |  | `0.4527` | `0.002961` |
+| 40 |  |  |  |  |  |  |  |  |  |  | `0.3889` | `0.003334` |
+| 50 |  |  |  |  |  |  |  |  |  |  | `0.4218` | `0.005332` |
+| 60 |  |  |  |  |  |  |  |  |  |  | `0.4064` | `0.003557` |
+| 70 |  |  |  |  |  |  |  |  |  |  | `0.4022` | `0.001301` |
+| 80 |  |  |  |  |  |  |  |  |  |  | `0.388` | `0.01097` |
+| 90 |  |  |  |  |  |  |  |  |  |  | `0.4538` | `0.007232` |
+| 100 |  |  |  |  |  |  |  |  |  |  | `0.5388` | `0.00192` |
+
+### Training Reward Metrics
+
+Training reward means come from the completed metric rows in the same log. `aer alpha`, `aer loss`, and `entropy-only groups` are included to show whether AER was actively applying entropy pressure at each checkpoint row.
+
+| checkpoint | learning rate | format reward | execution reward | result reward | table link reward | column link reward | nonnull reward | train reward | aer alpha | aer loss | entropy-only groups |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | `0` | `0.9883` | `0.9609` | `0.7305` | `0.7318` | `0.8509` | `0.9466` | `5.209` | `0.004` | `0` | `0` |
+| 10 | `8.127e-07` | `0.9909` | `0.9805` | `0.6875` | `0.7695` | `0.8154` | `0.9661` | `5.21` | `0` | `0` | `0` |
+| 20 | `9.962e-07` | `0.9805` | `0.9674` | `0.6641` | `0.7526` | `0.7772` | `0.9648` | `5.106` | `0` | `0` | `0` |
+| 30 | `9.775e-07` | `0.9922` | `0.9714` | `0.7057` | `0.8112` | `0.8775` | `0.9492` | `5.307` | `0` | `0` | `0` |
+| 40 | `9.587e-07` | `0.987` | `0.9635` | `0.7669` | `0.7773` | `0.8583` | `0.9544` | `5.308` | `0` | `0` | `0` |
+| 50 | `9.4e-07` | `0.9935` | `0.9857` | `0.6901` | `0.8906` | `0.8316` | `0.9831` | `5.375` | `0` | `0` | `0` |
+| 60 | `9.212e-07` | `0.9922` | `0.9779` | `0.6367` | `0.7005` | `0.7508` | `0.9674` | `5.026` | `0` | `0` | `0` |
+| 70 | `9.024e-07` | `0.9857` | `0.9857` | `0.75` | `0.8802` | `0.8173` | `0.9818` | `5.401` | `0` | `0` | `0` |
+| 80 | `8.837e-07` | `0.9935` | `0.987` | `0.7591` | `0.8633` | `0.849` | `0.9831` | `5.435` | `0` | `0` | `0` |
+| 90 | `8.649e-07` | `0.9974` | `0.9974` | `0.7682` | `0.793` | `0.8376` | `0.9896` | `5.383` | `0` | `0` | `0` |
+| 100 | `8.462e-07` | `0.9896` | `0.9648` | `0.6576` | `0.8945` | `0.8483` | `0.9375` | `5.292` | `0` | `0` | `0` |
