@@ -4,16 +4,16 @@
 
 This comparison covers the requested base/model artifacts on `outputs/old-dev-schema-tool.jsonl`. A two-panel plot is the clearest view here: execution accuracy and tool-call rate use different units, so grouped bars in separate panels avoid a misleading dual-axis chart.
 
-![Gemma-4 model comparison](outputs/analysis/model_comparison_temp0_pass16_tools.svg)
+![Gemma-4 model comparison](figures/gemma4_model_comparison_temp0_pass16_tools.svg)
 
-Images can be added to this Markdown file with normal image links like the one above. The plot source is `outputs/analysis/model_comparison_temp0_pass16_tools.svg`, and the extracted machine-readable metrics are in `outputs/analysis/model_tool_comparison_metrics.json`.
+Images can be added to this Markdown file with normal image links like the one above. The plot source is `figures/gemma4_model_comparison_temp0_pass16_tools.svg`, which is outside the gitignored `outputs/` tree.
 
 ### Artifact Inventory
 
 | model | temp-0 inference artifact | pass@k artifact |
 | --- | --- | --- |
 | `E4B-it` | `outputs/training/beta_exp_0528/train-6601-schema-bare-tool/gemma-4-E4B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs4_ga8_lr1e-6_inprocess_beta0p005_s0-40_beta0p001_s40-80_beta0_s80plus_olddev32_refinitfix_nods_20260527_204225/checkpoint-0/eval_summary.json` | `outputs/training/beta_exp_0528/train-6601-schema-bare-tool/gemma-4-E4B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs4_ga8_lr1e-6_inprocess_beta0p005_s0-40_beta0p001_s40-80_beta0_s80plus_olddev32_refinitfix_nods_20260527_204225/checkpoint-0/maskfix_ckpt-0_old-dev-schema-tool_full1534_temp1p2_tp1_ctx45k/passk_summary.json` |
-| `24B-A4B-it` | `outputs/google_gemma-4-26B-A4B-it/temp0_olddev_schema_tool_tp2_ctx43k/eval_summary.json` | pending/running; expected under `outputs/google_gemma-4-26B-A4B-it/passk16_olddev_schema_tool_temp1p2_tp2_ctx43p5k/` |
+| `26B-A4B-it` | `outputs/google_gemma-4-26B-A4B-it/temp0_olddev_schema_tool_tp2_ctx43k/eval_summary.json` | pending/running; expected under `outputs/google_gemma-4-26B-A4B-it/passk16_olddev_schema_tool_temp1p2_tp2_ctx43p5k/` |
 | `31B-it` | `outputs/inference/dev/old-dev-schema-tool/google-gemma-4-31B-it/vllm_async_tp4_dp1_c16_ctx43k_p34k_o8k_r8_temp0/eval_summary.json` | `outputs/passk/gemma4_31b_old-dev-schema-tool_full1534_temp1p2_tp4_ctx45k/passk_summary.json` |
 
 ### Metric Summary
@@ -23,7 +23,7 @@ For pass@k, `tool calls / generation` is `total_tool_calls / (1534 * 16)`. For t
 | model | temp-0 EX | pass@1 / candidate acc | pass@16 | temp-0 tool calls / generation | pass@k tool calls / generation | status |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | `E4B-it` | `65.12%` | `63.64%` | `79.79%` | `1.306` | `1.303` | complete |
-| `24B-A4B-it` | `69.23%` | pending | pending | `1.704` | pending | pass@k running |
+| `26B-A4B-it` | `69.23%` | pending | pending | `1.704` | pending | pass@k running |
 | `31B-it` | `71.19%` | `68.68%` | `74.97%` | `1.269` | `2.208` | complete |
 
 ### Tool Call Counts
@@ -32,8 +32,8 @@ For pass@k, `tool calls / generation` is `total_tool_calls / (1534 * 16)`. For t
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | `E4B-it` | temp-0 | `2003` | `1893` | `62` | `47` | `1` |
 | `E4B-it` | pass@k | `31969` | `29965` | `1102` | `868` | `34` |
-| `24B-A4B-it` | temp-0 | `2614` | `2331` | `221` | `62` | `0` |
-| `24B-A4B-it` | pass@k | pending | pending | pending | pending | pending |
+| `26B-A4B-it` | temp-0 | `2614` | `2331` | `221` | `62` | `0` |
+| `26B-A4B-it` | pass@k | pending | pending | pending | pending | pending |
 | `31B-it` | temp-0 | `1947` | `1853` | `36` | `58` | `0` |
 | `31B-it` | pass@k | `54185` | `51979` | `1123` | `1068` | `15` |
 
