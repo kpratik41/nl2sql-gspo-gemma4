@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="460" viewBox="0 0 960 460" role="img">
+<rect width="960" height="460" fill="#fff"/>
+<text x="480.0" y="32.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1a202c">AER: Accuracy, SC, and Entropy</text>
+<line x1="82.0" y1="365.0" x2="878.0" y2="365.0" stroke="#4a5568" stroke-width="1.2"/>
+<line x1="82.0" y1="78.0" x2="82.0" y2="365.0" stroke="#4a5568" stroke-width="1.2"/>
+<line x1="878.0" y1="78.0" x2="878.0" y2="365.0" stroke="#4a5568" stroke-width="1.2"/>
+<line x1="82.0" y1="365.0" x2="878.0" y2="365.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="74.0" y="369.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">63</text>
+<line x1="82.0" y1="307.6" x2="878.0" y2="307.6" stroke="#e2e8f0" stroke-width="1"/>
+<text x="74.0" y="311.6" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">67</text>
+<line x1="82.0" y1="250.2" x2="878.0" y2="250.2" stroke="#e2e8f0" stroke-width="1"/>
+<text x="74.0" y="254.2" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">71</text>
+<line x1="82.0" y1="192.8" x2="878.0" y2="192.8" stroke="#e2e8f0" stroke-width="1"/>
+<text x="74.0" y="196.8" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">74</text>
+<line x1="82.0" y1="135.4" x2="878.0" y2="135.4" stroke="#e2e8f0" stroke-width="1"/>
+<text x="74.0" y="139.4" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">78</text>
+<line x1="82.0" y1="78.0" x2="878.0" y2="78.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="74.0" y="82.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">82</text>
+<text x="886.0" y="369.0" text-anchor="start" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#805ad5">-0.06</text>
+<text x="886.0" y="297.2" text-anchor="start" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#805ad5">0.10</text>
+<text x="886.0" y="225.5" text-anchor="start" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#805ad5">0.27</text>
+<text x="886.0" y="153.7" text-anchor="start" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#805ad5">0.44</text>
+<text x="886.0" y="82.0" text-anchor="start" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#805ad5">0.60</text>
+<text x="34.0" y="221.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="700" fill="#4a5568">Accuracy (%)</text>
+<text x="926.0" y="221.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="700" fill="#805ad5">Entropy</text>
+<line x1="82.0" y1="365.0" x2="82.0" y2="369.0" stroke="#4a5568" stroke-width="1"/>
+<text x="82.0" y="385.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">0</text>
+<line x1="161.6" y1="365.0" x2="161.6" y2="369.0" stroke="#4a5568" stroke-width="1"/>
+<text x="161.6" y="385.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">10</text>
+<line x1="241.2" y1="365.0" x2="241.2" y2="369.0" stroke="#4a5568" stroke-width="1"/>
+<text x="241.2" y="385.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">20</text>
+<line x1="320.8" y1="365.0" x2="320.8" y2="369.0" stroke="#4a5568" stroke-width="1"/>
+<text x="320.8" y="385.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">30</text>
+<line x1="400.4" y1="365.0" x2="400.4" y2="369.0" stroke="#4a5568" stroke-width="1"/>
+<text x="400.4" y="385.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">40</text>
+<line x1="480.0" y1="365.0" x2="480.0" y2="369.0" stroke="#4a5568" stroke-width="1"/>
+<text x="480.0" y="385.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">50</text>
+<line x1="559.6" y1="365.0" x2="559.6" y2="369.0" stroke="#4a5568" stroke-width="1"/>
+<text x="559.6" y="385.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">60</text>
+<line x1="639.2" y1="365.0" x2="639.2" y2="369.0" stroke="#4a5568" stroke-width="1"/>
+<text x="639.2" y="385.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">70</text>
+<line x1="718.8" y1="365.0" x2="718.8" y2="369.0" stroke="#4a5568" stroke-width="1"/>
+<text x="718.8" y="385.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">80</text>
+<line x1="798.4" y1="365.0" x2="798.4" y2="369.0" stroke="#4a5568" stroke-width="1"/>
+<text x="798.4" y="385.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">90</text>
+<line x1="878.0" y1="365.0" x2="878.0" y2="369.0" stroke="#4a5568" stroke-width="1"/>
+<text x="878.0" y="385.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">100</text>
+<path d="M82.0,333.0 L161.6,343.7 L241.2,324.1 L320.8,333.0 L400.4,316.2 L480.0,314.2 L559.6,333.9 L639.2,315.2 L718.8,322.1 L798.4,316.2 L878.0,304.4" fill="none" stroke="#2b6cb0" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="82.0" cy="333.0" r="3.8" fill="#2b6cb0" stroke="#fff" stroke-width="1"/>
+<circle cx="161.6" cy="343.7" r="3.8" fill="#2b6cb0" stroke="#fff" stroke-width="1"/>
+<circle cx="241.2" cy="324.1" r="3.8" fill="#2b6cb0" stroke="#fff" stroke-width="1"/>
+<circle cx="320.8" cy="333.0" r="3.8" fill="#2b6cb0" stroke="#fff" stroke-width="1"/>
+<circle cx="400.4" cy="316.2" r="3.8" fill="#2b6cb0" stroke="#fff" stroke-width="1"/>
+<circle cx="480.0" cy="314.2" r="3.8" fill="#2b6cb0" stroke="#fff" stroke-width="1"/>
+<circle cx="559.6" cy="333.9" r="3.8" fill="#2b6cb0" stroke="#fff" stroke-width="1"/>
+<circle cx="639.2" cy="315.2" r="3.8" fill="#2b6cb0" stroke="#fff" stroke-width="1"/>
+<circle cx="718.8" cy="322.1" r="3.8" fill="#2b6cb0" stroke="#fff" stroke-width="1"/>
+<circle cx="798.4" cy="316.2" r="3.8" fill="#2b6cb0" stroke="#fff" stroke-width="1"/>
+<circle cx="878.0" cy="304.4" r="3.8" fill="#2b6cb0" stroke="#fff" stroke-width="1"/>
+<path d="M82.0,111.4 L241.2,105.5 L400.4,122.3 L559.6,117.3 L718.8,120.3 L878.0,106.4" fill="none" stroke="#dd6b20" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="82.0" cy="111.4" r="3.8" fill="#dd6b20" stroke="#fff" stroke-width="1"/>
+<circle cx="241.2" cy="105.5" r="3.8" fill="#dd6b20" stroke="#fff" stroke-width="1"/>
+<circle cx="400.4" cy="122.3" r="3.8" fill="#dd6b20" stroke="#fff" stroke-width="1"/>
+<circle cx="559.6" cy="117.3" r="3.8" fill="#dd6b20" stroke="#fff" stroke-width="1"/>
+<circle cx="718.8" cy="120.3" r="3.8" fill="#dd6b20" stroke="#fff" stroke-width="1"/>
+<circle cx="878.0" cy="106.4" r="3.8" fill="#dd6b20" stroke="#fff" stroke-width="1"/>
+<path d="M82.0,288.6 L241.2,286.6 L400.4,283.7 L559.6,283.7 L718.8,285.7 L878.0,272.9" fill="none" stroke="#2f855a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="82.0" cy="288.6" r="3.8" fill="#2f855a" stroke="#fff" stroke-width="1"/>
+<circle cx="241.2" cy="286.6" r="3.8" fill="#2f855a" stroke="#fff" stroke-width="1"/>
+<circle cx="400.4" cy="283.7" r="3.8" fill="#2f855a" stroke="#fff" stroke-width="1"/>
+<circle cx="559.6" cy="283.7" r="3.8" fill="#2f855a" stroke="#fff" stroke-width="1"/>
+<circle cx="718.8" cy="285.7" r="3.8" fill="#2f855a" stroke="#fff" stroke-width="1"/>
+<circle cx="878.0" cy="272.9" r="3.8" fill="#2f855a" stroke="#fff" stroke-width="1"/>
+<path d="M82.0,180.0 L161.6,178.6 L241.2,180.0 L320.8,142.8 L400.4,170.2 L480.0,156.0 L559.6,162.6 L639.2,164.5 L718.8,170.6 L798.4,142.3 L878.0,105.8" fill="none" stroke="#805ad5" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 4"/>
+<circle cx="82.0" cy="180.0" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="161.6" cy="178.6" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="241.2" cy="180.0" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="320.8" cy="142.8" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="400.4" cy="170.2" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="480.0" cy="156.0" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="559.6" cy="162.6" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="639.2" cy="164.5" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="718.8" cy="170.6" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="798.4" cy="142.3" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="878.0" cy="105.8" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<rect x="260.0" y="410.0" width="12.0" height="12.0" fill="#2b6cb0" rx="2"/>
+<text x="278.0" y="420.0" text-anchor="start" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">temp0</text>
+<rect x="337.0" y="410.0" width="12.0" height="12.0" fill="#dd6b20" rx="2"/>
+<text x="355.0" y="420.0" text-anchor="start" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">pass@16</text>
+<rect x="428.0" y="410.0" width="12.0" height="12.0" fill="#2f855a" rx="2"/>
+<text x="446.0" y="420.0" text-anchor="start" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">SC</text>
+<rect x="484.0" y="410.0" width="12.0" height="12.0" fill="#805ad5" rx="2"/>
+<text x="502.0" y="420.0" text-anchor="start" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">entropy</text>
+</svg>

@@ -1,71 +1,70 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="940" height="430" viewBox="0 0 940 430" role="img" aria-label="Model comparison of accuracy and tool calls">
-<rect width="100%" height="100%" fill="#ffffff"/>
-<text x="470.0" y="28" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1a202c">Gemma-4</text>
-<text x="470.0" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#718096">pass@k tool calls per generation use denominator 1534 * 16; 26B-A4B-it pass@k is pending</text>
-<text x="250.0" y="52" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#1a202c">Accuracy</text>
-<line x1="70" y1="320.0" x2="430" y2="320.0" stroke="#e2e8f0" stroke-width="1"/>
-<text x="60" y="324.0" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#718096">55</text>
-<line x1="70" y1="273.7" x2="430" y2="273.7" stroke="#e2e8f0" stroke-width="1"/>
-<text x="60" y="277.7" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#718096">60</text>
-<line x1="70" y1="227.4" x2="430" y2="227.4" stroke="#e2e8f0" stroke-width="1"/>
-<text x="60" y="231.4" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#718096">65</text>
-<line x1="70" y1="181.1" x2="430" y2="181.1" stroke="#e2e8f0" stroke-width="1"/>
-<text x="60" y="185.1" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#718096">70</text>
-<line x1="70" y1="134.8" x2="430" y2="134.8" stroke="#e2e8f0" stroke-width="1"/>
-<text x="60" y="138.8" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#718096">75</text>
-<line x1="70" y1="88.5" x2="430" y2="88.5" stroke="#e2e8f0" stroke-width="1"/>
-<text x="60" y="92.5" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#718096">80</text>
-<line x1="70" y1="70" x2="70" y2="320" stroke="#2d3748" stroke-width="1.2"/>
-<line x1="70" y1="320" x2="430" y2="320" stroke="#2d3748" stroke-width="1.2"/>
-<text x="26" y="195.0" transform="rotate(-90 26 195.0)" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#718096">Execution accuracy (%)</text>
-<text x="700.0" y="52" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#1a202c">Tool calls</text>
-<line x1="520" y1="320.0" x2="880" y2="320.0" stroke="#e2e8f0" stroke-width="1"/>
-<text x="510" y="324.0" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#718096">0</text>
-<line x1="520" y1="270.0" x2="880" y2="270.0" stroke="#e2e8f0" stroke-width="1"/>
-<text x="510" y="274.0" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#718096">0.5</text>
-<line x1="520" y1="220.0" x2="880" y2="220.0" stroke="#e2e8f0" stroke-width="1"/>
-<text x="510" y="224.0" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#718096">1</text>
-<line x1="520" y1="170.0" x2="880" y2="170.0" stroke="#e2e8f0" stroke-width="1"/>
-<text x="510" y="174.0" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#718096">1.5</text>
-<line x1="520" y1="120.0" x2="880" y2="120.0" stroke="#e2e8f0" stroke-width="1"/>
-<text x="510" y="124.0" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#718096">2</text>
-<line x1="520" y1="70.0" x2="880" y2="70.0" stroke="#e2e8f0" stroke-width="1"/>
-<text x="510" y="74.0" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#718096">2.5</text>
-<line x1="520" y1="70" x2="520" y2="320" stroke="#2d3748" stroke-width="1.2"/>
-<line x1="520" y1="320" x2="880" y2="320" stroke="#2d3748" stroke-width="1.2"/>
-<text x="476" y="195.0" transform="rotate(-90 476 195.0)" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#718096">Calls per generation</text>
-<rect x="95.0" y="226.3" width="32" height="93.7" fill="#2b6cb0" rx="2"/>
-<text x="111.0" y="220.3" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#1a202c">65.1</text>
-<rect x="133.0" y="90.5" width="32" height="229.5" fill="#dd6b20" rx="2"/>
-<text x="149.0" y="84.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#1a202c">79.8</text>
-<text x="130.0" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#1a202c">E4B-it</text>
-<rect x="215.0" y="188.2" width="32" height="131.8" fill="#2b6cb0" rx="2"/>
-<text x="231.0" y="182.2" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#1a202c">69.2</text>
-<rect x="253.0" y="296" width="32" height="24" fill="#fff" stroke="#dd6b20" stroke-dasharray="3 3" stroke-width="1.5"/>
-<text x="269.0" y="289" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#718096">pending</text>
-<text x="250.0" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#1a202c">26B-A4B-it</text>
-<rect x="335.0" y="170.1" width="32" height="149.9" fill="#2b6cb0" rx="2"/>
-<text x="351.0" y="164.1" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#1a202c">71.2</text>
-<rect x="373.0" y="135.1" width="32" height="184.9" fill="#dd6b20" rx="2"/>
-<text x="389.0" y="129.1" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#1a202c">75.0</text>
-<text x="370.0" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#1a202c">31B-it</text>
-<rect x="120" y="368" width="12" height="12" fill="#2b6cb0" rx="2"/><text x="138" y="378" font-family="Arial, sans-serif" font-size="12" fill="#1a202c">temp0 EX</text>
-<rect x="250" y="368" width="12" height="12" fill="#dd6b20" rx="2"/><text x="268" y="378" font-family="Arial, sans-serif" font-size="12" fill="#1a202c">pass@16</text>
-<rect x="545.0" y="189.4" width="32" height="130.6" fill="#2f855a" rx="2"/>
-<text x="561.0" y="183.4" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#1a202c">1.31</text>
-<rect x="583.0" y="189.7" width="32" height="130.3" fill="#c53030" rx="2"/>
-<text x="599.0" y="183.7" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#1a202c">1.30</text>
-<text x="580.0" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#1a202c">E4B-it</text>
-<rect x="665.0" y="149.6" width="32" height="170.4" fill="#2f855a" rx="2"/>
-<text x="681.0" y="143.6" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#1a202c">1.70</text>
-<rect x="703.0" y="296" width="32" height="24" fill="#fff" stroke="#c53030" stroke-dasharray="3 3" stroke-width="1.5"/>
-<text x="719.0" y="289" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#718096">pending</text>
-<text x="700.0" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#1a202c">26B-A4B-it</text>
-<rect x="785.0" y="193.1" width="32" height="126.9" fill="#2f855a" rx="2"/>
-<text x="801.0" y="187.1" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#1a202c">1.27</text>
-<rect x="823.0" y="99.2" width="32" height="220.8" fill="#c53030" rx="2"/>
-<text x="839.0" y="93.2" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#1a202c">2.21</text>
-<text x="820.0" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#1a202c">31B-it</text>
-<rect x="570" y="368" width="12" height="12" fill="#2f855a" rx="2"/><text x="588" y="378" font-family="Arial, sans-serif" font-size="12" fill="#1a202c">temp0</text>
-<rect x="700" y="368" width="12" height="12" fill="#c53030" rx="2"/><text x="718" y="378" font-family="Arial, sans-serif" font-size="12" fill="#1a202c">pass@k</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="430" viewBox="0 0 940 430" role="img" aria-label="Gemma-4 accuracy and tool-call comparison">
+<rect width="940" height="430" fill="#ffffff"/>
+<text x="470.0" y="30.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1a202c">Gemma-4</text>
+<text x="250.0" y="60.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#1a202c">Accuracy</text>
+<line x1="70.0" y1="315.0" x2="430.0" y2="315.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="60.0" y="319.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">55</text>
+<line x1="70.0" y1="271.9" x2="430.0" y2="271.9" stroke="#e2e8f0" stroke-width="1"/>
+<text x="60.0" y="275.9" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">60</text>
+<line x1="70.0" y1="228.7" x2="430.0" y2="228.7" stroke="#e2e8f0" stroke-width="1"/>
+<text x="60.0" y="232.7" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">65</text>
+<line x1="70.0" y1="185.6" x2="430.0" y2="185.6" stroke="#e2e8f0" stroke-width="1"/>
+<text x="60.0" y="189.6" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">70</text>
+<line x1="70.0" y1="142.4" x2="430.0" y2="142.4" stroke="#e2e8f0" stroke-width="1"/>
+<text x="60.0" y="146.4" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">75</text>
+<line x1="70.0" y1="99.3" x2="430.0" y2="99.3" stroke="#e2e8f0" stroke-width="1"/>
+<text x="60.0" y="103.3" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">80</text>
+<line x1="70.0" y1="315.0" x2="430.0" y2="315.0" stroke="#4a5568" stroke-width="1.2"/>
+<line x1="70.0" y1="82.0" x2="70.0" y2="315.0" stroke="#4a5568" stroke-width="1.2"/>
+<text x="26.0" y="198.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="700" fill="#4a5568">EX (%)</text>
+<rect x="102.0" y="227.7" width="24.0" height="87.3" fill="#2b6cb0" rx="3"/>
+<text x="114.0" y="221.7" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#4a5568">65.1</text>
+<rect x="130.0" y="101.1" width="24.0" height="213.9" fill="#dd6b20" rx="3"/>
+<text x="142.0" y="95.1" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#4a5568">79.8</text>
+<text x="116.0" y="339.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#1a202c">E4B-it</text>
+<rect x="212.0" y="192.2" width="24.0" height="122.8" fill="#2b6cb0" rx="3"/>
+<text x="224.0" y="186.2" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#4a5568">69.2</text>
+<rect x="240.0" y="118.5" width="24.0" height="196.5" fill="#dd6b20" rx="3"/>
+<text x="252.0" y="112.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#4a5568">77.8</text>
+<text x="226.0" y="339.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#1a202c">26B-A4B-it</text>
+<rect x="322.0" y="175.3" width="24.0" height="139.7" fill="#2b6cb0" rx="3"/>
+<text x="334.0" y="169.3" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#4a5568">71.2</text>
+<rect x="350.0" y="142.7" width="24.0" height="172.3" fill="#dd6b20" rx="3"/>
+<text x="362.0" y="136.7" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#4a5568">75.0</text>
+<text x="336.0" y="339.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#1a202c">31B-it</text>
+<text x="700.0" y="60.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#1a202c">Tool calls</text>
+<line x1="520.0" y1="315.0" x2="880.0" y2="315.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="510.0" y="319.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">0</text>
+<line x1="520.0" y1="268.4" x2="880.0" y2="268.4" stroke="#e2e8f0" stroke-width="1"/>
+<text x="510.0" y="272.4" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">0.5</text>
+<line x1="520.0" y1="221.8" x2="880.0" y2="221.8" stroke="#e2e8f0" stroke-width="1"/>
+<text x="510.0" y="225.8" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">1</text>
+<line x1="520.0" y1="175.2" x2="880.0" y2="175.2" stroke="#e2e8f0" stroke-width="1"/>
+<text x="510.0" y="179.2" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">1.5</text>
+<line x1="520.0" y1="128.6" x2="880.0" y2="128.6" stroke="#e2e8f0" stroke-width="1"/>
+<text x="510.0" y="132.6" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">2</text>
+<line x1="520.0" y1="82.0" x2="880.0" y2="82.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="510.0" y="86.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">2.5</text>
+<line x1="520.0" y1="315.0" x2="880.0" y2="315.0" stroke="#4a5568" stroke-width="1.2"/>
+<line x1="520.0" y1="82.0" x2="520.0" y2="315.0" stroke="#4a5568" stroke-width="1.2"/>
+<text x="474.0" y="198.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="700" fill="#4a5568">Calls / gen</text>
+<rect x="552.0" y="193.3" width="24.0" height="121.7" fill="#2b6cb0" rx="3"/>
+<text x="564.0" y="187.3" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#4a5568">1.31</text>
+<rect x="580.0" y="193.6" width="24.0" height="121.4" fill="#dd6b20" rx="3"/>
+<text x="592.0" y="187.6" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#4a5568">1.30</text>
+<text x="566.0" y="339.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#1a202c">E4B-it</text>
+<rect x="662.0" y="156.2" width="24.0" height="158.8" fill="#2b6cb0" rx="3"/>
+<text x="674.0" y="150.2" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#4a5568">1.70</text>
+<rect x="690.0" y="151.2" width="24.0" height="163.8" fill="#dd6b20" rx="3"/>
+<text x="702.0" y="145.2" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#4a5568">1.76</text>
+<text x="676.0" y="339.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#1a202c">26B-A4B-it</text>
+<rect x="772.0" y="196.7" width="24.0" height="118.3" fill="#2b6cb0" rx="3"/>
+<text x="784.0" y="190.7" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#4a5568">1.27</text>
+<rect x="800.0" y="109.2" width="24.0" height="205.8" fill="#dd6b20" rx="3"/>
+<text x="812.0" y="103.2" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#4a5568">2.21</text>
+<text x="786.0" y="339.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#1a202c">31B-it</text>
+<rect x="360.0" y="372.0" width="12.0" height="12.0" fill="#2b6cb0" rx="2"/>
+<text x="380.0" y="382.0" text-anchor="start" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">temp0</text>
+<rect x="440.0" y="372.0" width="12.0" height="12.0" fill="#dd6b20" rx="2"/>
+<text x="460.0" y="382.0" text-anchor="start" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">pass@16 / pass@k</text>
 </svg>

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img">
+<rect width="960" height="520" fill="#ffffff"/>
+<text x="480.0" y="32.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1a202c">AER: Best Checkpoint Summary</text>
+<line x1="110.0" y1="390.0" x2="870.0" y2="390.0" stroke="#4a5568" stroke-width="1.2"/>
+<line x1="110.0" y1="85.0" x2="110.0" y2="390.0" stroke="#4a5568" stroke-width="1.2"/>
+<line x1="110.0" y1="390.0" x2="870.0" y2="390.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="102.0" y="394.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">65</text>
+<line x1="110.0" y1="329.0" x2="870.0" y2="329.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="102.0" y="333.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">68</text>
+<line x1="110.0" y1="268.0" x2="870.0" y2="268.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="102.0" y="272.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">72</text>
+<line x1="110.0" y1="207.0" x2="870.0" y2="207.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="102.0" y="211.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">75</text>
+<line x1="110.0" y1="146.0" x2="870.0" y2="146.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="102.0" y="150.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">79</text>
+<line x1="110.0" y1="85.0" x2="870.0" y2="85.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="102.0" y="89.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">82</text>
+<rect x="260.0" y="353.9" width="90.0" height="36.1" fill="#2b6cb0" rx="4"/>
+<text x="305.0" y="345.9" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#4a5568">67.01%</text>
+<text x="305.0" y="412.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">Best temp0</text>
+<text x="305.0" y="432.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#718096">ckpt 100</text>
+<rect x="460.0" y="117.7" width="90.0" height="272.3" fill="#dd6b20" rx="4"/>
+<text x="505.0" y="109.7" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#4a5568">80.18%</text>
+<text x="505.0" y="412.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">Best pass@16</text>
+<text x="505.0" y="432.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#718096">ckpt 20</text>
+<rect x="660.0" y="316.4" width="90.0" height="73.6" fill="#2f855a" rx="4"/>
+<text x="705.0" y="308.4" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#4a5568">69.10%</text>
+<text x="705.0" y="412.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">Best SC</text>
+<text x="705.0" y="432.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#718096">ckpt 100</text>
+<text x="48.0" y="237.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="700" fill="#4a5568">Accuracy (%)</text>
+</svg>

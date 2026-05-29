@@ -39,9 +39,22 @@ For pass@k, `tool calls / generation` is `total_tool_calls / (1534 * 16)`. For t
 
 Notes: the 31B temp-0 summary did not include `generation_stats`, so those counts were derived from `prediction_details.jsonl`. The E4B checkpoint-0 pass@k `other / malformed` bucket is mostly rare malformed tool names such as `tool_name` and `sql_query`; the 26B pass@k bucket is `tool_name` plus one `sqlite_duplicate_query`; the 31B pass@k bucket is `tool_name` plus one `sqite_query`.
 
+## Training Experiment Plot Index
+
+The cross-experiment summary plot is `figures/training_experiment_summary.svg`. Per-experiment plots are stored under the matching `figures/` subfolders linked in each section below.
+
 ## Maskfix Checkpoint Pass@K: Old Dev Schema Tool
 
 These runs evaluate checkpoints from the `maskfix` GRPO training run on `outputs/old-dev-schema-tool.jsonl`. Each checkpoint used 1 GPU, 16 sampled generations per example over all 1534 old-dev samples, and 24544 candidates per checkpoint.
+
+### Figures
+
+| plot | file |
+| --- | --- |
+| accuracy, SC, and entropy | `figures/entropy_collapse/checkpoint_accuracy_entropy_sc.svg` |
+| sampling lift | `figures/entropy_collapse/sampling_lift.svg` |
+| tool calls and failed predictions | `figures/entropy_collapse/tool_calls_and_failures.svg` |
+| best checkpoint summary | `figures/entropy_collapse/best_checkpoint_summary.svg` |
 
 ### Run Metadata
 
@@ -139,6 +152,15 @@ Rows marked `n/a` do not have corresponding artifacts in this checkout. Pass@k/s
 ## Beta Schedule With Basic DAPO - 2026-05-28
 
 Current E4B bare-tool GRPO/DAPO run with in-process beta scheduling. The run uses `beta=0.005` for steps `0-39`, `beta=0.001` for steps `40-79`, and `beta=0` from step `80` onward. DAPO uses `dynamic_sampling_reward_name=result_reward`, `dapo_oversample_factor=6`, `dapo_max_rounds=1`, `num_generations=16`, `per_device_train_batch_size=4`, `gradient_accumulation_steps=8`, and `learning_rate=1e-6`.
+
+### Figures
+
+| plot | file |
+| --- | --- |
+| accuracy, SC, and entropy | `figures/beta_schedule/checkpoint_accuracy_entropy_sc.svg` |
+| sampling lift | `figures/beta_schedule/sampling_lift.svg` |
+| tool calls and failed predictions | `figures/beta_schedule/tool_calls_and_failures.svg` |
+| best checkpoint summary | `figures/beta_schedule/best_checkpoint_summary.svg` |
 
 | setting | value |
 | --- | --- |
@@ -813,6 +835,15 @@ Current E4B bare-tool GRPO/DAPO run with Adaptive Entropy Regularization (AER) e
 | checkpoint rows | `0`, `10`, ..., `100`; rows after `0` use the completed metric row at that global step |
 
 AER adds a negative sequence-entropy term for hard prompt groups, so minimizing the loss encourages less overconfident next-token distributions on those groups. In this run, measured entropy stayed above the anchored target, so the controller decayed `alpha` to `0` by checkpoint `10`. Entropy-only padding groups were nonzero only at early train steps `1-3` with a total of `4` groups, so most of this run is effectively DAPO with the new mask plumbing rather than active entropy pressure.
+
+### Figures
+
+| plot | file |
+| --- | --- |
+| accuracy, SC, and entropy | `figures/aer/checkpoint_accuracy_entropy_sc.svg` |
+| sampling lift | `figures/aer/sampling_lift.svg` |
+| tool calls and failed predictions | `figures/aer/tool_calls_and_failures.svg` |
+| best checkpoint summary | `figures/aer/best_checkpoint_summary.svg` |
 
 ### Pass@K And Self-Consistency Results
 

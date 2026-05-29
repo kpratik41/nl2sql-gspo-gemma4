@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img">
+<rect width="960" height="520" fill="#ffffff"/>
+<text x="480.0" y="32.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1a202c">Entropy Collapse: Sampling Lift</text>
+<line x1="80.0" y1="410.0" x2="900.0" y2="410.0" stroke="#4a5568" stroke-width="1.2"/>
+<line x1="80.0" y1="80.0" x2="80.0" y2="410.0" stroke="#4a5568" stroke-width="1.2"/>
+<text x="490.0" y="62.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#1a202c">Gains over baseline metrics</text>
+<line x1="80.0" y1="410.0" x2="900.0" y2="410.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="414.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">-1</text>
+<line x1="80.0" y1="355.0" x2="900.0" y2="355.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="359.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">2</text>
+<line x1="80.0" y1="300.0" x2="900.0" y2="300.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="304.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">6</text>
+<line x1="80.0" y1="245.0" x2="900.0" y2="245.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="249.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">9</text>
+<line x1="80.0" y1="190.0" x2="900.0" y2="190.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="194.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">12</text>
+<line x1="80.0" y1="135.0" x2="900.0" y2="135.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="139.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">16</text>
+<line x1="80.0" y1="80.0" x2="900.0" y2="80.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="84.0" text-anchor="end" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">19</text>
+<text x="32.0" y="245.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="700" fill="#4a5568">Lift (pp)</text>
+<line x1="80.0" y1="410.0" x2="80.0" y2="414.0" stroke="#4a5568" stroke-width="1"/>
+<text x="80.0" y="430.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">0</text>
+<line x1="171.1" y1="410.0" x2="171.1" y2="414.0" stroke="#4a5568" stroke-width="1"/>
+<text x="171.1" y="430.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">20</text>
+<line x1="262.2" y1="410.0" x2="262.2" y2="414.0" stroke="#4a5568" stroke-width="1"/>
+<text x="262.2" y="430.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">40</text>
+<line x1="353.3" y1="410.0" x2="353.3" y2="414.0" stroke="#4a5568" stroke-width="1"/>
+<text x="353.3" y="430.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">60</text>
+<line x1="444.4" y1="410.0" x2="444.4" y2="414.0" stroke="#4a5568" stroke-width="1"/>
+<text x="444.4" y="430.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">80</text>
+<line x1="535.6" y1="410.0" x2="535.6" y2="414.0" stroke="#4a5568" stroke-width="1"/>
+<text x="535.6" y="430.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">100</text>
+<line x1="626.7" y1="410.0" x2="626.7" y2="414.0" stroke="#4a5568" stroke-width="1"/>
+<text x="626.7" y="430.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">120</text>
+<line x1="717.8" y1="410.0" x2="717.8" y2="414.0" stroke="#4a5568" stroke-width="1"/>
+<text x="717.8" y="430.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">140</text>
+<line x1="808.9" y1="410.0" x2="808.9" y2="414.0" stroke="#4a5568" stroke-width="1"/>
+<text x="808.9" y="430.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">160</text>
+<line x1="900.0" y1="410.0" x2="900.0" y2="414.0" stroke="#4a5568" stroke-width="1"/>
+<text x="900.0" y="430.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#718096">180</text>
+<line x1="80.0" y1="393.5" x2="900.0" y2="393.5" stroke="#4a5568" stroke-width="1.1" stroke-dasharray="4 4"/>
+<path d="M80.0,127.0 L171.1,137.1 L262.2,148.0 L353.3,200.3 L444.4,219.1 L535.6,211.5 L626.7,188.2" fill="none" stroke="#c05621" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="80.0" cy="127.0" r="3.8" fill="#c05621" stroke="#fff" stroke-width="1"/>
+<circle cx="171.1" cy="137.1" r="3.8" fill="#c05621" stroke="#fff" stroke-width="1"/>
+<circle cx="262.2" cy="148.0" r="3.8" fill="#c05621" stroke="#fff" stroke-width="1"/>
+<circle cx="353.3" cy="200.3" r="3.8" fill="#c05621" stroke="#fff" stroke-width="1"/>
+<circle cx="444.4" cy="219.1" r="3.8" fill="#c05621" stroke="#fff" stroke-width="1"/>
+<circle cx="535.6" cy="211.5" r="3.8" fill="#c05621" stroke="#fff" stroke-width="1"/>
+<circle cx="626.7" cy="188.2" r="3.8" fill="#c05621" stroke="#fff" stroke-width="1"/>
+<path d="M80.0,321.7 L171.1,308.2 L262.2,321.1 L353.3,338.1 L444.4,353.4 L535.6,365.3 L626.7,353.9" fill="none" stroke="#319795" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="80.0" cy="321.7" r="3.8" fill="#319795" stroke="#fff" stroke-width="1"/>
+<circle cx="171.1" cy="308.2" r="3.8" fill="#319795" stroke="#fff" stroke-width="1"/>
+<circle cx="262.2" cy="321.1" r="3.8" fill="#319795" stroke="#fff" stroke-width="1"/>
+<circle cx="353.3" cy="338.1" r="3.8" fill="#319795" stroke="#fff" stroke-width="1"/>
+<circle cx="444.4" cy="353.4" r="3.8" fill="#319795" stroke="#fff" stroke-width="1"/>
+<circle cx="535.6" cy="365.3" r="3.8" fill="#319795" stroke="#fff" stroke-width="1"/>
+<circle cx="626.7" cy="353.9" r="3.8" fill="#319795" stroke="#fff" stroke-width="1"/>
+<path d="M80.0,151.4 L171.1,174.1 L262.2,154.7 L353.3,223.5 L444.4,220.4 L535.6,210.7 L626.7,204.1" fill="none" stroke="#805ad5" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="80.0" cy="151.4" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="171.1" cy="174.1" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="262.2" cy="154.7" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="353.3" cy="223.5" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="444.4" cy="220.4" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="535.6" cy="210.7" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<circle cx="626.7" cy="204.1" r="3.8" fill="#805ad5" stroke="#fff" stroke-width="1"/>
+<rect x="230.0" y="445.0" width="12.0" height="12.0" fill="#c05621" rx="2"/>
+<text x="248.0" y="455.0" text-anchor="start" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">pass@16 - pass@1</text>
+<rect x="384.0" y="445.0" width="12.0" height="12.0" fill="#319795" rx="2"/>
+<text x="402.0" y="455.0" text-anchor="start" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">SC - pass@1</text>
+<rect x="503.0" y="445.0" width="12.0" height="12.0" fill="#805ad5" rx="2"/>
+<text x="521.0" y="455.0" text-anchor="start" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">pass@16 - temp0</text>
+</svg>
