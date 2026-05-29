@@ -799,7 +799,7 @@ Current E4B bare-tool GRPO/DAPO run with Adaptive Entropy Regularization (AER) e
 
 | setting | value |
 | --- | --- |
-| training run | `outputs/training/train-6601-schema-bare-tool/gemma-4-E4B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs4_ga8_lr1e-6_20260527_234257` |
+| training run | `outputs/training/train-6601-schema-bare-tool/gemma-4-E4B-it/aer_grpo_deepspeed_p15500_c8000_g16_t1p2_bs4_ga8_lr1e-6_20260527_234257` |
 | wandb run | `https://wandb.ai/kpratik41/gemma4-31b-bird-gspo/runs/owdhmcij` |
 | train log | `logs/train_20260527_234257.log` |
 | train file | `outputs/train-6601-schema-bare-tool.jsonl` |
@@ -816,21 +816,21 @@ AER adds a negative sequence-entropy term for hard prompt groups, so minimizing 
 
 ### Pass@K And Self-Consistency Results
 
-Pass@k and self-consistency columns are left empty until sampled checkpoint evaluation artifacts are produced. Training entropy and grad norm come from the live training log; checkpoint `100` uses the metric row emitted when the run reached `100/550`.
+Pass@k and self-consistency columns are filled where sampled checkpoint evaluation artifacts exist. Checkpoints `10`, `30`, `50`, `70`, and `90` currently have temp-0 artifacts but no pass@k artifacts in this run folder. Training entropy and grad norm come from the live training log; checkpoint `100` uses the metric row emitted when the run reached `100/550`.
 
 | checkpoint | pass@1 | pass@2 | pass@4 | pass@8 | pass@16 | SC option 1 | SC option 2 | temp0 acc | correct candidates | candidate acc | train entropy | grad norm |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 0 |  |  |  |  |  |  |  |  |  |  | `0.3661` | `0.04755` |
-| 10 |  |  |  |  |  |  |  |  |  |  | `0.3692` | `0.03323` |
-| 20 |  |  |  |  |  |  |  |  |  |  | `0.3659` | `0.001106` |
-| 30 |  |  |  |  |  |  |  |  |  |  | `0.4527` | `0.002961` |
-| 40 |  |  |  |  |  |  |  |  |  |  | `0.3889` | `0.003334` |
-| 50 |  |  |  |  |  |  |  |  |  |  | `0.4218` | `0.005332` |
-| 60 |  |  |  |  |  |  |  |  |  |  | `0.4064` | `0.003557` |
-| 70 |  |  |  |  |  |  |  |  |  |  | `0.4022` | `0.001301` |
-| 80 |  |  |  |  |  |  |  |  |  |  | `0.388` | `0.01097` |
-| 90 |  |  |  |  |  |  |  |  |  |  | `0.4538` | `0.007232` |
-| 100 |  |  |  |  |  |  |  |  |  |  | `0.5388` | `0.00192` |
+| 0 | `63.64%` | `69.71%` | `73.79%` | `77.05%` | `79.79%` | `67.99%` | `68.06%` | `65.12%` | `15619 / 24544` | `63.64%` | `0.3661` | `0.04755` |
+| 10 | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `64.41%` | `n/a` | `n/a` | `0.3692` | `0.03323` |
+| 20 | `63.15%` | `69.75%` | `74.18%` | `77.58%` | `80.18%` | `67.99%` | `68.19%` | `65.71%` | `15500 / 24544` | `63.15%` | `0.3659` | `0.001106` |
+| 30 | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `65.12%` | `n/a` | `n/a` | `0.4527` | `0.002961` |
+| 40 | `63.32%` | `69.72%` | `73.78%` | `76.76%` | `79.07%` | `68.25%` | `68.38%` | `66.23%` | `15541 / 24544` | `63.32%` | `0.3889` | `0.003334` |
+| 50 | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `66.36%` | `n/a` | `n/a` | `0.4218` | `0.005332` |
+| 60 | `63.22%` | `69.64%` | `73.79%` | `76.95%` | `79.40%` | `68.06%` | `68.38%` | `65.06%` | `15517 / 24544` | `63.22%` | `0.4064` | `0.003557` |
+| 70 | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `66.30%` | `n/a` | `n/a` | `0.4022` | `0.001301` |
+| 80 | `63.62%` | `69.86%` | `73.92%` | `76.91%` | `79.20%` | `68.25%` | `68.25%` | `65.84%` | `15615 / 24544` | `63.62%` | `0.388` | `0.01097` |
+| 90 | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `66.23%` | `n/a` | `n/a` | `0.4538` | `0.007232` |
+| 100 | `63.97%` | `70.19%` | `74.23%` | `77.39%` | `80.12%` | `69.17%` | `69.10%` | `67.01%` | `15701 / 24544` | `63.97%` | `0.5388` | `0.00192` |
 
 ### Training Reward Metrics
 
