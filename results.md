@@ -147,7 +147,7 @@ Current E4B bare-tool GRPO/DAPO run with in-process beta scheduling. The run use
 | train file | `outputs/train-6601-schema-bare-tool.jsonl` |
 | eval file during training | `outputs/old-dev-schema-bare-tool.jsonl` with `eval_limit=32`, `eval_steps=350` |
 | reward weights | `0.2,0.5,2.0,0.5,0.5,0.1,0.1` for format, execution, result, table_linking, column_linking, nonnull, length_penalty |
-| checkpoint rows | `0`, `10`, `20`, ..., `160`; rows after `90` are pending in the current log |
+| checkpoint rows | `0`, `10`, `20`, ..., `160`; rows after `150` are pending in the current log |
 
 ### Pass@K And Self-Consistency Results
 
@@ -165,12 +165,12 @@ Pass@k and self-consistency columns are left empty until the full sampled evalua
 | 70 |  |  |  |  |  |  |  |  |  |  | `0.4164` | `0.005197` |
 | 80 |  |  |  |  |  |  |  |  |  |  | `0.3325` | `0.00641` |
 | 90 |  |  |  |  |  |  |  |  |  |  | `0.2575` | `0.04708` |
-| 100 |  |  |  |  |  |  |  |  |  |  | `pending` | `pending` |
-| 110 |  |  |  |  |  |  |  |  |  |  | `pending` | `pending` |
-| 120 |  |  |  |  |  |  |  |  |  |  | `pending` | `pending` |
-| 130 |  |  |  |  |  |  |  |  |  |  | `pending` | `pending` |
-| 140 |  |  |  |  |  |  |  |  |  |  | `pending` | `pending` |
-| 150 |  |  |  |  |  |  |  |  |  |  | `pending` | `pending` |
+| 100 |  |  |  |  |  |  |  |  |  |  | `0.3197` | `0.02186` |
+| 110 |  |  |  |  |  |  |  |  |  |  | `0.2894` | `0.01925` |
+| 120 |  |  |  |  |  |  |  |  |  |  | `0.2013` | `0.06403` |
+| 130 |  |  |  |  |  |  |  |  |  |  | `0.2862` | `0.04674` |
+| 140 |  |  |  |  |  |  |  |  |  |  | `0.08412` | `0.05487` |
+| 150 |  |  |  |  |  |  |  |  |  |  | `0.3102` | `0.02834` |
 | 160 |  |  |  |  |  |  |  |  |  |  | `pending` | `pending` |
 
 ### Training Reward Metrics
@@ -189,12 +189,12 @@ Training reward means come from the live training log. `temp0 acc` is included w
 | 70 | `66.82%` | `8.987e-07` | `0.001` | `0.9809` | `0.9688` | `0.7083` | `0.8325` | `0.8226` | `0.9531` | `5.266` |
 | 80 | `65.45%` | `8.799e-07` | `0` | `0.9757` | `0.9792` | `0.7405` | `0.7951` | `0.8306` | `0.9627` | `5.284` |
 | 90 |  | `8.612e-07` | `0` | `0.9896` | `0.9896` | `0.7101` | `0.7951` | `0.7774` | `0.98` | `5.242` |
-| 100 | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` |
-| 110 | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` |
-| 120 | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` |
-| 130 | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` |
-| 140 | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` |
-| 150 | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` |
+| 100 |  | `8.424e-07` | `0` | `0.9948` | `0.9896` | `0.7335` | `0.8108` | `0.8442` | `0.9661` | `5.338` |
+| 110 |  | `8.236e-07` | `0` | `0.9931` | `0.9835` | `0.7604` | `0.9089` | `0.8885` | `0.9757` | `5.51` |
+| 120 |  | `8.049e-07` | `0` | `0.9991` | `0.9991` | `0.7179` | `0.8655` | `0.8581` | `0.9974` | `5.437` |
+| 130 |  | `7.861e-07` | `0` | `0.9922` | `0.9878` | `0.776` | `0.8776` | `0.831` | `0.9635` | `5.428` |
+| 140 |  | `7.674e-07` | `0` | `0.9974` | `0.9965` | `0.796` | `0.901` | `0.817` | `0.9965` | `5.504` |
+| 150 |  | `7.486e-07` | `0` | `0.9922` | `0.9922` | `0.7457` | `0.8576` | `0.8547` | `0.9792` | `5.422` |
 | 160 | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` | `pending` |
 
 ### Candidate And Tool Stats
