@@ -147,7 +147,7 @@ Current E4B bare-tool GRPO/DAPO run with in-process beta scheduling. The run use
 | train file | `outputs/train-6601-schema-bare-tool.jsonl` |
 | eval file during training | `outputs/old-dev-schema-bare-tool.jsonl` with `eval_limit=32`, `eval_steps=350` |
 | reward weights | `0.2,0.5,2.0,0.5,0.5,0.1,0.1` for format, execution, result, table_linking, column_linking, nonnull, length_penalty |
-| checkpoint rows | `0`, `10`, `20`, ..., `150` |
+| checkpoint rows | `0`, `10`, `20`, ..., `160` |
 
 ### Pass@K And Self-Consistency Results
 
@@ -171,6 +171,7 @@ Pass@k and self-consistency columns are filled where sampled checkpoint evaluati
 | 130 | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `68.45%` | `1.355` | `n/a` | `n/a` | `n/a` | `0.2862` | `0.04674` |
 | 140 | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `67.86%` | `1.338` | `n/a` | `n/a` | `n/a` | `0.08412` | `0.05487` |
 | 150 | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `67.54%` | `1.374` | `n/a` | `n/a` | `n/a` | `0.3102` | `0.02834` |
+| 160 | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `n/a` | `0.2477` | `0.03434` |
 
 ### Training Reward Metrics
 
@@ -194,6 +195,7 @@ Training reward means come from the live training log. `temp0 acc` is copied fro
 | 130 | `68.45%` | `7.861e-07` | `0` | `0.9922` | `0.9878` | `0.776` | `0.8776` | `0.831` | `0.9635` | `5.428` |
 | 140 | `67.86%` | `7.674e-07` | `0` | `0.9974` | `0.9965` | `0.796` | `0.901` | `0.817` | `0.9965` | `5.504` |
 | 150 | `67.54%` | `7.486e-07` | `0` | `0.9922` | `0.9922` | `0.7457` | `0.8576` | `0.8547` | `0.9792` | `5.422` |
+| 160 | `n/a` | `7.317e-07` | `0` | `0.9948` | `0.9931` | `0.7196` | `0.7995` | `0.8186` | `0.9748` | `5.3` |
 
 ### Candidate And Tool Stats
 
