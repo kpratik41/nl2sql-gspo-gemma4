@@ -63,8 +63,8 @@
 <rect x="800.0" y="109.2" width="24.0" height="205.8" fill="#dd6b20" rx="3"/>
 <text x="812.0" y="103.2" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="400" fill="#4a5568">2.21</text>
 <text x="786.0" y="339.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="400" fill="#1a202c">31B-it</text>
-<rect x="360.0" y="372.0" width="12.0" height="12.0" fill="#2b6cb0" rx="2"/>
-<text x="380.0" y="382.0" text-anchor="start" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">temp0</text>
-<rect x="440.0" y="372.0" width="12.0" height="12.0" fill="#dd6b20" rx="2"/>
-<text x="460.0" y="382.0" text-anchor="start" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">pass@16 / pass@k</text>
+<rect x="315.0" y="372.0" width="12.0" height="12.0" fill="#2b6cb0" rx="2"/>
+<text x="335.0" y="382.0" text-anchor="start" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">Accuracy (temp 0)</text>
+<rect x="505.0" y="372.0" width="12.0" height="12.0" fill="#dd6b20" rx="2"/>
+<text x="525.0" y="382.0" text-anchor="start" font-family="Arial, sans-serif" font-size="12" font-weight="400" fill="#1a202c">Pass@16</text>
 </svg>
