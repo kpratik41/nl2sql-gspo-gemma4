@@ -259,6 +259,62 @@ These are approximate wall-clock runtimes from `timing_seconds`, with each check
 | 100 | `24301` | `227` | `6` | `10` | `658.1` | `29692` |
 | 120 | `24240` | `280` | `4` | `20` | `793.6` | `29692` |
 
+## Beta schedule: Gemma-4-31b-it
+
+Current 31B bare-tool GRPO/DAPO run with in-process beta scheduling. This run has two phases: the original launch used DAPO oversample factor `10`, then the run was restarted from the latest full checkpoint at global step `40` with the same output directory, reshuffled training data, DAPO oversample factor `16`, and a shorter beta schedule. Because resume uses trainer `global_step`, the beta schedule did not restart at local step `0`; the resumed run began at global step `40`, used `beta=0.001` through global step `64`, and switched to `beta=0` at global step `65`.
+
+The output directory still contains `dapo10` in its name, but checkpoints `50+` come from the resumed `dapo16` phase. Checkpoint `0` rows use the logged step `1` values because there is no logged step `0` metrics row.
+
+| setting | value |
+| --- | --- |
+| training run | `outputs/training/train-6601-schema-bare-tool/gemma-4-31B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs2_ga16_lr1e-6_inprocess_beta0p005_s0-40_beta0p001_s40-80_beta0_s80plus_olddev32_refinitfix_nods_dapo10_20260529_062557` |
+| model | `google/gemma-4-31B-it`; full fine-tune, `31,273,086,512` trainable params |
+| train file | `outputs/train-6601-schema-bare-tool.jsonl`; reshuffled in place before the restart, with backup `outputs/train-6601-schema-bare-tool.jsonl.pre_restart_shuffle_20260531_031008.bak` |
+| eval file during training | `outputs/old-dev-schema-bare-tool.jsonl` with `eval_limit=32`, reward-only eval |
+| original phase | launched `2026-05-29 06:26 UTC`; run name `train-6601-schema-bare-tool-31b-grpo-dapo-lr1e-6-inprocess-beta005-001-0-olddev32-refinitfix-nods-dapo10-20260529`; DAPO `K=10`; beta schedule `0:0.005,40:0.001,80:0` |
+| resumed phase | launched `2026-05-31 03:12 UTC` from `latest-full-checkpoint` / `global_step40`; run name `train-6601-schema-bare-tool-31b-grpo-dapo-lr1e-6-inprocess-beta001-0-from40-65-olddev32-refinitfix-nods-dapo16-20260531`; DAPO `K=16`; beta schedule `40:0.001,65:0` |
+| resume nuance | the process had reached roughly step `45`, but the latest full checkpoint was step `40`, so unsaved steps `41-45` were discarded |
+| generation settings changed in launch | `temperature=1.2`, `top_p=0.95`, `num_generations=16`, `max_prompt_length=15500`, `max_completion_length=8000`, `max_tool_calling_iterations=8` |
+| batch and optimization | `per_device_train_batch_size=2`, `gradient_accumulation_steps=16` from DeepSpeed, effective train prompts per optimizer step `192`, `learning_rate=1e-6` with warmup/decay as logged |
+| DAPO criterion | `dynamic_sampling_reward_name=result_reward`, `dapo_max_rounds=1`, `dapo_min_std=1e-06`; original phase attempts `120` groups/step, resumed phase attempts `192` groups/step |
+| reward weights | `0.2,0.5,2.0,0.5,0.5,0.1,0.1` for format, execution, result, table_linking, column_linking, nonnull, length_penalty |
+| hardware split | train screen uses GPUs `0,1,2,3,4,5`; vLLM screen uses GPUs `6,7`, tensor parallel `2`, `max_model_len=24576`, `dtype=bfloat16` |
+| checkpoint rows | `0`, `10`, `20`, ..., `90`; checkpoints `0-40` from original DAPO `10` phase, checkpoints `50-90` from resumed DAPO `16` phase |
+
+### Training Dynamics
+
+Training entropy, grad norm, DAPO selection stats, and rewards come from the live training logs at each checkpoint interval. The pre-restart metric row for checkpoint `40` still reports `beta=0.005`; after resume, generation starts at global step `40` with `beta=0.001`, so checkpoint `50+` reflects the resumed schedule.
+
+| checkpoint | phase | beta | learning rate | train entropy | grad norm | train reward | DAPO attempted | heterogeneous | kept | padded | fill rate | tool calls/gen | step time |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | pre-restart DAPO 10 | `0.005` | `5.88e-08` | `0.1692` | `0.2674` | `5.47` | `120` | `15` | `10` | `2` | `0.8333` | `1.486` | `4156` |
+| 10 | pre-restart DAPO 10 | `0.005` | `5.88e-07` | `0.1661` | `1.806` | `5.386` | `120` | `14` | `10` | `2` | `0.8333` | `1.559` | `4026` |
+| 20 | pre-restart DAPO 10 | `0.005` | `9.94e-07` | `0.1645` | `0.2788` | `5.395` | `120` | `13` | `9` | `3` | `0.75` | `1.494` | `3538` |
+| 30 | pre-restart DAPO 10 | `0.005` | `9.76e-07` | `0.0441` | `7.122` | `5.511` | `120` | `5` | `5` | `7` | `0.4167` | `1.124` | `3135` |
+| 40 | pre-restart DAPO 10 | `0.005` | `9.57e-07` | `0.08237` | `1.486` | `5.477` | `120` | `8` | `8` | `4` | `0.6667` | `1.333` | `2655` |
+| 50 | resume DAPO 16 | `0.001` | `9.38e-07` | `0.03986` | `19.97` | `5.466` | `192` | `5` | `5` | `7` | `0.4167` | `1.153` | `2487` |
+| 60 | resume DAPO 16 | `0.001` | `9.19e-07` | `0.03609` | `1.89` | `5.562` | `192` | `7` | `7` | `5` | `0.5833` | `1.246` | `3165` |
+| 70 | resume DAPO 16 | `0` | `9.01e-07` | `0.07641` | `0.6561` | `5.455` | `192` | `6` | `6` | `6` | `0.5` | `1.25` | `4045` |
+| 80 | resume DAPO 16 | `0` | `8.82e-07` | `0.01757` | `0.02987` | `5.516` | `192` | `1` | `1` | `11` | `0.08333` | `1.235` | `4462` |
+| 90 | resume DAPO 16 | `0` | `8.63e-07` | `0.06899` | `12.12` | `5.453` | `192` | `10` | `8` | `4` | `0.6667` | `1.401` | `3403` |
+
+### Training Reward Metrics
+
+Training reward means come from the live training logs. This section records training-side metrics only; inference evaluations are intentionally left for separate documentation.
+
+| checkpoint | phase | beta | format reward | execution reward | result reward | table link reward | column link reward | nonnull reward | length penalty | train reward |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | pre-restart DAPO 10 | `0.005` | `0.9781` | `0.9776` | `0.8245` | `0.8833` | `0.834` | `0.9766` | `-0.004486` | `5.47` |
+| 10 | pre-restart DAPO 10 | `0.005` | `0.9854` | `0.9807` | `0.749` | `0.8495` | `0.8446` | `0.9792` | `-0.002149` | `5.386` |
+| 20 | pre-restart DAPO 10 | `0.005` | `0.9734` | `0.9729` | `0.7641` | `0.8807` | `0.8308` | `0.9729` | `0` | `5.395` |
+| 30 | pre-restart DAPO 10 | `0.005` | `1` | `1` | `0.8068` | `0.8557` | `0.848` | `1` | `0` | `5.511` |
+| 40 | pre-restart DAPO 10 | `0.005` | `0.988` | `0.9885` | `0.8141` | `0.8521` | `0.8459` | `0.9885` | `0` | `5.477` |
+| 50 | resume DAPO 16 | `0.001` | `0.9997` | `0.9997` | `0.735` | `0.8757` | `0.8567` | `0.9997` | `0` | `5.466` |
+| 60 | resume DAPO 16 | `0.001` | `0.9948` | `0.9938` | `0.8034` | `0.9154` | `0.8612` | `0.9938` | `0` | `5.562` |
+| 70 | resume DAPO 16 | `0` | `0.9951` | `0.9909` | `0.7533` | `0.8698` | `0.8554` | `0.9906` | `0` | `5.455` |
+| 80 | resume DAPO 16 | `0` | `0.9922` | `0.9899` | `0.8089` | `0.889` | `0.8458` | `0.9899` | `0` | `5.516` |
+| 90 | resume DAPO 16 | `0` | `0.9873` | `0.986` | `0.806` | `0.8646` | `0.8245` | `0.9847` | `0` | `5.453` |
+
 ## Old Dev 1534 Inference Comparison: Gemma 4 31B vs E4B
 
 These are single-generation async vLLM inference runs over all 1534 old-dev samples with `temperature=0.0`, `top_p=1.0`, `max_new_tokens=8000`, `max_tool_rounds=8`, `eval_workers=16`, and `vllm_async_concurrency=16`.
