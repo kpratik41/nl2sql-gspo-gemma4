@@ -41,3 +41,25 @@ Enterprise AI is moving from demos to production systems, and NL2SQL is one of t
 - Connect benchmark gains to production NL2SQL usage at JPMC.
 - Discuss lessons learned from scaling agent reliability.
 - Close with practical patterns for enterprise AI teams.
+
+
+
+Hi, I’m Pratik, one of the lead engineers from the FineTuning team at CDAO. I’ll be doing this talk with my colleague, Chandra Dhir.
+
+Our talk is about ReToolSQL: Tool-Calling Reinforcement Learning for Robust Text-to-SQL.
+
+Natural Language to SQL is one of the most important AI use cases across the firm. Many teams want business users, analysts, and agents to ask questions in plain English and get accurate answers from enterprise data. But in practice, Text-to-SQL is hard. Schemas are complex, business logic is subtle, and even frontier models can fail when they need to reason, inspect data, or recover from execution errors.
+
+That is where tool-calling reinforcement learning comes in.
+
+In this work, we train models not just to generate SQL, but to use tools more intelligently at inference time: checking queries, inspecting schema details, repairing mistakes, and improving reliability before producing the final answer.
+
+The results are exciting. We are beating the BIRD benchmark leaderboard and ranking ahead of frontier models offered from companies like Google, Anthropic, OpenAI, Databricks, and Snowflake.
+
+Why trust this talk? I have experience fine-tuning models of different sizes, from 2B up to 32B, across model families including Ministral, GPT-OSS, and Gemma. This work brings together practical fine-tuning, RL training, agent design, and test-time tool use.
+
+If you are building agents, analytics copilots, data assistants, or workflows where models need to call tools and make reliable decisions, this session is for you. You will learn how to identify use cases where RL or tool-calling RL can improve agentic workflows, when smarter inference-time design matters, and how smaller trained models can sometimes reduce token usage, latency, and cost while competing with much larger frontier systems.
+
+The goal is simple: move beyond prompting alone and learn how to make enterprise agents more accurate, efficient, and production-ready.
+
+See you at DevUp.
