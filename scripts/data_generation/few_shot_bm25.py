@@ -8,9 +8,9 @@ from rank_bm25 import BM25Okapi
 
 
 DEFAULT_TRAIN_INPUT = Path("data/bird_train_data/raw/train-6601.jsonl")
-DEFAULT_DEV_INPUT = Path("data/bird_dev_data/raw/dev_20251106.json")
+DEFAULT_DEV_INPUT = Path("data/bird_dev_data/raw/bird_dev.json")
 DEFAULT_TRAIN_OUTPUT = Path("data/bird_train_data/raw/train-6601-few-shot.jsonl")
-DEFAULT_DEV_OUTPUT = Path("data/bird_dev_data/raw/dev_20251106-few-shot.json")
+DEFAULT_DEV_OUTPUT = Path("data/bird_dev_data/raw/bird_dev-few-shot.json")
 
 
 def load_json(path: Path):

@@ -25,6 +25,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from nl2sql_gspo.inference_tool_executor import configure_tool_env, extract_and_execute_tools, extract_tool_calls
+from nl2sql_gspo.prompt_builder import PromptBuilder, add_prompt_args, prompt_config_from_args
 from nl2sql_gspo.sql_utils import bird_get_gold_rows, extract_sql
 
 try:
@@ -37,7 +38,9 @@ try:
         load_rows,
         prepare_rows_for_generation,
         preview_text,
+        render_prompt,
         resolve_vllm_tokenizer_source,
+        get_generation_messages,
         should_use_agentic_tool_loop,
     )
 except ModuleNotFoundError:
@@ -50,7 +53,9 @@ except ModuleNotFoundError:
         load_rows,
         prepare_rows_for_generation,
         preview_text,
+        render_prompt,
         resolve_vllm_tokenizer_source,
+        get_generation_messages,
         should_use_agentic_tool_loop,
     )
 
@@ -58,9 +63,9 @@ except ModuleNotFoundError:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compute BIRD pass@k from one multi-sample async vLLM run.")
     parser.add_argument("--model_name_or_path", type=str, default="google/gemma-4-31B-it")
-    parser.add_argument("--input_file", type=str, default="outputs/dev-20251106-schema-bare-tool.jsonl")
+    parser.add_argument("--input_file", type=str, default="outputs/old-dev-schema-bare-tool.jsonl")
     parser.add_argument("--database_dir", type=str, default="databases/dev_databases")
-    parser.add_argument("--diff_json_path", type=str, default="data/bird_dev_data/raw/dev_20251106.json")
+    parser.add_argument("--diff_json_path", type=str, default="data/bird_dev_data/raw/bird_dev.json")
     parser.add_argument("--output_dir", type=str, default="outputs/bird_dev_tool_passk16_vllm_async_temp08")
     parser.add_argument("--limit", type=int, default=-1, help="Number of examples to run; -1 means all examples.")
     parser.add_argument(
@@ -111,6 +116,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vllm_max_model_len", type=int, default=None)
     parser.add_argument("--vllm_async_concurrency", type=int, default=16)
     parser.add_argument("--overwrite", action="store_true")
+    add_prompt_args(parser)
     args = parser.parse_args()
     if args.num_shards < 1:
         parser.error("--num_shards must be >= 1")
@@ -224,7 +230,11 @@ def evaluate_gold_rows(
     return gold_by_idx
 
 
-async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+async def generate_candidates(
+    args: argparse.Namespace,
+    rows: List[Dict[str, Any]],
+    prompt_builder: Optional[PromptBuilder] = None,
+) -> List[Dict[str, Any]]:
     try:
         from vllm import AsyncLLMEngine, SamplingParams
         from vllm.engine.arg_utils import AsyncEngineArgs
@@ -235,7 +245,49 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
 
     tokenizer_source = resolve_vllm_tokenizer_source(args.model_name_or_path)
     tokenizer = load_tokenizer(tokenizer_source)
-    rows, skipped_rows = prepare_rows_for_generation(rows, tokenizer, args.max_prompt_length)
+    prompt_builder = prompt_builder or PromptBuilder(prompt_config_from_args(args))
+    prepared_cache: Dict[tuple[int, Optional[int]], Optional[Dict[str, Any]]] = {}
+    skipped_rows: List[Dict[str, Any]] = []
+
+    def prepare_sample_row(row_index: int, row: Dict[str, Any], sample_id: int) -> Optional[Dict[str, Any]]:
+        source_idx = int(row.get("source_idx", row_index))
+        built = prompt_builder.build_row(row, force_rebuild=False, sample_id=sample_id)
+        skill_id = built.get("skill_id")
+        cache_key = (source_idx, skill_id)
+        if cache_key in prepared_cache:
+            return prepared_cache[cache_key]
+
+        prompt_messages = get_generation_messages(built)
+        tools = built.get("tools")
+        prompt_text = render_prompt(tokenizer, prompt_messages, tools)
+        prompt_token_count = len(tokenizer(prompt_text, truncation=False)["input_ids"])
+        prepared = dict(built)
+        prepared["source_idx"] = source_idx
+        prepared["prompt_text"] = prompt_text
+        prepared["prompt_tokens"] = prompt_token_count
+        if prompt_token_count > args.max_prompt_length:
+            skipped_rows.append(
+                {
+                    "idx": source_idx,
+                    "db_id": prepared.get("db_id", ""),
+                    "sample_id": sample_id,
+                    "skill_id": prepared.get("skill_id"),
+                    "skill_name": prepared.get("skill_name"),
+                    "prompt_tokens": prompt_token_count,
+                    "max_prompt_length": args.max_prompt_length,
+                    "prompt_preview": preview_text(prompt_text),
+                }
+            )
+            prepared_cache[cache_key] = None
+            return None
+        prepared_cache[cache_key] = prepared
+        return prepared
+
+    prepared_jobs: List[tuple[int, Dict[str, Any], int, Optional[Dict[str, Any]]]] = []
+    for row_index, row in enumerate(rows):
+        for sample_id in range(args.num_generations):
+            prepared_jobs.append((row_index, row, sample_id, prepare_sample_row(row_index, row, sample_id)))
+
     if skipped_rows:
         write_jsonl(Path(args.output_dir) / "skipped_prompts.jsonl", skipped_rows)
 
@@ -261,14 +313,20 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
     total = len(rows) * args.num_generations
     completed = 0
 
-    async def generate_one(row_index: int, row: Dict[str, Any], sample_id: int) -> Dict[str, Any]:
+    async def generate_one(
+        row_index: int,
+        row: Dict[str, Any],
+        sample_id: int,
+        prepared_row: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
         nonlocal completed
         source_idx = int(row.get("source_idx", row_index))
-        row_for_sample = dict(row)
-        row_for_sample["source_idx"] = source_idx
+        row_for_sample = prepared_row
         async with semaphore:
             generation_error = ""
             try:
+                if row_for_sample is None:
+                    raise ValueError("prompt exceeds max_prompt_length")
                 if should_use_agentic_tool_loop(row_for_sample, args.max_tool_rounds):
                     generated = await generate_one_with_vllm_async_tool_loop(
                         engine=engine,
@@ -310,9 +368,9 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
             except Exception as exc:
                 generation_error = f"{type(exc).__name__}: {exc}"
                 generated = build_generation_detail(
-                    row=row_for_sample,
+                    row=row_for_sample or row,
                     prediction_text="",
-                    prompt_token_count=int(row_for_sample.get("prompt_tokens", 0)),
+                    prompt_token_count=int((row_for_sample or {}).get("prompt_tokens", 0)),
                     completion_token_count=0,
                     tool_rounds=0,
                     tool_call_count=0,
@@ -329,15 +387,16 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
             return {
                 "idx": source_idx,
                 "sample_id": sample_id,
+                "skill_id": (row_for_sample or {}).get("skill_id"),
+                "skill_name": (row_for_sample or {}).get("skill_name", "default"),
                 "generation_error": generation_error,
                 **generated,
             }
 
     try:
         tasks = [
-            generate_one(row_index, row, sample_id)
-            for row_index, row in enumerate(rows)
-            for sample_id in range(args.num_generations)
+            generate_one(row_index, row, sample_id, prepared_row)
+            for row_index, row, sample_id, prepared_row in prepared_jobs
         ]
         return await asyncio.gather(*tasks)
     finally:
@@ -481,6 +540,10 @@ def build_passk_summary(
             "total": sum(int(candidate.get("tool_call_count", 0)) for candidate in evaluated),
             "avg_per_candidate": sum(int(candidate.get("tool_call_count", 0)) for candidate in evaluated)
             / max(1, len(evaluated)),
+        },
+        "skill_headers": {
+            "mode": args.skill_headers,
+            "counts": dict(Counter(candidate.get("skill_name", "default") for candidate in evaluated)),
         },
         "timing_seconds": timing,
         "per_example": per_example,
@@ -628,7 +691,17 @@ def main() -> None:
     print(f"[passk] CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<unset>')}")
 
     start_time = time.time()
-    rows = load_rows(args.input_file, args.limit)
+    prompt_builder = PromptBuilder(prompt_config_from_args(args))
+    effective_input_file = args.raw_input_file or args.input_file
+    args.input_file = effective_input_file
+    force_prompt_rebuild = bool(args.build_prompts_at_runtime or args.raw_input_file)
+    rows = load_rows(
+        effective_input_file,
+        args.limit,
+        require_gold_sql=args.bird_mode == "dev",
+        prompt_builder=prompt_builder if force_prompt_rebuild else None,
+        force_prompt_rebuild=force_prompt_rebuild,
+    )
     difficulty_by_idx = load_difficulty_by_idx(args.diff_json_path, args.limit)
     for row in rows:
         row["difficulty"] = difficulty_by_idx.get(int(row.get("source_idx", -1)), "unknown")
@@ -645,7 +718,7 @@ def main() -> None:
     )
 
     generation_start = time.time()
-    candidates = asyncio.run(generate_candidates(args, rows))
+    candidates = asyncio.run(generate_candidates(args, rows, prompt_builder=prompt_builder))
     generation_seconds = time.time() - generation_start
     write_jsonl(output_dir / "passk_candidates_raw.jsonl", candidates)
 

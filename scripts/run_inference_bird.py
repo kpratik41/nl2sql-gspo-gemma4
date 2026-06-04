@@ -14,6 +14,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from nl2sql_gspo.data import normalize_record
+from nl2sql_gspo.prompt_builder import (
+    PromptBuilder,
+    add_prompt_args,
+    prompt_config_from_args,
+    read_json_or_jsonl,
+)
 from nl2sql_gspo.sql_utils import bird_execute_sql, bird_get_gold_rows, bird_result_match, extract_sql, get_database_path
 from nl2sql_gspo.inference_tool_executor import (
     configure_tool_env,
@@ -105,9 +111,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--inference_backend", type=str, choices=["vllm", "vllm_async"], default="vllm")
     parser.add_argument("--model_name_or_path", type=str, default=None)
-    parser.add_argument("--input_file", type=str, default="outputs/dev-20251106-schema.jsonl")
+    parser.add_argument("--input_file", type=str, default="outputs/old-dev-schema.jsonl")
     parser.add_argument("--database_dir", type=str, default="databases/dev_databases")
-    parser.add_argument("--diff_json_path", type=str, default="data/bird_dev_data/raw/dev_20251106.json")
+    parser.add_argument("--diff_json_path", type=str, default="data/bird_dev_data/raw/bird_dev.json")
     parser.add_argument("--output_dir", type=str, default="outputs/bird_dev_inference")
     parser.add_argument("--max_prompt_length", type=int, default=34000)
     parser.add_argument("--max_new_tokens", type=int, default=8000)
@@ -124,6 +130,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_tool_rounds", type=int, default=8)
     parser.add_argument("--skip_generation", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
+    add_prompt_args(parser)
     args = parser.parse_args()
     if args.inference_backend == "vllm_async":
         if args.vllm_tensor_parallel_size is None:
@@ -138,18 +145,20 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def load_rows(input_file: str, num_examples: int) -> List[Dict[str, Any]]:
-    input_path = Path(input_file)
+def load_rows(
+    input_file: str,
+    num_examples: int,
+    *,
+    require_gold_sql: bool = True,
+    prompt_builder: Optional[PromptBuilder] = None,
+    force_prompt_rebuild: bool = False,
+) -> List[Dict[str, Any]]:
+    raw_rows = read_json_or_jsonl(input_file)
 
-    if input_path.suffix.lower() == ".jsonl":
-        with input_path.open("r", encoding="utf-8") as handle:
-            raw_rows = [json.loads(line) for line in handle if line.strip()]
+    if prompt_builder is not None:
+        rows = prompt_builder.build_rows(raw_rows, force_rebuild=force_prompt_rebuild)
     else:
-        with input_path.open("r", encoding="utf-8") as handle:
-            loaded = json.load(handle)
-            raw_rows = loaded if isinstance(loaded, list) else [loaded]
-
-    rows = [normalize_record(row) for row in raw_rows]
+        rows = [normalize_record(row) for row in raw_rows]
 
     if num_examples >= 0:
         rows = rows[:num_examples]
@@ -162,7 +171,7 @@ def load_rows(input_file: str, num_examples: int) -> List[Dict[str, Any]]:
         missing_fields = []
         if not row.get("db_id"):
             missing_fields.append("db_id")
-        if not row.get("gold_sql"):
+        if require_gold_sql and not row.get("gold_sql"):
             missing_fields.append("gold_sql")
 
         if missing_fields:
@@ -1604,9 +1613,12 @@ def render_run_config(args: argparse.Namespace, row_count: int) -> List[str]:
     return [
         "## Run Configuration",
         "",
+        f"- bird_mode: `{args.bird_mode}`",
         f"- inference_backend: `{args.inference_backend}`",
         f"- model_name_or_path: `{args.model_name_or_path}`",
         f"- input_file: `{args.input_file}`",
+        f"- raw_input_file: `{args.raw_input_file}`",
+        f"- build_prompts_at_runtime: `{args.build_prompts_at_runtime}`",
         f"- database_dir: `{args.database_dir}`",
         f"- diff_json_path: `{args.diff_json_path}`",
         f"- num_examples: `{args.num_examples}`",
@@ -1923,13 +1935,24 @@ def main() -> None:
     ensure_output_dir(output_dir, args.overwrite)
     print_run_configuration(args, output_dir)
 
-    rows = load_rows(args.input_file, args.num_examples)
+    prompt_config = prompt_config_from_args(args)
+    prompt_builder = PromptBuilder(prompt_config)
+    effective_input_file = args.raw_input_file or args.input_file
+    args.input_file = effective_input_file
+    force_prompt_rebuild = bool(args.build_prompts_at_runtime or args.raw_input_file)
+    rows = load_rows(
+        effective_input_file,
+        args.num_examples,
+        require_gold_sql=args.bird_mode == "dev",
+        prompt_builder=prompt_builder if force_prompt_rebuild else None,
+        force_prompt_rebuild=force_prompt_rebuild,
+    )
     print(f"[run] loaded {len(rows)} input rows")
 
     # Configure tool environment for database access
     configure_tool_env(args.database_dir)
     
-    predictions_path = output_dir / "predict_dev.json"
+    predictions_path = output_dir / f"predict_{args.bird_mode}.json"
     details_path = output_dir / "prediction_details.jsonl"
     filtered_path = output_dir / "filtered_examples.jsonl"
     per_example_eval_path = output_dir / "eval_results.jsonl"
@@ -1939,8 +1962,9 @@ def main() -> None:
     per_example_report_csv_path = output_dir / "per_example_report.csv"
     difficulty_csv_path = output_dir / "eval_summary_by_difficulty.csv"
     db_csv_path = output_dir / "eval_summary_by_db.csv"
-    diff_rows = load_diff_rows(args.diff_json_path)
-    print(f"[run] loaded {len(diff_rows)} diff rows")
+    diff_rows = load_diff_rows(args.diff_json_path) if args.bird_mode == "dev" else []
+    if args.bird_mode == "dev":
+        print(f"[run] loaded {len(diff_rows)} diff rows")
 
     detailed_predictions: List[Dict[str, Any]] = []
     if args.skip_generation:
@@ -1967,14 +1991,34 @@ def main() -> None:
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     evaluation_started_at = time.monotonic()
-    per_example_results, summary = evaluate_predictions(
-        rows=rows,
-        predictions=official_predictions,
-        database_dir=args.database_dir,
-        diff_rows=diff_rows,
-        timeout_s=args.eval_timeout,
-        eval_workers=args.eval_workers,
-    )
+    if args.bird_mode == "dev":
+        per_example_results, summary = evaluate_predictions(
+            rows=rows,
+            predictions=official_predictions,
+            database_dir=args.database_dir,
+            diff_rows=diff_rows,
+            timeout_s=args.eval_timeout,
+            eval_workers=args.eval_workers,
+        )
+    else:
+        per_example_results = []
+        summary = {
+            "by_difficulty": OrderedDict(),
+            "by_db": OrderedDict(),
+            "total": {"correct": 0, "count": 0, "accuracy": 0.0},
+            "execution_stats": {
+                "pred_sql_extracted": 0,
+                "pred_sql_missing": 0,
+                "gold_sql_extracted": 0,
+                "gold_sql_missing": 0,
+                "pred_sql_executed": 0,
+                "pred_sql_execution_failed": 0,
+                "gold_sql_executed": 0,
+                "gold_sql_execution_failed": 0,
+                "both_sql_executed": 0,
+            },
+        }
+        print("[evaluation] bird_mode=test; skipped local execution-accuracy scoring")
     evaluation_seconds = time.monotonic() - evaluation_started_at
     total_seconds = time.monotonic() - run_started_at
     summary["timing_seconds"] = {
@@ -1991,13 +2035,14 @@ def main() -> None:
     with summary_path.open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, ensure_ascii=False, indent=2)
 
-    report_rows = build_per_example_report_rows(detailed_predictions, per_example_results)
+    report_rows = build_per_example_report_rows(detailed_predictions, per_example_results) if args.bird_mode == "dev" else []
     write_per_example_report_csv(report_rows, per_example_report_csv_path)
     write_summary_markdown(summary, summary_markdown_path, args, len(rows))
     write_run_report_markdown(summary, report_rows, run_report_path, args, len(rows))
     write_summary_csv(summary["by_difficulty"], difficulty_csv_path)
     write_summary_csv(summary["by_db"], db_csv_path)
-    print_summary_tables(summary)
+    if args.bird_mode == "dev":
+        print_summary_tables(summary)
     print(
         "Timing Seconds "
         f"generation={generation_seconds:.2f} "

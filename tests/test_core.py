@@ -14,6 +14,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from nl2sql_gspo.data import normalize_record
+from nl2sql_gspo.prompt_builder import PromptBuilder, PromptConfig
 from nl2sql_gspo.sql_utils import (
     bird_execute_sql,
     bird_get_gold_rows,
@@ -171,6 +172,109 @@ class InferenceScriptTests(unittest.TestCase):
             groups = plan_vllm_device_groups(tensor_parallel_size=4, data_parallel_size=2)
 
         self.assertEqual(groups, [["0", "1", "2", "3"], ["4", "5", "6", "7"]])
+
+
+class PromptBuilderTests(unittest.TestCase):
+    def _make_builder(self, tmpdir, **overrides):
+        database_root = Path(tmpdir)
+        db_id = "toy"
+        db_dir = database_root / db_id
+        db_dir.mkdir(parents=True, exist_ok=True)
+        db_path = db_dir / f"{db_id}.sqlite"
+        conn = sqlite3.connect(db_path)
+        conn.execute("DROP TABLE IF EXISTS demo")
+        conn.execute("CREATE TABLE demo (id INTEGER PRIMARY KEY, name TEXT, score REAL)")
+        conn.executemany("INSERT INTO demo (name, score) VALUES (?, ?)", [("Alice", 1.5), ("Bob", 2.0)])
+        conn.commit()
+        conn.close()
+        meanings_path = database_root / "column_meaning.json"
+        meanings_path.write_text(
+            json.dumps({"toy|demo|score": "# score is the metric value"}),
+            encoding="utf-8",
+        )
+        values = {
+            "database_dir": str(database_root),
+            "meanings_file": str(meanings_path),
+            "tool_mode": "default",
+            **overrides,
+        }
+        config = PromptConfig(**values)
+        return PromptBuilder(config)
+
+    def test_runtime_dev_row_builds_prompt_and_gold_sql(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            builder = self._make_builder(tmpdir)
+            row = builder.build_row(
+                {
+                    "db_id": "toy",
+                    "question": "What is Alice's score?",
+                    "evidence": "Alice refers to name = 'Alice'",
+                    "SQL": "SELECT score FROM demo WHERE name = 'Alice'",
+                },
+                force_rebuild=True,
+            )
+
+        self.assertEqual(row["gold_sql"], "SELECT score FROM demo WHERE name = 'Alice';")
+        self.assertEqual([message["role"] for message in row["prompt"]], ["system", "user"])
+        self.assertIn("<database_schema>", row["prompt"][1]["content"])
+        self.assertEqual([tool["function"]["name"] for tool in row["tools"]], ["bm25_search_sqlite", "sqlite_peek", "sqlite_query"])
+
+    def test_runtime_test_row_allows_empty_gold_sql(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            builder = self._make_builder(tmpdir, bird_mode="test", tool_mode="none")
+            row = builder.build_row(
+                {
+                    "db_id": "toy",
+                    "question": "List names.",
+                    "evidence": "",
+                    "SQL": "",
+                },
+                force_rebuild=True,
+            )
+
+        self.assertEqual(row["gold_sql"], "")
+        self.assertEqual(row["tools"], [])
+
+    def test_schema_flags_change_rendered_prompt_and_cache_by_db(self):
+        raw = {
+            "db_id": "toy",
+            "question": "List scores.",
+            "evidence": "",
+            "SQL": "SELECT score FROM demo",
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            full_builder = self._make_builder(tmpdir, include_column_comments=True, include_stats=True)
+            full_row = full_builder.build_row(raw, force_rebuild=True)
+            full_again = full_builder.build_row(raw, force_rebuild=True)
+            bare_builder = self._make_builder(tmpdir, include_column_comments=False, include_stats=False)
+            bare_row = bare_builder.build_row(raw, force_rebuild=True)
+
+        self.assertIn("score is the metric value", full_row["prompt"][1]["content"])
+        self.assertIn("Stats:", full_row["prompt"][1]["content"])
+        self.assertEqual(full_builder.schema_cache.build_count, 1)
+        self.assertEqual(full_again["prompt"][1]["content"], full_row["prompt"][1]["content"])
+        self.assertNotIn("score is the metric value", bare_row["prompt"][1]["content"])
+        self.assertNotIn("Stats:", bare_row["prompt"][1]["content"])
+
+    def test_tool_modes_and_skill_headers(self):
+        raw = {
+            "db_id": "toy",
+            "question": "List names.",
+            "evidence": "",
+            "SQL": "SELECT name FROM demo",
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            consensus = self._make_builder(tmpdir, tool_mode="consensus")
+            consensus_row = consensus.build_row(raw, force_rebuild=True)
+            skilled = self._make_builder(tmpdir, skill_headers="cycle")
+            row0 = skilled.build_row(raw, force_rebuild=True, sample_id=0)
+            row1 = skilled.build_row(raw, force_rebuild=True, sample_id=1)
+
+        self.assertIn("consensus_at_1", [tool["function"]["name"] for tool in consensus_row["tools"]])
+        self.assertEqual(row0["skill_name"], "default")
+        self.assertEqual(row1["skill_name"], "decompose-first")
+        self.assertTrue(row1["prompt"][0]["content"].startswith("SKILL: DECOMPOSE-FIRST"))
+
 
 class SchemaBuildTests(unittest.TestCase):
     def test_format_user_prompt_omits_fewshot_preamble_when_disabled(self):

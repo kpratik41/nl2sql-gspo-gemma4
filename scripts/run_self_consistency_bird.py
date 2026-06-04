@@ -13,15 +13,16 @@ from scripts.run_passk_bird import (
 )
 from scripts.run_inference_bird import load_diff_rows, load_rows
 from nl2sql_gspo.inference_tool_executor import configure_tool_env
+from nl2sql_gspo.prompt_builder import PromptBuilder, add_prompt_args, prompt_config_from_args
 from nl2sql_gspo.sql_utils import bird_execute_sql, bird_get_gold_rows, bird_result_match
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name_or_path", type=str, required=True)
-    parser.add_argument("--input_file", type=str, default="outputs/dev-20251106-schema.jsonl")
+    parser.add_argument("--input_file", type=str, default="outputs/old-dev-schema.jsonl")
     parser.add_argument("--database_dir", type=str, default="databases/dev_databases")
-    parser.add_argument("--diff_json_path", type=str, default="data/bird_dev_data/raw/dev_20251106.json")
+    parser.add_argument("--diff_json_path", type=str, default="data/bird_dev_data/raw/bird_dev.json")
     parser.add_argument("--output_dir", type=str, default="outputs/bird_dev_self_consistency")
     parser.add_argument("--num_examples", type=int, default=-1)
     parser.add_argument("--max_prompt_length", type=int, default=30000)
@@ -37,6 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vllm_max_model_len", type=int, default=None)
     parser.add_argument("--vllm_async_concurrency", type=int, default=16)
     parser.add_argument("--overwrite", action="store_true")
+    add_prompt_args(parser)
     return parser.parse_args()
 
 
@@ -88,8 +90,9 @@ def align_rows_with_raw_references(
 def generate_predictions_with_vllm_n(
     rows: List[Dict[str, Any]],
     args: argparse.Namespace,
+    prompt_builder: PromptBuilder,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    candidates = asyncio.run(generate_candidates(args, rows))
+    candidates = asyncio.run(generate_candidates(args, rows, prompt_builder=prompt_builder))
     grouped: Dict[int, Dict[str, Any]] = OrderedDict()
     for candidate in sorted(candidates, key=lambda item: (int(item["idx"]), int(item["sample_id"]))):
         idx = int(candidate["idx"])
@@ -112,6 +115,8 @@ def generate_predictions_with_vllm_n(
                 "sample_idx": int(candidate["sample_id"]),
                 "prediction_text": candidate.get("prediction_text", ""),
                 "pred_sql": candidate.get("pred_sql", ""),
+                "skill_id": candidate.get("skill_id"),
+                "skill_name": candidate.get("skill_name", "default"),
                 "prompt_tokens": candidate.get("prompt_tokens", 0),
                 "completion_token_count": candidate.get("completion_token_count", 0),
                 "tool_rounds": candidate.get("tool_rounds", 0),
@@ -247,6 +252,8 @@ def evaluate_candidates(
             "db_id": row["db_id"],
             "difficulty": row.get("difficulty", "unknown"),
             "sample_idx": generation["sample_idx"],
+            "skill_id": generation.get("skill_id"),
+            "skill_name": generation.get("skill_name", "default"),
             "pred_sql": predicted_sql,
             "gold_sql": row["gold_sql"],
             "pred_rows": pred_rows,
@@ -302,6 +309,8 @@ def evaluate_candidates(
                     "pred_sql_extracted": False,
                     "gold_sql_extracted": bool(row["gold_sql"].strip()),
                     "selected_sample_idx": None,
+                    "selected_skill_id": None,
+                    "selected_skill_name": "",
                     "selected_vote_count": 0,
                     "valid_vote_candidates": 0,
                     "ignored_empty_results": vote_meta["ignored_empty_results"],
@@ -325,6 +334,8 @@ def evaluate_candidates(
                     "pred_sql_extracted": winner["pred_sql_extracted"],
                     "gold_sql_extracted": winner["gold_sql_extracted"],
                     "selected_sample_idx": winner["sample_idx"],
+                    "selected_skill_id": winner.get("skill_id"),
+                    "selected_skill_name": winner.get("skill_name", "default"),
                     "selected_vote_count": vote_meta["winning_vote_count"],
                     "valid_vote_candidates": vote_meta["num_valid_votes"],
                     "ignored_empty_results": vote_meta["ignored_empty_results"],
@@ -339,6 +350,21 @@ def evaluate_candidates(
     summary["self_consistency"] = {
         **voting_stats,
         "num_generations": prediction_rows[0]["generations"][-1]["sample_idx"] + 1 if prediction_rows else 0,
+        "skill_header_counts": {
+            name: sum(
+                1
+                for row in prediction_rows
+                for generation in row["generations"]
+                if generation.get("skill_name", "default") == name
+            )
+            for name in sorted(
+                {
+                    generation.get("skill_name", "default")
+                    for row in prediction_rows
+                    for generation in row["generations"]
+                }
+            )
+        },
         "selection_rule": "majority vote over executable non-empty result sets; ties break by earliest sample idx then shorter SQL",
     }
     return sample_results, selected_results, summary
@@ -376,14 +402,24 @@ def main() -> None:
     ensure_output_dir(output_dir, args.overwrite)
     print_configuration(args, output_dir)
 
-    rows = load_rows(args.input_file, args.num_examples)
+    prompt_builder = PromptBuilder(prompt_config_from_args(args))
+    effective_input_file = args.raw_input_file or args.input_file
+    args.input_file = effective_input_file
+    force_prompt_rebuild = bool(args.build_prompts_at_runtime or args.raw_input_file)
+    rows = load_rows(
+        effective_input_file,
+        args.num_examples,
+        require_gold_sql=args.bird_mode == "dev",
+        prompt_builder=prompt_builder if force_prompt_rebuild else None,
+        force_prompt_rebuild=force_prompt_rebuild,
+    )
     print(f"[run] loaded {len(rows)} input rows")
     diff_rows = load_diff_rows(args.diff_json_path)
     print(f"[run] loaded {len(diff_rows)} diff rows")
     rows = align_rows_with_raw_references(rows, diff_rows)
     configure_tool_env(args.database_dir)
 
-    prediction_rows, skipped_rows = generate_predictions_with_vllm_n(rows, args)
+    prediction_rows, skipped_rows = generate_predictions_with_vllm_n(rows, args, prompt_builder)
     if skipped_rows:
         raise RuntimeError(
             f"Found {len(skipped_rows)} prompts exceeding max_prompt_length={args.max_prompt_length}; rerun with a larger context budget."

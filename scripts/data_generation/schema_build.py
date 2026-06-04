@@ -86,7 +86,7 @@ def resolve_default_paths(base_dir: Optional[str], split: str) -> Dict[str, str]
         input_name = "train-6601-few-shot.jsonl"
         meanings_name = "train_column_meaning.json"
     else:
-        input_name = "dev_20251106-few-shot.json"
+        input_name = "bird_dev-few-shot.json"
         meanings_name = "column_meaning.json"
 
     # Prefer the repository layout used by this workspace, but retain compatibility

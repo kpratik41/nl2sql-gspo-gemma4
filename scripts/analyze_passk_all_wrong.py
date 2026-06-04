@@ -36,16 +36,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--source-jsonl",
-        default="outputs/dev-20251106-schema.jsonl",
+        default="outputs/old-dev-schema.jsonl",
         help="Original JSONL to filter into the all-wrong subset.",
     )
     parser.add_argument(
         "--tool-jsonl",
-        default="outputs/dev-20251106-schema-tool.jsonl",
+        default="outputs/old-dev-schema-tool.jsonl",
         help="Tool JSONL containing top-level question/evidence/db_id/gold_sql.",
     )
     parser.add_argument("--database-dir", default="databases/dev_databases")
-    parser.add_argument("--output-jsonl", default="outputs/dev-20251106-schema-373.jsonl")
+    parser.add_argument("--output-jsonl", default="outputs/old-dev-schema-all-wrong.jsonl")
     parser.add_argument(
         "--analysis-jsonl",
         default=None,

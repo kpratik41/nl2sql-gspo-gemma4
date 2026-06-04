@@ -8,9 +8,21 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
 MODEL_PATH="${MODEL_PATH:-outputs/gemma4_31b_gspo_bird}"
-INPUT_FILE="${INPUT_FILE:-outputs/dev-20251106-schema.jsonl}"
+INPUT_FILE="${INPUT_FILE:-outputs/old-dev-schema.jsonl}"
 DATABASE_DIR="${DATABASE_DIR:-databases/dev_databases}"
-DIFF_JSON_PATH="${DIFF_JSON_PATH:-data/bird_dev_data/raw/dev_20251106.json}"
+DIFF_JSON_PATH="${DIFF_JSON_PATH:-data/bird_dev_data/raw/bird_dev.json}"
+BIRD_MODE="${BIRD_MODE:-dev}"
+BUILD_PROMPTS_AT_RUNTIME="${BUILD_PROMPTS_AT_RUNTIME:-0}"
+RAW_INPUT_FILE="${RAW_INPUT_FILE:-}"
+MEANINGS_FILE="${MEANINGS_FILE:-data/bird_dev_data/raw/column_meaning.json}"
+INCLUDE_COLUMN_COMMENTS="${INCLUDE_COLUMN_COMMENTS:-1}"
+INCLUDE_FEWSHOTS="${INCLUDE_FEWSHOTS:-1}"
+INCLUDE_STATS="${INCLUDE_STATS:-1}"
+INCLUDE_NULLABILITY="${INCLUDE_NULLABILITY:-1}"
+EXAMPLE_NUM="${EXAMPLE_NUM:-3}"
+TOOL_MODE="${TOOL_MODE:-default}"
+PROMPT_TEMPLATE="${PROMPT_TEMPLATE:-default}"
+SKILL_HEADERS="${SKILL_HEADERS:-none}"
 USER_OUTPUT_DIR="${OUTPUT_DIR:-}"
 NUM_EXAMPLES="${NUM_EXAMPLES:--1}"
 MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-34000}"
@@ -111,6 +123,12 @@ cmd=(
   --input_file "${INPUT_FILE}"
   --database_dir "${DATABASE_DIR}"
   --diff_json_path "${DIFF_JSON_PATH}"
+  --bird_mode "${BIRD_MODE}"
+  --meanings_file "${MEANINGS_FILE}"
+  --example_num "${EXAMPLE_NUM}"
+  --tool_mode "${TOOL_MODE}"
+  --prompt_template "${PROMPT_TEMPLATE}"
+  --skill_headers "${SKILL_HEADERS}"
   --output_dir "${OUTPUT_DIR}"
   --num_examples "${NUM_EXAMPLES}"
   --max_prompt_length "${MAX_PROMPT_LENGTH}"
@@ -122,6 +140,30 @@ cmd=(
   --eval_workers "${EVAL_WORKERS}"
   --overwrite
 )
+
+if [[ "${BUILD_PROMPTS_AT_RUNTIME}" == "1" ]]; then
+  cmd+=(--build_prompts_at_runtime)
+fi
+
+if [[ -n "${RAW_INPUT_FILE}" ]]; then
+  cmd+=(--raw_input_file "${RAW_INPUT_FILE}")
+fi
+
+if [[ "${INCLUDE_COLUMN_COMMENTS}" == "0" ]]; then
+  cmd+=(--no_column_comments)
+fi
+
+if [[ "${INCLUDE_FEWSHOTS}" == "0" ]]; then
+  cmd+=(--no_fewshots)
+fi
+
+if [[ "${INCLUDE_STATS}" == "0" ]]; then
+  cmd+=(--no_stats)
+fi
+
+if [[ "${INCLUDE_NULLABILITY}" == "0" ]]; then
+  cmd+=(--no_nullability)
+fi
 
 if [[ -n "${VLLM_TENSOR_PARALLEL_SIZE}" ]]; then
   cmd+=(--vllm_tensor_parallel_size "${VLLM_TENSOR_PARALLEL_SIZE}")
