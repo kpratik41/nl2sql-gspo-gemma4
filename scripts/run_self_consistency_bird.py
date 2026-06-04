@@ -8,13 +8,17 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from scripts.run_inference_bird import build_summary, write_summary_csv
 from scripts.run_passk_bird import (
+    PASSK_MANIFEST_FIELDS,
     ensure_output_dir,
     generate_candidates,
 )
 from scripts.run_inference_bird import load_diff_rows, load_rows
 from nl2sql_gspo.inference_tool_executor import configure_tool_env
 from nl2sql_gspo.prompt_builder import PromptBuilder, add_prompt_args, prompt_config_from_args
+from nl2sql_gspo.resume import add_resume_args, atomic_write_json, atomic_write_jsonl, build_manifest, prepare_manifest, validate_resume_args
 from nl2sql_gspo.sql_utils import bird_execute_sql, bird_get_gold_rows, bird_result_match
+
+SELF_CONSISTENCY_MANIFEST_FIELDS = PASSK_MANIFEST_FIELDS + ["vllm_data_parallel_size"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,8 +42,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vllm_max_model_len", type=int, default=None)
     parser.add_argument("--vllm_async_concurrency", type=int, default=16)
     parser.add_argument("--overwrite", action="store_true")
+    add_resume_args(parser)
     add_prompt_args(parser)
-    return parser.parse_args()
+    args = parser.parse_args()
+    validate_resume_args(args)
+    return args
 
 
 def print_configuration(args: argparse.Namespace, output_dir: Path) -> None:
@@ -399,12 +406,16 @@ def write_self_consistency_markdown(summary: Dict[str, Any], markdown_path: Path
 def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
-    ensure_output_dir(output_dir, args.overwrite)
-    print_configuration(args, output_dir)
+    ensure_output_dir(output_dir, args.overwrite, args.resume)
 
     prompt_builder = PromptBuilder(prompt_config_from_args(args))
     effective_input_file = args.raw_input_file or args.input_file
     args.input_file = effective_input_file
+    args._candidate_checkpoint_path = str(output_dir / "passk_candidates_raw.incremental.jsonl")
+    manifest = build_manifest(args, mode="self_consistency", fields=SELF_CONSISTENCY_MANIFEST_FIELDS)
+    prepare_manifest(output_dir, manifest, resume=args.resume)
+    print_configuration(args, output_dir)
+
     force_prompt_rebuild = bool(args.build_prompts_at_runtime or args.raw_input_file)
     rows = load_rows(
         effective_input_file,
@@ -441,26 +452,14 @@ def main() -> None:
     difficulty_csv_path = output_dir / "self_consistency_summary_by_difficulty.csv"
     db_csv_path = output_dir / "self_consistency_summary_by_db.csv"
 
-    with generations_path.open("w", encoding="utf-8") as handle:
-        for row in prediction_rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-    with filtered_path.open("w", encoding="utf-8") as handle:
-        for row in skipped_rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-    with sample_results_path.open("w", encoding="utf-8") as handle:
-        for row in sample_results:
-            serializable = dict(row)
-            serializable.pop("pred_rows", None)
-            handle.write(json.dumps(serializable, ensure_ascii=False) + "\n")
-
-    with selected_results_path.open("w", encoding="utf-8") as handle:
-        for row in selected_results:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-    with summary_path.open("w", encoding="utf-8") as handle:
-        json.dump(summary, handle, ensure_ascii=False, indent=2)
+    atomic_write_jsonl(generations_path, prediction_rows)
+    atomic_write_jsonl(filtered_path, skipped_rows)
+    atomic_write_jsonl(
+        sample_results_path,
+        [{key: value for key, value in row.items() if key != "pred_rows"} for row in sample_results],
+    )
+    atomic_write_jsonl(selected_results_path, selected_results)
+    atomic_write_json(summary_path, summary)
 
     write_self_consistency_markdown(summary, summary_markdown_path)
     write_summary_csv(summary["by_difficulty"], difficulty_csv_path)

@@ -20,6 +20,17 @@ from nl2sql_gspo.prompt_builder import (
     prompt_config_from_args,
     read_json_or_jsonl,
 )
+from nl2sql_gspo.resume import (
+    add_resume_args,
+    append_jsonl,
+    atomic_write_json,
+    atomic_write_jsonl,
+    build_manifest,
+    checkpoint_map,
+    incremental_enabled,
+    prepare_manifest,
+    validate_resume_args,
+)
 from nl2sql_gspo.sql_utils import bird_execute_sql, bird_get_gold_rows, bird_result_match, extract_sql, get_database_path
 from nl2sql_gspo.inference_tool_executor import (
     configure_tool_env,
@@ -30,6 +41,33 @@ from nl2sql_gspo.inference_tool_executor import (
 )
 
 BIRD_SPLIT_MARKER = "\t----- bird -----\t"
+
+TEMP0_MANIFEST_FIELDS = [
+    "inference_backend",
+    "model_name_or_path",
+    "input_file",
+    "raw_input_file",
+    "database_dir",
+    "bird_mode",
+    "build_prompts_at_runtime",
+    "meanings_file",
+    "include_column_comments",
+    "include_fewshots",
+    "include_stats",
+    "include_nullability",
+    "example_num",
+    "tool_mode",
+    "prompt_template",
+    "skill_headers",
+    "temperature",
+    "top_p",
+    "max_new_tokens",
+    "max_prompt_length",
+    "max_tool_rounds",
+    "vllm_tensor_parallel_size",
+    "vllm_data_parallel_size",
+    "vllm_max_model_len",
+]
 
 
 def should_log_each_example(total_count: int) -> bool:
@@ -130,8 +168,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_tool_rounds", type=int, default=8)
     parser.add_argument("--skip_generation", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
+    add_resume_args(parser)
     add_prompt_args(parser)
     args = parser.parse_args()
+    validate_resume_args(args)
     if args.inference_backend == "vllm_async":
         if args.vllm_tensor_parallel_size is None:
             args.vllm_tensor_parallel_size = 8
@@ -381,6 +421,30 @@ def build_generation_detail(
         "stop_reason": stop_reason,
         "error_message": error_message,
     }
+
+
+def make_prediction_detail(row: Dict[str, Any], generated: Dict[str, Any], row_index: int = 0) -> Dict[str, Any]:
+    source_idx = generated.get("source_idx", row.get("source_idx", row_index))
+    return {
+        "idx": source_idx,
+        "db_id": generated.get("db_id", row.get("db_id", "")),
+        "prediction_text": generated.get("prediction_text", ""),
+        "pred_sql": generated.get("pred_sql", ""),
+        "gold_sql": extract_sql(row.get("gold_sql", "")),
+        "prompt_tokens": generated.get("prompt_tokens", row.get("prompt_tokens", 0)),
+        "completion_token_count": generated.get("completion_token_count", 0),
+        "tool_rounds": generated.get("tool_rounds", 0),
+        "tool_call_count": generated.get("tool_call_count", 0),
+        "stop_reason": generated.get("stop_reason", ""),
+        "error_message": generated.get("error_message", ""),
+    }
+
+
+def official_predictions_from_details(details: List[Dict[str, Any]]) -> Dict[str, str]:
+    predictions: Dict[str, str] = {}
+    for detail in sorted(details, key=lambda row: int(row["idx"])):
+        predictions[str(detail["idx"])] = f"{detail.get('pred_sql', '')}{BIRD_SPLIT_MARKER}{detail.get('db_id', '')}"
+    return predictions
 
 
 def should_use_agentic_tool_loop(row: Dict[str, Any], max_tool_rounds: int) -> bool:
@@ -671,23 +735,21 @@ def _vllm_generate_worker(
 
         tokenizer = load_tokenizer(llm_config["tokenizer_name_or_path"])
 
-        results = []
         for row in rows:
             if should_use_agentic_tool_loop(row, llm_config["max_tool_rounds"]):
                 configure_tool_env(llm_config.get("database_dir", "databases"))
-                results.append(
-                    generate_one_with_vllm_tool_loop(
-                        llm=llm,
-                        sampling_params_cls=SamplingParams,
-                        tokenizer=tokenizer,
-                        row=row,
-                        max_new_tokens=llm_config["max_new_tokens"],
-                        max_tool_rounds=llm_config["max_tool_rounds"],
-                        eval_timeout=llm_config.get("eval_timeout", 60.0),
-                        temperature=llm_config["temperature"],
-                        top_p=llm_config["top_p"],
-                    )
+                generated = generate_one_with_vllm_tool_loop(
+                    llm=llm,
+                    sampling_params_cls=SamplingParams,
+                    tokenizer=tokenizer,
+                    row=row,
+                    max_new_tokens=llm_config["max_new_tokens"],
+                    max_tool_rounds=llm_config["max_tool_rounds"],
+                    eval_timeout=llm_config.get("eval_timeout", 60.0),
+                    temperature=llm_config["temperature"],
+                    top_p=llm_config["top_p"],
                 )
+                queue.put({"status": "result", "shard_id": shard_id, "result": generated})
                 continue
 
             sampling_params = SamplingParams(
@@ -704,19 +766,18 @@ def _vllm_generate_worker(
                 configure_tool_env(llm_config.get("database_dir", "databases"))
                 prediction_text = extract_and_execute_tools(prediction_text, timeout_s=llm_config.get("eval_timeout", 60.0))
 
-            results.append(
-                build_generation_detail(
-                    row=row,
-                    prediction_text=prediction_text,
-                    prompt_token_count=int(row["prompt_tokens"]),
-                    completion_token_count=completion_token_count,
-                    tool_rounds=0,
-                    tool_call_count=len(extract_tool_calls(prediction_text)),
-                    stop_reason="finished",
-                )
+            generated = build_generation_detail(
+                row=row,
+                prediction_text=prediction_text,
+                prompt_token_count=int(row["prompt_tokens"]),
+                completion_token_count=completion_token_count,
+                tool_rounds=0,
+                tool_call_count=len(extract_tool_calls(prediction_text)),
+                stop_reason="finished",
             )
+            queue.put({"status": "result", "shard_id": shard_id, "result": generated})
 
-        queue.put({"status": "ok", "shard_id": shard_id, "results": results})
+        queue.put({"status": "done", "shard_id": shard_id})
     except Exception:
         queue.put({"status": "error", "shard_id": shard_id, "error": traceback.format_exc()})
 
@@ -774,10 +835,40 @@ def generate_predictions_with_vllm_data_parallel(
         processes.append(process)
 
     collected_results: Dict[int, Dict[str, Any]] = {}
+    rows_by_idx = {int(row.get("source_idx", idx)): row for idx, row in enumerate(rows)}
     try:
-        for _ in processes:
+        done_shards = 0
+        while done_shards < len(processes):
             message = queue.get()
-            if message.get("status") != "ok":
+            status = message.get("status")
+            if status == "result":
+                result = message["result"]
+                source_idx = int(result["source_idx"])
+                collected_results[source_idx] = result
+                if incremental_enabled(args):
+                    append_jsonl(
+                        Path(args._prediction_checkpoint_path),
+                        make_prediction_detail(rows_by_idx.get(source_idx, {}), result),
+                    )
+                continue
+
+            if status == "done":
+                done_shards += 1
+                continue
+
+            if status == "ok":
+                for result in message["results"]:
+                    source_idx = int(result["source_idx"])
+                    collected_results[source_idx] = result
+                    if incremental_enabled(args):
+                        append_jsonl(
+                            Path(args._prediction_checkpoint_path),
+                            make_prediction_detail(rows_by_idx.get(source_idx, {}), result),
+                        )
+                done_shards += 1
+                continue
+
+            if status != "ok":
                 collect_error = RuntimeError(
                     "vLLM data-parallel worker failed"
                     + (f" (shard {message.get('shard_id')})" if "shard_id" in message else "")
@@ -785,9 +876,6 @@ def generate_predictions_with_vllm_data_parallel(
                     + message.get("error", "unknown error")
                 )
                 raise collect_error
-
-            for result in message["results"]:
-                collected_results[result["source_idx"]] = result
     finally:
         for process in processes:
             process.join(timeout=30)
@@ -826,21 +914,9 @@ def generate_predictions_with_vllm_data_parallel(
         prompt_token_count = generated["prompt_tokens"]
         completion_token_count = generated["completion_token_count"]
 
+        detail = make_prediction_detail(row, generated, idx)
         official_predictions[str(source_idx)] = f"{pred_sql}{BIRD_SPLIT_MARKER}{db_id}"
-        detailed_predictions.append(
-            {
-                "idx": source_idx,
-                "db_id": db_id,
-                "prediction_text": prediction_text,
-                "pred_sql": pred_sql,
-                "gold_sql": extract_sql(row.get("gold_sql", "")),
-                "prompt_tokens": prompt_token_count,
-                "completion_token_count": completion_token_count,
-                "tool_rounds": generated.get("tool_rounds", 0),
-                "tool_call_count": generated.get("tool_call_count", 0),
-                "stop_reason": generated.get("stop_reason", ""),
-            }
-        )
+        detailed_predictions.append(detail)
 
         if log_each_example:
             print(
@@ -952,21 +1028,11 @@ def generate_predictions_with_vllm(rows: List[Dict[str, Any]], args: argparse.Na
                 stop_reason="finished",
             )
 
+        detail = make_prediction_detail(row, generated, idx)
         official_predictions[str(source_idx)] = f"{pred_sql}{BIRD_SPLIT_MARKER}{db_id}"
-        detailed_predictions.append(
-            {
-                "idx": source_idx,
-                "db_id": db_id,
-                "prediction_text": prediction_text,
-                "pred_sql": pred_sql,
-                "gold_sql": extract_sql(row.get("gold_sql", "")),
-                "prompt_tokens": prompt_token_count,
-                "completion_token_count": completion_token_count,
-                "tool_rounds": generated.get("tool_rounds", 0),
-                "tool_call_count": generated.get("tool_call_count", 0),
-                "stop_reason": generated.get("stop_reason", ""),
-            }
-        )
+        detailed_predictions.append(detail)
+        if incremental_enabled(args):
+            append_jsonl(Path(args._prediction_checkpoint_path), detail)
 
         if log_each_example:
             print(
@@ -1128,6 +1194,8 @@ async def _generate_predictions_with_vllm_async_impl(
                 )
             if should_log_progress_tick(completed - 1, len(rows)):
                 print(f"[inference] async generated {completed}/{len(rows)} prompts")
+            if incremental_enabled(args):
+                append_jsonl(Path(args._prediction_checkpoint_path), make_prediction_detail(row, generated, idx))
             return generated
 
     try:
@@ -1146,21 +1214,7 @@ async def _generate_predictions_with_vllm_async_impl(
         db_id = generated["db_id"]
         pred_sql = generated["pred_sql"]
         official_predictions[str(source_idx)] = f"{pred_sql}{BIRD_SPLIT_MARKER}{db_id}"
-        detailed_predictions.append(
-            {
-                "idx": source_idx,
-                "db_id": db_id,
-                "prediction_text": generated["prediction_text"],
-                "pred_sql": pred_sql,
-                "gold_sql": extract_sql(row.get("gold_sql", "")),
-                "prompt_tokens": generated["prompt_tokens"],
-                "completion_token_count": generated["completion_token_count"],
-                "tool_rounds": generated.get("tool_rounds", 0),
-                "tool_call_count": generated.get("tool_call_count", 0),
-                "stop_reason": generated.get("stop_reason", ""),
-                "error_message": generated.get("error_message", ""),
-            }
-        )
+        detailed_predictions.append(make_prediction_detail(row, generated, idx))
 
     return rows, official_predictions, detailed_predictions, skipped_rows
 
@@ -1920,10 +1974,10 @@ def evaluate_predictions(
     return per_example_results, summary
 
 
-def ensure_output_dir(output_dir: Path, overwrite: bool) -> None:
-    if output_dir.exists() and any(output_dir.iterdir()) and not overwrite:
+def ensure_output_dir(output_dir: Path, overwrite: bool, resume: bool = False) -> None:
+    if output_dir.exists() and any(output_dir.iterdir()) and not overwrite and not resume:
         raise FileExistsError(
-            f"Output directory {output_dir} already contains files. Use --overwrite to reuse it."
+            f"Output directory {output_dir} already contains files. Use --overwrite or --resume to reuse it."
         )
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1932,13 +1986,16 @@ def main() -> None:
     run_started_at = time.monotonic()
     args = parse_args()
     output_dir = Path(args.output_dir)
-    ensure_output_dir(output_dir, args.overwrite)
-    print_run_configuration(args, output_dir)
+    ensure_output_dir(output_dir, args.overwrite, args.resume)
 
     prompt_config = prompt_config_from_args(args)
     prompt_builder = PromptBuilder(prompt_config)
     effective_input_file = args.raw_input_file or args.input_file
     args.input_file = effective_input_file
+    manifest = build_manifest(args, mode="temp0_inference", fields=TEMP0_MANIFEST_FIELDS)
+    prepare_manifest(output_dir, manifest, resume=args.resume)
+    print_run_configuration(args, output_dir)
+
     force_prompt_rebuild = bool(args.build_prompts_at_runtime or args.raw_input_file)
     rows = load_rows(
         effective_input_file,
@@ -1954,6 +2011,8 @@ def main() -> None:
     
     predictions_path = output_dir / f"predict_{args.bird_mode}.json"
     details_path = output_dir / "prediction_details.jsonl"
+    incremental_details_path = output_dir / "prediction_details.incremental.jsonl"
+    args._prediction_checkpoint_path = str(incremental_details_path)
     filtered_path = output_dir / "filtered_examples.jsonl"
     per_example_eval_path = output_dir / "eval_results.jsonl"
     summary_path = output_dir / "eval_summary.json"
@@ -1976,19 +2035,55 @@ def main() -> None:
                 detailed_predictions = [json.loads(line) for line in handle if line.strip()]
         generation_seconds = time.monotonic() - generation_started_at
     else:
+        if incremental_enabled(args) and not args.resume:
+            incremental_details_path.write_text("", encoding="utf-8")
+
+        existing_details_by_idx: Dict[int, Dict[str, Any]] = {}
+        if args.resume:
+            existing_details_by_idx = {
+                int(key[0]): detail
+                for key, detail in checkpoint_map(
+                    incremental_details_path,
+                    lambda row: (int(row["idx"]),),
+                ).items()
+            }
+            if existing_details_by_idx:
+                print(f"[resume] loaded {len(existing_details_by_idx)} completed temp-0 predictions")
+
+        rows_to_generate = [
+            row
+            for row_index, row in enumerate(rows)
+            if int(row.get("source_idx", row_index)) not in existing_details_by_idx
+        ]
+        if args.resume:
+            print(f"[resume] generating {len(rows_to_generate)} missing of {len(rows)} loaded rows")
+
         generation_started_at = time.monotonic()
-        rows, official_predictions, detailed_predictions, filtered_rows = generate_predictions(rows, args)
+        if rows_to_generate:
+            _generated_rows, _new_official, new_details, filtered_rows = generate_predictions(rows_to_generate, args)
+        else:
+            new_details, filtered_rows = [], []
         generation_seconds = time.monotonic() - generation_started_at
-        with predictions_path.open("w", encoding="utf-8") as handle:
-            json.dump(official_predictions, handle, ensure_ascii=False, indent=2)
 
-        with details_path.open("w", encoding="utf-8") as handle:
-            for record in detailed_predictions:
-                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        details_by_idx = dict(existing_details_by_idx)
+        for detail in new_details:
+            details_by_idx[int(detail["idx"])] = detail
 
-        with filtered_path.open("w", encoding="utf-8") as handle:
-            for record in filtered_rows:
-                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        detailed_predictions = [
+            details_by_idx[int(row.get("source_idx", row_index))]
+            for row_index, row in enumerate(rows)
+            if int(row.get("source_idx", row_index)) in details_by_idx
+        ]
+        official_predictions = official_predictions_from_details(detailed_predictions)
+        rows = [
+            row
+            for row_index, row in enumerate(rows)
+            if int(row.get("source_idx", row_index)) in details_by_idx
+        ]
+
+        atomic_write_json(predictions_path, official_predictions)
+        atomic_write_jsonl(details_path, detailed_predictions)
+        atomic_write_jsonl(filtered_path, filtered_rows)
 
     evaluation_started_at = time.monotonic()
     if args.bird_mode == "dev":
@@ -2028,12 +2123,8 @@ def main() -> None:
     }
     summary["generation_stats"] = build_generation_stats(detailed_predictions, filtered_rows)
 
-    with per_example_eval_path.open("w", encoding="utf-8") as handle:
-        for record in per_example_results:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-    with summary_path.open("w", encoding="utf-8") as handle:
-        json.dump(summary, handle, ensure_ascii=False, indent=2)
+    atomic_write_jsonl(per_example_eval_path, per_example_results)
+    atomic_write_json(summary_path, summary)
 
     report_rows = build_per_example_report_rows(detailed_predictions, per_example_results) if args.bird_mode == "dev" else []
     write_per_example_report_csv(report_rows, per_example_report_csv_path)

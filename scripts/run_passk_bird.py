@@ -26,6 +26,17 @@ if str(SRC_DIR) not in sys.path:
 
 from nl2sql_gspo.inference_tool_executor import configure_tool_env, extract_and_execute_tools, extract_tool_calls
 from nl2sql_gspo.prompt_builder import PromptBuilder, add_prompt_args, prompt_config_from_args
+from nl2sql_gspo.resume import (
+    add_resume_args,
+    append_jsonl,
+    atomic_write_json,
+    atomic_write_jsonl,
+    build_manifest,
+    checkpoint_map,
+    incremental_enabled,
+    prepare_manifest,
+    validate_resume_args,
+)
 from nl2sql_gspo.sql_utils import bird_get_gold_rows, extract_sql
 
 try:
@@ -58,6 +69,33 @@ except ModuleNotFoundError:
         get_generation_messages,
         should_use_agentic_tool_loop,
     )
+
+
+PASSK_MANIFEST_FIELDS = [
+    "model_name_or_path",
+    "input_file",
+    "raw_input_file",
+    "database_dir",
+    "bird_mode",
+    "build_prompts_at_runtime",
+    "meanings_file",
+    "include_column_comments",
+    "include_fewshots",
+    "include_stats",
+    "include_nullability",
+    "example_num",
+    "tool_mode",
+    "prompt_template",
+    "skill_headers",
+    "temperature",
+    "top_p",
+    "max_new_tokens",
+    "max_prompt_length",
+    "max_tool_rounds",
+    "num_generations",
+    "vllm_tensor_parallel_size",
+    "vllm_max_model_len",
+]
 
 
 def parse_args() -> argparse.Namespace:
@@ -116,8 +154,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vllm_max_model_len", type=int, default=None)
     parser.add_argument("--vllm_async_concurrency", type=int, default=16)
     parser.add_argument("--overwrite", action="store_true")
+    add_resume_args(parser)
     add_prompt_args(parser)
     args = parser.parse_args()
+    validate_resume_args(args)
     if args.num_shards < 1:
         parser.error("--num_shards must be >= 1")
     if args.shard_index < 0 or args.shard_index >= args.num_shards:
@@ -125,9 +165,9 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def ensure_output_dir(path: Path, overwrite: bool) -> None:
-    if path.exists() and any(path.iterdir()) and not overwrite:
-        raise FileExistsError(f"Output directory already exists and is non-empty: {path}. Use --overwrite.")
+def ensure_output_dir(path: Path, overwrite: bool, resume: bool = False) -> None:
+    if path.exists() and any(path.iterdir()) and not overwrite and not resume:
+        raise FileExistsError(f"Output directory already exists and is non-empty: {path}. Use --overwrite or --resume.")
     path.mkdir(parents=True, exist_ok=True)
 
 
@@ -169,9 +209,7 @@ def tool_order(prediction_text: str) -> List[str]:
 
 
 def write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
-    with path.open("w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    atomic_write_jsonl(path, rows)
 
 
 def read_jsonl(path: Path) -> List[Dict[str, Any]]:
@@ -235,6 +273,35 @@ async def generate_candidates(
     rows: List[Dict[str, Any]],
     prompt_builder: Optional[PromptBuilder] = None,
 ) -> List[Dict[str, Any]]:
+    checkpoint_path = Path(getattr(args, "_candidate_checkpoint_path", Path(args.output_dir) / "passk_candidates_raw.incremental.jsonl"))
+    if incremental_enabled(args) and not getattr(args, "resume", False) and not getattr(args, "_candidate_checkpoint_initialized", False):
+        checkpoint_path.write_text("", encoding="utf-8")
+        args._candidate_checkpoint_initialized = True
+
+    existing_by_key: Dict[tuple[int, int], Dict[str, Any]] = {}
+    if getattr(args, "resume", False):
+        existing_by_key = {
+            (int(key[0]), int(key[1])): candidate
+            for key, candidate in checkpoint_map(
+                checkpoint_path,
+                lambda row: (int(row["idx"]), int(row["sample_id"])),
+            ).items()
+        }
+        if existing_by_key:
+            print(f"[resume] loaded {len(existing_by_key)} completed pass@k candidates")
+
+    raw_jobs: List[tuple[int, Dict[str, Any], int]] = []
+    for row_index, row in enumerate(rows):
+        source_idx = int(row.get("source_idx", row_index))
+        for sample_id in range(args.num_generations):
+            if (source_idx, sample_id) in existing_by_key:
+                continue
+            raw_jobs.append((row_index, row, sample_id))
+
+    if not raw_jobs:
+        print(f"[resume] no missing candidates; reusing {len(existing_by_key)} checkpointed candidates")
+        return sorted(existing_by_key.values(), key=lambda item: (int(item["idx"]), int(item["sample_id"])))
+
     try:
         from vllm import AsyncLLMEngine, SamplingParams
         from vllm.engine.arg_utils import AsyncEngineArgs
@@ -284,9 +351,8 @@ async def generate_candidates(
         return prepared
 
     prepared_jobs: List[tuple[int, Dict[str, Any], int, Optional[Dict[str, Any]]]] = []
-    for row_index, row in enumerate(rows):
-        for sample_id in range(args.num_generations):
-            prepared_jobs.append((row_index, row, sample_id, prepare_sample_row(row_index, row, sample_id)))
+    for row_index, row, sample_id in raw_jobs:
+        prepared_jobs.append((row_index, row, sample_id, prepare_sample_row(row_index, row, sample_id)))
 
     if skipped_rows:
         write_jsonl(Path(args.output_dir) / "skipped_prompts.jsonl", skipped_rows)
@@ -310,7 +376,7 @@ async def generate_candidates(
     )
     engine = AsyncLLMEngine.from_engine_args(engine_args)
     semaphore = asyncio.Semaphore(max(1, args.vllm_async_concurrency))
-    total = len(rows) * args.num_generations
+    total = len(raw_jobs)
     completed = 0
 
     async def generate_one(
@@ -384,7 +450,7 @@ async def generate_candidates(
                     f"idx={source_idx} sample={sample_id} stop={generated.get('stop_reason')} "
                     f"sql={preview_text(generated.get('pred_sql', ''), max_chars=100)}"
                 )
-            return {
+            candidate = {
                 "idx": source_idx,
                 "sample_id": sample_id,
                 "skill_id": (row_for_sample or {}).get("skill_id"),
@@ -392,13 +458,20 @@ async def generate_candidates(
                 "generation_error": generation_error,
                 **generated,
             }
+            if incremental_enabled(args):
+                append_jsonl(checkpoint_path, candidate)
+            return candidate
 
     try:
         tasks = [
             generate_one(row_index, row, sample_id, prepared_row)
             for row_index, row, sample_id, prepared_row in prepared_jobs
         ]
-        return await asyncio.gather(*tasks)
+        new_candidates = await asyncio.gather(*tasks)
+        merged_by_key = dict(existing_by_key)
+        for candidate in new_candidates:
+            merged_by_key[(int(candidate["idx"]), int(candidate["sample_id"]))] = candidate
+        return sorted(merged_by_key.values(), key=lambda item: (int(item["idx"]), int(item["sample_id"])))
     finally:
         engine.shutdown()
 
@@ -664,8 +737,7 @@ def merge_shard_outputs(args: argparse.Namespace) -> None:
 
     write_jsonl(output_dir / "passk_candidates.jsonl", evaluated)
     write_jsonl(output_dir / "passk_per_example.jsonl", summary["per_example"])
-    with (output_dir / "passk_summary.json").open("w", encoding="utf-8") as handle:
-        json.dump({key: value for key, value in summary.items() if key != "per_example"}, handle, indent=2)
+    atomic_write_json(output_dir / "passk_summary.json", {key: value for key, value in summary.items() if key != "per_example"})
     write_markdown_summary(output_dir / "passk_summary.md", summary)
     print(f"[passk] merged {len(evaluated)} candidates into {output_dir}")
     print(f"[passk] wrote {output_dir / 'passk_summary.md'}")
@@ -679,8 +751,15 @@ def main() -> None:
 
     output_dir = resolve_output_dir(args)
     args.output_dir = str(output_dir)
-    ensure_output_dir(output_dir, args.overwrite)
+    ensure_output_dir(output_dir, args.overwrite, args.resume)
     configure_tool_env(args.database_dir)
+    args._candidate_checkpoint_path = str(output_dir / "passk_candidates_raw.incremental.jsonl")
+
+    prompt_builder = PromptBuilder(prompt_config_from_args(args))
+    effective_input_file = args.raw_input_file or args.input_file
+    args.input_file = effective_input_file
+    manifest = build_manifest(args, mode="passk", fields=PASSK_MANIFEST_FIELDS)
+    prepare_manifest(output_dir, manifest, resume=args.resume)
 
     print("[passk] starting pass@k run")
     print(f"[passk] model={args.model_name_or_path}")
@@ -691,9 +770,6 @@ def main() -> None:
     print(f"[passk] CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<unset>')}")
 
     start_time = time.time()
-    prompt_builder = PromptBuilder(prompt_config_from_args(args))
-    effective_input_file = args.raw_input_file or args.input_file
-    args.input_file = effective_input_file
     force_prompt_rebuild = bool(args.build_prompts_at_runtime or args.raw_input_file)
     rows = load_rows(
         effective_input_file,
@@ -734,8 +810,7 @@ def main() -> None:
     }
     summary = build_passk_summary(evaluated, rows, args, timing)
     write_jsonl(output_dir / "passk_per_example.jsonl", summary["per_example"])
-    with (output_dir / "passk_summary.json").open("w", encoding="utf-8") as handle:
-        json.dump({key: value for key, value in summary.items() if key != "per_example"}, handle, indent=2)
+    atomic_write_json(output_dir / "passk_summary.json", {key: value for key, value in summary.items() if key != "per_example"})
     write_markdown_summary(output_dir / "passk_summary.md", summary)
 
     print("[passk] complete")

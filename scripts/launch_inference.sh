@@ -23,6 +23,9 @@ EXAMPLE_NUM="${EXAMPLE_NUM:-3}"
 TOOL_MODE="${TOOL_MODE:-default}"
 PROMPT_TEMPLATE="${PROMPT_TEMPLATE:-default}"
 SKILL_HEADERS="${SKILL_HEADERS:-none}"
+RESUME="${RESUME:-0}"
+INCREMENTAL_WRITES="${INCREMENTAL_WRITES:-0}"
+OVERWRITE="${OVERWRITE:-1}"
 USER_OUTPUT_DIR="${OUTPUT_DIR:-}"
 NUM_EXAMPLES="${NUM_EXAMPLES:--1}"
 MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-34000}"
@@ -52,6 +55,11 @@ case "${INFERENCE_BACKEND}" in
     exit 2
     ;;
 esac
+
+if [[ "${RESUME}" == "1" && "${OVERWRITE}" == "1" ]]; then
+  echo "[launcher] RESUME=1 is incompatible with OVERWRITE=1. Use RESUME=1 OVERWRITE=0." >&2
+  exit 2
+fi
 
 sanitize_path_part() {
   local value="$1"
@@ -138,8 +146,19 @@ cmd=(
   --top_p "${TOP_P}"
   --eval_timeout "${EVAL_TIMEOUT}"
   --eval_workers "${EVAL_WORKERS}"
-  --overwrite
 )
+
+if [[ "${OVERWRITE}" == "1" ]]; then
+  cmd+=(--overwrite)
+fi
+
+if [[ "${RESUME}" == "1" ]]; then
+  cmd+=(--resume)
+fi
+
+if [[ "${INCREMENTAL_WRITES}" == "1" ]]; then
+  cmd+=(--incremental_writes)
+fi
 
 if [[ "${BUILD_PROMPTS_AT_RUNTIME}" == "1" ]]; then
   cmd+=(--build_prompts_at_runtime)

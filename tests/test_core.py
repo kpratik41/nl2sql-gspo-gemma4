@@ -15,6 +15,15 @@ if str(SRC) not in sys.path:
 
 from nl2sql_gspo.data import normalize_record
 from nl2sql_gspo.prompt_builder import PromptBuilder, PromptConfig
+from nl2sql_gspo.resume import (
+    ResumeManifestError,
+    atomic_write_jsonl,
+    build_manifest,
+    checkpoint_map,
+    prepare_manifest,
+    safe_read_jsonl,
+    validate_resume_args,
+)
 from nl2sql_gspo.sql_utils import (
     bird_execute_sql,
     bird_get_gold_rows,
@@ -34,9 +43,12 @@ from scripts.run_self_consistency_bird import choose_majority_vote_candidate, ro
 
 class NormalizeRecordTests(unittest.TestCase):
     def test_preserves_uppercase_sql_field_from_bird_records(self):
-        raw_path = ROOT / "data" / "bird_train_data" / "raw" / "train-6601.jsonl"
-        with raw_path.open("r", encoding="utf-8") as handle:
-            first_record = json.loads(next(handle))
+        first_record = {
+            "db_id": "movie_platform",
+            "question": "List movie names.",
+            "evidence": "movie names are stored in title",
+            "SQL": "SELECT title FROM movies;",
+        }
 
         normalized = normalize_record(first_record)
 
@@ -45,6 +57,67 @@ class NormalizeRecordTests(unittest.TestCase):
         self.assertEqual(len(normalized["prompt"]), 2)
         self.assertEqual(normalized["prompt"][0]["role"], "system")
         self.assertEqual(normalized["prompt"][1]["role"], "user")
+
+
+class ResumeHelperTests(unittest.TestCase):
+    def test_manifest_creation_and_exact_match_resume(self):
+        class Args:
+            model_name_or_path = "model-a"
+            input_file = "input.json"
+            temperature = 0.0
+
+        manifest = build_manifest(Args, mode="temp0", fields=["model_name_or_path", "input_file", "temperature"])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            prepare_manifest(output_dir, manifest, resume=False)
+            prepare_manifest(output_dir, manifest, resume=True)
+
+    def test_manifest_mismatch_refuses_resume(self):
+        class ArgsA:
+            model_name_or_path = "model-a"
+
+        class ArgsB:
+            model_name_or_path = "model-b"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            prepare_manifest(output_dir, build_manifest(ArgsA, mode="temp0", fields=["model_name_or_path"]), resume=False)
+            with self.assertRaises(ResumeManifestError):
+                prepare_manifest(output_dir, build_manifest(ArgsB, mode="temp0", fields=["model_name_or_path"]), resume=True)
+
+    def test_checkpoint_map_dedupes_by_idx_and_sample_id(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "checkpoint.jsonl"
+            atomic_write_jsonl(
+                path,
+                [
+                    {"idx": 1, "sample_id": 0, "value": "old"},
+                    {"idx": 1, "sample_id": 0, "value": "new"},
+                    {"idx": 1, "sample_id": 1, "value": "other"},
+                ],
+            )
+
+            rows = checkpoint_map(path, lambda row: (int(row["idx"]), int(row["sample_id"])))
+
+        self.assertEqual(rows[(1, 0)]["value"], "new")
+        self.assertEqual(rows[(1, 1)]["value"], "other")
+
+    def test_safe_read_jsonl_ignores_corrupt_final_line(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "checkpoint.jsonl"
+            path.write_text('{"idx": 1}\n{"idx": ', encoding="utf-8")
+
+            rows = safe_read_jsonl(path)
+
+        self.assertEqual(rows, [{"idx": 1}])
+
+    def test_resume_and_overwrite_are_mutually_exclusive(self):
+        class Args:
+            resume = True
+            overwrite = True
+
+        with self.assertRaises(ValueError):
+            validate_resume_args(Args)
 
     def test_extracts_db_id_and_evidence_from_schema_built_messages(self):
         normalized = normalize_record(
