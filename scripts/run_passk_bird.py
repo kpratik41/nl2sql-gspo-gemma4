@@ -27,18 +27,32 @@ if str(SRC_DIR) not in sys.path:
 from nl2sql_gspo.inference_tool_executor import configure_tool_env, extract_and_execute_tools, extract_tool_calls
 from nl2sql_gspo.sql_utils import bird_get_gold_rows, extract_sql
 
-from run_inference_bird import (
-    _async_vllm_generate_text,
-    build_generation_detail,
-    evaluate_one_bird,
-    generate_one_with_vllm_async_tool_loop,
-    load_diff_rows,
-    load_rows,
-    prepare_rows_for_generation,
-    preview_text,
-    resolve_vllm_tokenizer_source,
-    should_use_agentic_tool_loop,
-)
+try:
+    from run_inference_bird import (
+        _async_vllm_generate_text,
+        build_generation_detail,
+        evaluate_one_bird,
+        generate_one_with_vllm_async_tool_loop,
+        load_diff_rows,
+        load_rows,
+        prepare_rows_for_generation,
+        preview_text,
+        resolve_vllm_tokenizer_source,
+        should_use_agentic_tool_loop,
+    )
+except ModuleNotFoundError:
+    from scripts.run_inference_bird import (
+        _async_vllm_generate_text,
+        build_generation_detail,
+        evaluate_one_bird,
+        generate_one_with_vllm_async_tool_loop,
+        load_diff_rows,
+        load_rows,
+        prepare_rows_for_generation,
+        preview_text,
+        resolve_vllm_tokenizer_source,
+        should_use_agentic_tool_loop,
+    )
 
 
 def parse_args() -> argparse.Namespace:

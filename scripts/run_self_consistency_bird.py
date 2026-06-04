@@ -1,17 +1,18 @@
 import argparse
+import asyncio
 import json
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from scripts.run_inference_bird import build_summary, write_summary_csv, write_summary_markdown
+from scripts.run_inference_bird import build_summary, write_summary_csv
 from scripts.run_passk_bird import (
-    align_rows_with_raw_references,
     ensure_output_dir,
-    generate_predictions_with_vllm_n,
+    generate_candidates,
 )
 from scripts.run_inference_bird import load_diff_rows, load_rows
+from nl2sql_gspo.inference_tool_executor import configure_tool_env
 from nl2sql_gspo.sql_utils import bird_execute_sql, bird_get_gold_rows, bird_result_match
 
 
@@ -34,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vllm_data_parallel_size", type=int, default=2)
     parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.93)
     parser.add_argument("--vllm_max_model_len", type=int, default=None)
+    parser.add_argument("--vllm_async_concurrency", type=int, default=16)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
@@ -55,8 +57,70 @@ def print_configuration(args: argparse.Namespace, output_dir: Path) -> None:
     print(f"[run] eval_workers={args.eval_workers}")
     print(f"[run] vllm_tensor_parallel_size={args.vllm_tensor_parallel_size}")
     print(f"[run] vllm_data_parallel_size={args.vllm_data_parallel_size}")
+    print(f"[run] vllm_async_concurrency={args.vllm_async_concurrency}")
     print(f"[run] vllm_gpu_memory_utilization={args.vllm_gpu_memory_utilization}")
     print(f"[run] vllm_max_model_len={args.vllm_max_model_len}")
+
+
+def align_rows_with_raw_references(
+    rows: List[Dict[str, Any]],
+    diff_rows: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    raw_by_qid = {
+        row.get("question_id"): row
+        for row in diff_rows
+        if row.get("question_id") is not None
+    }
+    aligned = []
+    for row_index, row in enumerate(rows):
+        updated = dict(row)
+        raw = raw_by_qid.get(row.get("question_id"))
+        if raw is None and row_index < len(diff_rows):
+            raw = diff_rows[row_index]
+        if raw:
+            updated["difficulty"] = raw.get("difficulty", updated.get("difficulty", "unknown"))
+        else:
+            updated["difficulty"] = updated.get("difficulty", "unknown")
+        aligned.append(updated)
+    return aligned
+
+
+def generate_predictions_with_vllm_n(
+    rows: List[Dict[str, Any]],
+    args: argparse.Namespace,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    candidates = asyncio.run(generate_candidates(args, rows))
+    grouped: Dict[int, Dict[str, Any]] = OrderedDict()
+    for candidate in sorted(candidates, key=lambda item: (int(item["idx"]), int(item["sample_id"]))):
+        idx = int(candidate["idx"])
+        if idx not in grouped:
+            grouped[idx] = {
+                "idx": idx,
+                "db_id": candidate.get("db_id", ""),
+                "gold_sql": next(
+                    (row.get("gold_sql", "") for row in rows if int(row.get("source_idx", -1)) == idx),
+                    "",
+                ),
+                "difficulty": next(
+                    (row.get("difficulty", "unknown") for row in rows if int(row.get("source_idx", -1)) == idx),
+                    "unknown",
+                ),
+                "generations": [],
+            }
+        grouped[idx]["generations"].append(
+            {
+                "sample_idx": int(candidate["sample_id"]),
+                "prediction_text": candidate.get("prediction_text", ""),
+                "pred_sql": candidate.get("pred_sql", ""),
+                "prompt_tokens": candidate.get("prompt_tokens", 0),
+                "completion_token_count": candidate.get("completion_token_count", 0),
+                "tool_rounds": candidate.get("tool_rounds", 0),
+                "tool_call_count": candidate.get("tool_call_count", 0),
+                "stop_reason": candidate.get("stop_reason", ""),
+                "generation_error": candidate.get("generation_error", ""),
+            }
+        )
+    return list(grouped.values()), []
 
 
 def rows_to_vote_signature(rows: Optional[List[Tuple[Any, ...]]]) -> frozenset:
@@ -281,9 +345,22 @@ def evaluate_candidates(
 
 
 def write_self_consistency_markdown(summary: Dict[str, Any], markdown_path: Path) -> None:
-    write_summary_markdown(summary, markdown_path)
     details = summary["self_consistency"]
-    with markdown_path.open("a", encoding="utf-8") as handle:
+    with markdown_path.open("w", encoding="utf-8") as handle:
+        total = summary["total"]
+        handle.write("# BIRD Self-Consistency Summary\n\n")
+        handle.write(
+            f"Overall EX Accuracy: {total['accuracy']:.2f}% "
+            f"({total['correct']}/{total['count']})\n\n"
+        )
+        handle.write("## By Difficulty\n\n")
+        handle.write("| Group | Correct | Count | Accuracy |\n")
+        handle.write("| --- | ---: | ---: | ---: |\n")
+        for group, values in summary["by_difficulty"].items():
+            handle.write(
+                f"| {group} | {values['correct']} | {values['count']} | "
+                f"{values['accuracy']:.2f} |\n"
+            )
         handle.write("\n## Self-Consistency Stats\n\n")
         handle.write(f"- examples_with_valid_vote: {details['examples_with_valid_vote']}\n")
         handle.write(f"- examples_without_valid_vote: {details['examples_without_valid_vote']}\n")
@@ -304,6 +381,7 @@ def main() -> None:
     diff_rows = load_diff_rows(args.diff_json_path)
     print(f"[run] loaded {len(diff_rows)} diff rows")
     rows = align_rows_with_raw_references(rows, diff_rows)
+    configure_tool_env(args.database_dir)
 
     prediction_rows, skipped_rows = generate_predictions_with_vllm_n(rows, args)
     if skipped_rows:
