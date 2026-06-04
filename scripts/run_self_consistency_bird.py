@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval_workers", type=int, default=8)
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=4)
     parser.add_argument("--vllm_data_parallel_size", type=int, default=2)
-    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.9)
+    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.93)
     parser.add_argument("--vllm_max_model_len", type=int, default=None)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()

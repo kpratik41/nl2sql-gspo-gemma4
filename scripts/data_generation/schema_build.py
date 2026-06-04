@@ -779,9 +779,9 @@ def main():
     with open(OUTPUT_JSONL, "w", encoding="utf-8") as out_f:
         for idx, record in enumerate(records):
             db_id    = record["db_id"]
-            question = record["question"]
-            hint     = record.get("evidence", "")
-            gold_sql = record.get("SQL", "")
+            question = str(record["question"]).strip()
+            hint     = str(record.get("evidence", "")).strip()
+            gold_sql = str(record.get("SQL", "")).strip()
             fewshots = record.get("few_shot_examples", [])
 
             current_index = idx + 1

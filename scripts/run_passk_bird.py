@@ -93,7 +93,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval_timeout", type=float, default=60.0)
     parser.add_argument("--eval_workers", type=int, default=16)
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=8)
-    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.9)
+    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.93)
     parser.add_argument("--vllm_max_model_len", type=int, default=None)
     parser.add_argument("--vllm_async_concurrency", type=int, default=16)
     parser.add_argument("--overwrite", action="store_true")
