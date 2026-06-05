@@ -17,12 +17,13 @@ RAW_INPUT_FILE="${RAW_INPUT_FILE:-}"
 MEANINGS_FILE="${MEANINGS_FILE:-data/bird_dev_data/raw/column_meaning.json}"
 INCLUDE_COLUMN_COMMENTS="${INCLUDE_COLUMN_COMMENTS:-1}"
 INCLUDE_FEWSHOTS="${INCLUDE_FEWSHOTS:-1}"
+FEWSHOT_TRAIN_FILE="${FEWSHOT_TRAIN_FILE:-data/bird_train_data/raw/train-6601.jsonl}"
+FEWSHOT_TOP_N="${FEWSHOT_TOP_N:-5}"
 INCLUDE_STATS="${INCLUDE_STATS:-1}"
 INCLUDE_NULLABILITY="${INCLUDE_NULLABILITY:-1}"
 EXAMPLE_NUM="${EXAMPLE_NUM:-3}"
 TOOL_MODE="${TOOL_MODE:-default}"
 PROMPT_TEMPLATE="${PROMPT_TEMPLATE:-default}"
-SKILL_HEADERS="${SKILL_HEADERS:-none}"
 RESUME="${RESUME:-0}"
 INCREMENTAL_WRITES="${INCREMENTAL_WRITES:-0}"
 OVERWRITE="${OVERWRITE:-1}"
@@ -76,7 +77,7 @@ sanitize_path_part() {
 
 infer_split_name() {
   local input_name
-  input_name="$(basename "${INPUT_FILE}")"
+  input_name="$(basename "${RAW_INPUT_FILE:-${INPUT_FILE}}")"
 
   case "${input_name}" in
     train*) printf 'train' ;;
@@ -90,7 +91,7 @@ build_default_output_dir() {
   local split_name input_tag model_tag run_tag prompt_k output_k context_k
 
   split_name="$(infer_split_name)"
-  input_tag="$(sanitize_path_part "${INPUT_FILE}")"
+  input_tag="$(sanitize_path_part "${RAW_INPUT_FILE:-${INPUT_FILE}}")"
   model_tag="$(sanitize_path_part "${MODEL_PATH}")"
   prompt_k="$(( (MAX_PROMPT_LENGTH + 999) / 1000 ))k"
   output_k="$(( (MAX_NEW_TOKENS + 999) / 1000 ))k"
@@ -134,9 +135,10 @@ cmd=(
   --bird_mode "${BIRD_MODE}"
   --meanings_file "${MEANINGS_FILE}"
   --example_num "${EXAMPLE_NUM}"
+  --fewshot_train_file "${FEWSHOT_TRAIN_FILE}"
+  --fewshot_top_n "${FEWSHOT_TOP_N}"
   --tool_mode "${TOOL_MODE}"
   --prompt_template "${PROMPT_TEMPLATE}"
-  --skill_headers "${SKILL_HEADERS}"
   --output_dir "${OUTPUT_DIR}"
   --num_examples "${NUM_EXAMPLES}"
   --max_prompt_length "${MAX_PROMPT_LENGTH}"

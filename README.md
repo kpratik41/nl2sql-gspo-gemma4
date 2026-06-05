@@ -67,14 +67,16 @@ directly from raw BIRD rows while caching schema introspection per database:
 ```bash
 MODEL_PATH=/path/to/model-or-checkpoint \
 BUILD_PROMPTS_AT_RUNTIME=1 \
-RAW_INPUT_FILE=data/bird_dev_data/raw/bird_dev-few-shot.json \
-INPUT_FILE=data/bird_dev_data/raw/bird_dev-few-shot.json \
+RAW_INPUT_FILE=data/bird_dev_data/raw/bird_dev.json \
+INPUT_FILE=data/bird_dev_data/raw/bird_dev.json \
 DATABASE_DIR=databases/dev_databases \
 DIFF_JSON_PATH=data/bird_dev_data/raw/bird_dev.json \
 TOOL_MODE=default \
 PROMPT_TEMPLATE=default \
 INCLUDE_COLUMN_COMMENTS=1 \
 INCLUDE_FEWSHOTS=1 \
+FEWSHOT_TRAIN_FILE=data/bird_train_data/raw/train-6601.jsonl \
+FEWSHOT_TOP_N=5 \
 INCLUDE_STATS=1 \
 INCLUDE_NULLABILITY=1 \
 EXAMPLE_NUM=3 \
@@ -91,6 +93,8 @@ BUILD_PROMPTS_AT_RUNTIME=1 \
 RAW_INPUT_FILE=/path/to/test.json \
 DATABASE_DIR=/path/to/test_databases \
 MEANINGS_FILE=/path/to/column_meaning.json \
+FEWSHOT_TRAIN_FILE=data/bird_train_data/raw/train-6601.jsonl \
+FEWSHOT_TOP_N=5 \
 OUTPUT_DIR=outputs/test_submission_run \
 bash scripts/launch_inference.sh
 ```
@@ -110,10 +114,10 @@ The local evaluator follows BIRD EX semantics: execute predicted and gold SQL on
 ```bash
 python3 scripts/run_passk_bird.py \
   --model_name_or_path /path/to/model-or-checkpoint \
-  --raw_input_file data/bird_dev_data/raw/bird_dev-few-shot.json \
+  --raw_input_file data/bird_dev_data/raw/bird_dev.json \
   --build_prompts_at_runtime \
   --tool_mode default \
-  --skill_headers cycle \
+  --sample_plan default:16@0.8,decompose-first:4@0.8,default:1@0.0 \
   --database_dir databases/dev_databases \
   --diff_json_path data/bird_dev_data/raw/bird_dev.json \
   --output_dir outputs/passk/old_dev/model \
@@ -132,10 +136,10 @@ The pass@k script samples `num_generations` candidates per example, scores every
 ```bash
 python3 scripts/run_self_consistency_bird.py \
   --model_name_or_path /path/to/model-or-checkpoint \
-  --raw_input_file data/bird_dev_data/raw/bird_dev-few-shot.json \
+  --raw_input_file data/bird_dev_data/raw/bird_dev.json \
   --build_prompts_at_runtime \
   --tool_mode default \
-  --skill_headers cycle \
+  --sample_plan default:16@0.7,decompose-first:4@0.7,default:1@0.0 \
   --database_dir databases/dev_databases \
   --diff_json_path data/bird_dev_data/raw/bird_dev.json \
   --output_dir outputs/self_consistency/old_dev/model \
@@ -146,7 +150,7 @@ python3 scripts/run_self_consistency_bird.py \
 
 Self-consistency generates multiple candidates, executes them, discards failed or empty-result candidates, groups the rest by raw execution result set, and selects the majority result. Ties break by earliest sample index and then shorter SQL.
 
-When `--skill_headers cycle` is enabled, sampled candidates cycle through the prompt prefixes in `prompts_suffix_idea.py`: default, decompose-first, direct-coder, explore-heavy, and conservative. Candidate JSONL outputs include `skill_id` and `skill_name`.
+Use `--sample_plan` to control sampled prompt variants and decoding temperatures. The compact format is `skill:count@temperature` with optional top-p as `skill:count@temperature/top_p`, for example `default:16@0.7,decompose-first:4@0.7,default:1@0.0`. Candidate JSONL outputs include `sample_plan_id`, `skill_id`, `skill_name`, `temperature`, `top_p`, and `replica_label`.
 
 ## Submission Readiness Checklist
 

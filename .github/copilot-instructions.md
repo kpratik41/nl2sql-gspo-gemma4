@@ -88,9 +88,10 @@ Keep these flags available across inference, pass@k, and self-consistency where 
 --include_stats / --no_stats
 --include_nullability / --no_nullability
 --example_num
+--fewshot_train_file
+--fewshot_top_n
 --tool_mode none|default|consensus
 --prompt_template default|consensus
---skill_headers none|cycle
 ```
 
 Launcher environment variables in `scripts/launch_inference.sh` should map cleanly to these CLI flags.
@@ -106,9 +107,9 @@ Use old-dev defaults for local dev work:
 
 Do not restore defaults that point to deleted `dev_20251106.json` or `dev_20251106-few-shot.json` files. Do not add code that writes `outputs/outputs/...`.
 
-## Skill Headers
+## Sample Plans
 
-`prompts_suffix_idea.py` defines `SKILL_HEADERS`:
+`prompts_suffix_idea.py` defines prompt-variation headers used by sampled inference:
 
 - default / no prefix
 - `DECOMPOSE-FIRST`
@@ -116,17 +117,19 @@ Do not restore defaults that point to deleted `dev_20251106.json` or `dev_202511
 - `EXPLORE-HEAVY`
 - `CONSERVATIVE`
 
-These are replica-level prompt variations for sampled inference, not training data generation.
+These are replica-level prompt variations for pass@k and self-consistency, not training data generation.
 
-Use them only for pass@k and self-consistency by default:
+Use `--sample_plan` to choose counts and decoding temperatures:
 
 ```text
-sample i -> SKILL_HEADERS[i % len(SKILL_HEADERS)]
+default:16@0.8,decompose-first:4@0.8,default:1@0.0
 ```
 
-Temp-0 inference should default to no skill header. Candidate rows should record `skill_id` and `skill_name` for later analysis.
+The compact format is `skill:count@temperature` with optional top-p as `skill:count@temperature/top_p`.
 
-For pass@k/self-consistency, build the prompt once per `(example, skill_id)` and reuse it for all candidates using that skill.
+Temp-0 inference should default to no skill header. Candidate rows should record `sample_plan_id`, `skill_id`, `skill_name`, `temperature`, `top_p`, and `replica_label`.
+
+For pass@k/self-consistency, build the prompt once per `(example, skill_name)` and reuse it for all candidates using that skill.
 
 ## Inference Modes
 
@@ -229,10 +232,11 @@ Prefer focused tests for shared inference behavior:
 - `PromptConfig` construction
 - raw dev row builds prompt plus `gold_sql`
 - raw test row with empty/no SQL does not fail
+- runtime BM25 few-shots attach to raw rows
 - schema flags change rendered content
 - `SchemaCache` reuses DB/schema renders
 - `tool_mode` attaches expected tools
-- skill cycling maps samples 0-4 to the expected headers
+- sample plans expand deterministically and attach expected metadata
 - prebuilt JSONL prompts still work
 - test mode writes `predict_test.json` and skips local evaluation
 

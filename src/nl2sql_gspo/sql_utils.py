@@ -174,6 +174,8 @@ def get_database_path(db_id: str, database_dir: str) -> str:
         os.path.join(database_dir, "train_databases", db_id, f"{db_id}.db"),
         os.path.join(database_dir, "dev_databases", db_id, f"{db_id}.sqlite"),
         os.path.join(database_dir, "dev_databases", db_id, f"{db_id}.db"),
+        os.path.join(database_dir, "test_databases", db_id, f"{db_id}.sqlite"),
+        os.path.join(database_dir, "test_databases", db_id, f"{db_id}.db"),
     ]
 
     for path in candidates:

@@ -34,6 +34,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top_p", type=float, default=1.0)
     parser.add_argument("--num_generations", type=int, default=16)
+    parser.add_argument(
+        "--sample_plan",
+        type=str,
+        default="",
+        help="Comma-separated sample plan such as default:16@0.7,decompose-first:4@0.7,default:1@0.0.",
+    )
     parser.add_argument("--eval_timeout", type=float, default=60.0)
     parser.add_argument("--eval_workers", type=int, default=8)
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=4)
@@ -46,6 +52,16 @@ def parse_args() -> argparse.Namespace:
     add_prompt_args(parser)
     args = parser.parse_args()
     validate_resume_args(args)
+    from nl2sql_gspo.sample_plan import expand_sample_plan
+
+    args.effective_num_generations = len(
+        expand_sample_plan(
+            args.sample_plan,
+            num_generations=args.num_generations,
+            temperature=args.temperature,
+            top_p=args.top_p,
+        )
+    )
     return args
 
 
@@ -62,6 +78,8 @@ def print_configuration(args: argparse.Namespace, output_dir: Path) -> None:
     print(f"[run] temperature={args.temperature}")
     print(f"[run] top_p={args.top_p}")
     print(f"[run] num_generations={args.num_generations}")
+    print(f"[run] sample_plan={args.sample_plan or '<default>'}")
+    print(f"[run] effective_num_generations={args.effective_num_generations}")
     print(f"[run] eval_timeout={args.eval_timeout}")
     print(f"[run] eval_workers={args.eval_workers}")
     print(f"[run] vllm_tensor_parallel_size={args.vllm_tensor_parallel_size}")
@@ -122,8 +140,12 @@ def generate_predictions_with_vllm_n(
                 "sample_idx": int(candidate["sample_id"]),
                 "prediction_text": candidate.get("prediction_text", ""),
                 "pred_sql": candidate.get("pred_sql", ""),
+                "sample_plan_id": candidate.get("sample_plan_id"),
                 "skill_id": candidate.get("skill_id"),
                 "skill_name": candidate.get("skill_name", "default"),
+                "temperature": candidate.get("temperature"),
+                "top_p": candidate.get("top_p"),
+                "replica_label": candidate.get("replica_label", ""),
                 "prompt_tokens": candidate.get("prompt_tokens", 0),
                 "completion_token_count": candidate.get("completion_token_count", 0),
                 "tool_rounds": candidate.get("tool_rounds", 0),
@@ -259,8 +281,12 @@ def evaluate_candidates(
             "db_id": row["db_id"],
             "difficulty": row.get("difficulty", "unknown"),
             "sample_idx": generation["sample_idx"],
+            "sample_plan_id": generation.get("sample_plan_id"),
             "skill_id": generation.get("skill_id"),
             "skill_name": generation.get("skill_name", "default"),
+            "temperature": generation.get("temperature"),
+            "top_p": generation.get("top_p"),
+            "replica_label": generation.get("replica_label", ""),
             "pred_sql": predicted_sql,
             "gold_sql": row["gold_sql"],
             "pred_rows": pred_rows,
@@ -318,6 +344,9 @@ def evaluate_candidates(
                     "selected_sample_idx": None,
                     "selected_skill_id": None,
                     "selected_skill_name": "",
+                    "selected_temperature": None,
+                    "selected_top_p": None,
+                    "selected_replica_label": "",
                     "selected_vote_count": 0,
                     "valid_vote_candidates": 0,
                     "ignored_empty_results": vote_meta["ignored_empty_results"],
@@ -343,6 +372,9 @@ def evaluate_candidates(
                     "selected_sample_idx": winner["sample_idx"],
                     "selected_skill_id": winner.get("skill_id"),
                     "selected_skill_name": winner.get("skill_name", "default"),
+                    "selected_temperature": winner.get("temperature"),
+                    "selected_top_p": winner.get("top_p"),
+                    "selected_replica_label": winner.get("replica_label", ""),
                     "selected_vote_count": vote_meta["winning_vote_count"],
                     "valid_vote_candidates": vote_meta["num_valid_votes"],
                     "ignored_empty_results": vote_meta["ignored_empty_results"],
@@ -357,7 +389,7 @@ def evaluate_candidates(
     summary["self_consistency"] = {
         **voting_stats,
         "num_generations": prediction_rows[0]["generations"][-1]["sample_idx"] + 1 if prediction_rows else 0,
-        "skill_header_counts": {
+        "sample_plan_counts": {
             name: sum(
                 1
                 for row in prediction_rows

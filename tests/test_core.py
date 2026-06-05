@@ -24,6 +24,7 @@ from nl2sql_gspo.resume import (
     safe_read_jsonl,
     validate_resume_args,
 )
+from nl2sql_gspo.sample_plan import expand_sample_plan
 from nl2sql_gspo.sql_utils import (
     bird_execute_sql,
     bird_get_gold_rows,
@@ -169,16 +170,22 @@ class SqlUtilsTests(unittest.TestCase):
             database_root = Path(tmpdir)
             top_level = database_root / "movie_platform.sqlite"
             split_db_dir = database_root / "dev_databases" / "california_schools"
+            test_db_dir = database_root / "test_databases" / "nba_data"
             split_db_dir.mkdir(parents=True)
+            test_db_dir.mkdir(parents=True)
             split_level = split_db_dir / "california_schools.sqlite"
+            test_level = test_db_dir / "nba_data.sqlite"
             top_level.touch()
             split_level.touch()
+            test_level.touch()
 
             train_db = get_database_path("movie_platform", str(database_root))
             dev_db = get_database_path("california_schools", str(database_root))
+            test_db = get_database_path("nba_data", str(database_root))
 
         self.assertTrue(train_db.endswith("movie_platform.sqlite"))
         self.assertTrue(dev_db.endswith("california_schools.sqlite"))
+        self.assertTrue(test_db.endswith("nba_data.sqlite"))
 
     def test_bird_result_match_uses_set_semantics_on_raw_rows(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -329,7 +336,7 @@ class PromptBuilderTests(unittest.TestCase):
         self.assertNotIn("score is the metric value", bare_row["prompt"][1]["content"])
         self.assertNotIn("Stats:", bare_row["prompt"][1]["content"])
 
-    def test_tool_modes_and_skill_headers(self):
+    def test_tool_modes_and_named_skill_headers(self):
         raw = {
             "db_id": "toy",
             "question": "List names.",
@@ -339,14 +346,136 @@ class PromptBuilderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             consensus = self._make_builder(tmpdir, tool_mode="consensus")
             consensus_row = consensus.build_row(raw, force_rebuild=True)
-            skilled = self._make_builder(tmpdir, skill_headers="cycle")
-            row0 = skilled.build_row(raw, force_rebuild=True, sample_id=0)
-            row1 = skilled.build_row(raw, force_rebuild=True, sample_id=1)
+            skilled = self._make_builder(tmpdir)
+            row0 = skilled.build_row(raw, force_rebuild=True, skill_name="default")
+            row1 = skilled.build_row(raw, force_rebuild=True, skill_name="decompose-first")
 
         self.assertIn("consensus_at_1", [tool["function"]["name"] for tool in consensus_row["tools"]])
         self.assertEqual(row0["skill_name"], "default")
         self.assertEqual(row1["skill_name"], "decompose-first")
         self.assertTrue(row1["prompt"][0]["content"].startswith("SKILL: DECOMPOSE-FIRST"))
+
+    def test_runtime_bm25_fewshots_are_added_for_raw_rows(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            train_file = tmp_path / "train.jsonl"
+            train_file.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "db_id": "other",
+                                "question": "Find Alice score",
+                                "evidence": "Alice score uses score",
+                                "SQL": "SELECT score FROM demo WHERE name = 'Alice'",
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "db_id": "other",
+                                "question": "Count rows",
+                                "evidence": "",
+                                "SQL": "SELECT COUNT(*) FROM demo",
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            builder = self._make_builder(tmpdir, fewshot_train_file=str(train_file), fewshot_top_n=1)
+            row = builder.build_row(
+                {
+                    "db_id": "toy",
+                    "question": "What is Alice's score?",
+                    "evidence": "Alice refers to name Alice",
+                    "SQL": "SELECT score FROM demo WHERE name = 'Alice'",
+                },
+                force_rebuild=True,
+            )
+
+        self.assertIn("- Example 1", row["prompt"][1]["content"])
+        self.assertIn("Find Alice score", row["prompt"][1]["content"])
+
+    def test_no_fewshots_does_not_require_train_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            builder = self._make_builder(
+                tmpdir,
+                include_fewshots=False,
+                fewshot_train_file=str(Path(tmpdir) / "missing.jsonl"),
+            )
+            row = builder.build_row(
+                {
+                    "db_id": "toy",
+                    "question": "List names.",
+                    "evidence": "",
+                    "SQL": "SELECT name FROM demo",
+                },
+                force_rebuild=True,
+            )
+
+        self.assertNotIn("- Example 1", row["prompt"][1]["content"])
+
+    def test_missing_fewshot_train_file_fails_when_enabled(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            builder = self._make_builder(tmpdir, fewshot_train_file=str(Path(tmpdir) / "missing.jsonl"))
+            with self.assertRaises(FileNotFoundError):
+                builder.build_row(
+                    {
+                        "db_id": "toy",
+                        "question": "List names.",
+                        "evidence": "",
+                        "SQL": "SELECT name FROM demo",
+                    },
+                    force_rebuild=True,
+                )
+
+    def test_prebuilt_prompt_is_not_modified_by_runtime_fewshots(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            builder = self._make_builder(tmpdir, fewshot_train_file=str(Path(tmpdir) / "missing.jsonl"))
+            row = builder.build_row(
+                {
+                    "db_id": "toy",
+                    "gold_sql": "SELECT 1",
+                    "prompt": [
+                        {"role": "system", "content": "system"},
+                        {"role": "user", "content": "user without fewshots"},
+                    ],
+                },
+                force_rebuild=False,
+            )
+
+        self.assertEqual(row["prompt"][1]["content"], "user without fewshots")
+
+
+class SamplePlanTests(unittest.TestCase):
+    def test_parse_sample_plan_expands_deterministically(self):
+        specs = expand_sample_plan(
+            "default:2@0.8,decompose-first:1@0.7,default:1@0.0",
+            num_generations=16,
+            temperature=0.8,
+            top_p=1.0,
+        )
+
+        self.assertEqual([spec.sample_id for spec in specs], [0, 1, 2, 3])
+        self.assertEqual([spec.skill_name for spec in specs], ["default", "default", "decompose-first", "default"])
+        self.assertEqual([spec.temperature for spec in specs], [0.8, 0.8, 0.7, 0.0])
+
+    def test_default_sample_plan_uses_num_generations(self):
+        specs = expand_sample_plan("", num_generations=3, temperature=0.5, top_p=0.9)
+
+        self.assertEqual(len(specs), 3)
+        self.assertTrue(all(spec.skill_name == "default" for spec in specs))
+        self.assertTrue(all(spec.temperature == 0.5 for spec in specs))
+        self.assertTrue(all(spec.top_p == 0.9 for spec in specs))
+
+    def test_sample_plan_rejects_invalid_entries(self):
+        with self.assertRaises(ValueError):
+            expand_sample_plan("unknown:1@0.8", num_generations=1, temperature=0.8, top_p=1.0)
+        with self.assertRaises(ValueError):
+            expand_sample_plan("default:0@0.8", num_generations=1, temperature=0.8, top_p=1.0)
+        with self.assertRaises(ValueError):
+            expand_sample_plan("default:1@0.8/1.5", num_generations=1, temperature=0.8, top_p=1.0)
 
 
 class SchemaBuildTests(unittest.TestCase):

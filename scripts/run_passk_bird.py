@@ -37,6 +37,7 @@ from nl2sql_gspo.resume import (
     prepare_manifest,
     validate_resume_args,
 )
+from nl2sql_gspo.sample_plan import SampleSpec, expand_sample_plan
 from nl2sql_gspo.sql_utils import bird_get_gold_rows, extract_sql
 
 try:
@@ -81,12 +82,14 @@ PASSK_MANIFEST_FIELDS = [
     "meanings_file",
     "include_column_comments",
     "include_fewshots",
+    "fewshot_train_file",
+    "fewshot_top_n",
     "include_stats",
     "include_nullability",
     "example_num",
     "tool_mode",
     "prompt_template",
-    "skill_headers",
+    "sample_plan",
     "temperature",
     "top_p",
     "max_new_tokens",
@@ -142,6 +145,16 @@ def parse_args() -> argparse.Namespace:
         help="Directory for merged pass@k outputs. Defaults to --output_dir.",
     )
     parser.add_argument("--num_generations", type=int, default=16, help="Candidates sampled per example.")
+    parser.add_argument(
+        "--sample_plan",
+        type=str,
+        default="",
+        help=(
+            "Comma-separated sample plan, e.g. "
+            "default:16@0.8,decompose-first:4@0.8,default:1@0.0. "
+            "If omitted, uses default:num_generations@temperature/top_p."
+        ),
+    )
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top_p", type=float, default=1.0)
     parser.add_argument("--max_prompt_length", type=int, default=30000)
@@ -162,6 +175,14 @@ def parse_args() -> argparse.Namespace:
         parser.error("--num_shards must be >= 1")
     if args.shard_index < 0 or args.shard_index >= args.num_shards:
         parser.error("--shard_index must satisfy 0 <= shard_index < num_shards")
+    args.effective_num_generations = len(
+        expand_sample_plan(
+            args.sample_plan,
+            num_generations=args.num_generations,
+            temperature=args.temperature,
+            top_p=args.top_p,
+        )
+    )
     return args
 
 
@@ -290,13 +311,19 @@ async def generate_candidates(
         if existing_by_key:
             print(f"[resume] loaded {len(existing_by_key)} completed pass@k candidates")
 
-    raw_jobs: List[tuple[int, Dict[str, Any], int]] = []
+    sample_specs = expand_sample_plan(
+        args.sample_plan,
+        num_generations=args.num_generations,
+        temperature=args.temperature,
+        top_p=args.top_p,
+    )
+    raw_jobs: List[tuple[int, Dict[str, Any], SampleSpec]] = []
     for row_index, row in enumerate(rows):
         source_idx = int(row.get("source_idx", row_index))
-        for sample_id in range(args.num_generations):
-            if (source_idx, sample_id) in existing_by_key:
+        for spec in sample_specs:
+            if (source_idx, spec.sample_id) in existing_by_key:
                 continue
-            raw_jobs.append((row_index, row, sample_id))
+            raw_jobs.append((row_index, row, spec))
 
     if not raw_jobs:
         print(f"[resume] no missing candidates; reusing {len(existing_by_key)} checkpointed candidates")
@@ -316,11 +343,10 @@ async def generate_candidates(
     prepared_cache: Dict[tuple[int, Optional[int]], Optional[Dict[str, Any]]] = {}
     skipped_rows: List[Dict[str, Any]] = []
 
-    def prepare_sample_row(row_index: int, row: Dict[str, Any], sample_id: int) -> Optional[Dict[str, Any]]:
+    def prepare_sample_row(row_index: int, row: Dict[str, Any], spec: SampleSpec) -> Optional[Dict[str, Any]]:
         source_idx = int(row.get("source_idx", row_index))
-        built = prompt_builder.build_row(row, force_rebuild=False, sample_id=sample_id)
-        skill_id = built.get("skill_id")
-        cache_key = (source_idx, skill_id)
+        built = prompt_builder.build_row(row, force_rebuild=False, sample_id=spec.sample_id, skill_name=spec.skill_name)
+        cache_key = (source_idx, spec.skill_name)
         if cache_key in prepared_cache:
             return prepared_cache[cache_key]
 
@@ -337,9 +363,12 @@ async def generate_candidates(
                 {
                     "idx": source_idx,
                     "db_id": prepared.get("db_id", ""),
-                    "sample_id": sample_id,
+                    "sample_id": spec.sample_id,
+                    "sample_plan_id": spec.sample_plan_id,
                     "skill_id": prepared.get("skill_id"),
                     "skill_name": prepared.get("skill_name"),
+                    "temperature": spec.temperature,
+                    "top_p": spec.top_p,
                     "prompt_tokens": prompt_token_count,
                     "max_prompt_length": args.max_prompt_length,
                     "prompt_preview": preview_text(prompt_text),
@@ -350,9 +379,9 @@ async def generate_candidates(
         prepared_cache[cache_key] = prepared
         return prepared
 
-    prepared_jobs: List[tuple[int, Dict[str, Any], int, Optional[Dict[str, Any]]]] = []
-    for row_index, row, sample_id in raw_jobs:
-        prepared_jobs.append((row_index, row, sample_id, prepare_sample_row(row_index, row, sample_id)))
+    prepared_jobs: List[tuple[int, Dict[str, Any], SampleSpec, Optional[Dict[str, Any]]]] = []
+    for row_index, row, spec in raw_jobs:
+        prepared_jobs.append((row_index, row, spec, prepare_sample_row(row_index, row, spec)))
 
     if skipped_rows:
         write_jsonl(Path(args.output_dir) / "skipped_prompts.jsonl", skipped_rows)
@@ -382,7 +411,7 @@ async def generate_candidates(
     async def generate_one(
         row_index: int,
         row: Dict[str, Any],
-        sample_id: int,
+        spec: SampleSpec,
         prepared_row: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
         nonlocal completed
@@ -403,8 +432,8 @@ async def generate_candidates(
                         max_model_len=max_model_len,
                         max_tool_rounds=args.max_tool_rounds,
                         eval_timeout=args.eval_timeout,
-                        temperature=args.temperature,
-                        top_p=args.top_p,
+                        temperature=spec.temperature,
+                        top_p=spec.top_p,
                     )
                 else:
                     generated_text, completion_tokens = await _async_vllm_generate_text(
@@ -412,9 +441,9 @@ async def generate_candidates(
                         sampling_params_cls=SamplingParams,
                         prompt_text=row_for_sample["prompt_text"],
                         max_tokens=args.max_new_tokens,
-                        temperature=args.temperature,
-                        top_p=args.top_p,
-                        request_prefix=f"idx{source_idx}-sample{sample_id}",
+                        temperature=spec.temperature,
+                        top_p=spec.top_p,
+                        request_prefix=f"idx{source_idx}-sample{spec.sample_id}",
                     )
                     if "call:" in generated_text:
                         generated_text = await asyncio.to_thread(
@@ -447,14 +476,18 @@ async def generate_candidates(
             if completed == 1 or completed == total or completed % 50 == 0:
                 print(
                     f"[passk] generated {completed}/{total} candidates "
-                    f"idx={source_idx} sample={sample_id} stop={generated.get('stop_reason')} "
+                    f"idx={source_idx} sample={spec.sample_id} stop={generated.get('stop_reason')} "
                     f"sql={preview_text(generated.get('pred_sql', ''), max_chars=100)}"
                 )
             candidate = {
                 "idx": source_idx,
-                "sample_id": sample_id,
+                "sample_id": spec.sample_id,
+                "sample_plan_id": spec.sample_plan_id,
                 "skill_id": (row_for_sample or {}).get("skill_id"),
-                "skill_name": (row_for_sample or {}).get("skill_name", "default"),
+                "skill_name": spec.skill_name,
+                "temperature": spec.temperature,
+                "top_p": spec.top_p,
+                "replica_label": spec.replica_label,
                 "generation_error": generation_error,
                 **generated,
             }
@@ -464,8 +497,8 @@ async def generate_candidates(
 
     try:
         tasks = [
-            generate_one(row_index, row, sample_id, prepared_row)
-            for row_index, row, sample_id, prepared_row in prepared_jobs
+            generate_one(row_index, row, spec, prepared_row)
+            for row_index, row, spec, prepared_row in prepared_jobs
         ]
         new_candidates = await asyncio.gather(*tasks)
         merged_by_key = dict(existing_by_key)
@@ -530,8 +563,9 @@ def build_passk_summary(
         by_idx.setdefault(int(candidate["idx"]), []).append(candidate)
 
     per_example: List[Dict[str, Any]] = []
-    passk_sums = {k: 0.0 for k in range(1, args.num_generations + 1)}
-    prefix_sums = {k: 0.0 for k in range(1, args.num_generations + 1)}
+    effective_num_generations = int(getattr(args, "effective_num_generations", args.num_generations))
+    passk_sums = {k: 0.0 for k in range(1, effective_num_generations + 1)}
+    prefix_sums = {k: 0.0 for k in range(1, effective_num_generations + 1)}
     candidates_per_example = Counter(len(candidates) for candidates in by_idx.values())
 
     for row in rows:
@@ -542,7 +576,7 @@ def build_passk_summary(
         c = sum(corrects)
         example_passk: Dict[str, float] = {}
         example_prefix: Dict[str, int] = {}
-        for k in range(1, args.num_generations + 1):
+        for k in range(1, effective_num_generations + 1):
             effective_k = min(k, n)
             estimated = pass_at_k(n, c, effective_k) if n else 0.0
             prefix = int(any(corrects[:effective_k])) if effective_k else 0
@@ -579,6 +613,8 @@ def build_passk_summary(
             "shard_index": args.shard_index,
             "num_shards": args.num_shards,
             "num_generations": args.num_generations,
+            "effective_num_generations": effective_num_generations,
+            "sample_plan": args.sample_plan,
             "temperature": args.temperature,
             "top_p": args.top_p,
             "max_new_tokens": args.max_new_tokens,
@@ -591,11 +627,11 @@ def build_passk_summary(
         "candidates_per_example": dict(candidates_per_example),
         "pass_at_k_estimated": {
             str(k): 100.0 * passk_sums[k] / denominator
-            for k in range(1, args.num_generations + 1)
+            for k in range(1, effective_num_generations + 1)
         },
         "prefix_pass_at_k": {
             str(k): 100.0 * prefix_sums[k] / denominator
-            for k in range(1, args.num_generations + 1)
+            for k in range(1, effective_num_generations + 1)
         },
         "candidate_accuracy": {
             "correct": sum(int(candidate.get("correct", 0)) for candidate in evaluated),
@@ -614,8 +650,8 @@ def build_passk_summary(
             "avg_per_candidate": sum(int(candidate.get("tool_call_count", 0)) for candidate in evaluated)
             / max(1, len(evaluated)),
         },
-        "skill_headers": {
-            "mode": args.skill_headers,
+        "sample_plan": {
+            "mode": "sample_plan",
             "counts": dict(Counter(candidate.get("skill_name", "default") for candidate in evaluated)),
         },
         "timing_seconds": timing,
@@ -766,6 +802,7 @@ def main() -> None:
     print(f"[passk] input={args.input_file}")
     print(f"[passk] output_dir={output_dir}")
     print(f"[passk] limit={args.limit} num_generations={args.num_generations} temperature={args.temperature}")
+    print(f"[passk] sample_plan={args.sample_plan or '<default>'} effective_num_generations={args.effective_num_generations}")
     print(f"[passk] shard_index={args.shard_index} num_shards={args.num_shards}")
     print(f"[passk] CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<unset>')}")
 
