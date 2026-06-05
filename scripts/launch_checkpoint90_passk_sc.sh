@@ -129,12 +129,38 @@ wait_for_passk_shards() {
   done
 }
 
-merge_sharded_sc() {
-  local shard_dirs=()
+passk_shard_dirs() {
   local shard
   for ((shard = 0; shard < NUM_SHARDS; shard++)); do
-    shard_dirs+=("${PASSK_BASE_OUT}/shard-$(printf '%05d' "${shard}")-of-$(printf '%05d' "${NUM_SHARDS}")")
+    printf '%s\n' "${PASSK_BASE_OUT}/shard-$(printf '%05d' "${shard}")-of-$(printf '%05d' "${NUM_SHARDS}")"
   done
+}
+
+validate_passk_shards() {
+  local shard_dirs=()
+  local shard_dir
+  while IFS= read -r shard_dir; do
+    shard_dirs+=("${shard_dir}")
+  done < <(passk_shard_dirs)
+
+  PYTHONPATH="${REPO_DIR}/src:${PYTHONPATH:-}" "${PYTHON_BIN}" scripts/validate_passk_shard_counts.py \
+    --input_file "${RAW_INPUT_FILE}" \
+    --limit "${NUM_EXAMPLES}" \
+    --num_shards "${NUM_SHARDS}" \
+    --sample_plan "${SAMPLE_PLAN}" \
+    --num_generations "${NUM_GENERATIONS}" \
+    --top_p 1.0 \
+    --shard_dirs "${shard_dirs[@]}"
+}
+
+merge_sharded_sc() {
+  local shard_dirs=()
+  local shard_dir
+  while IFS= read -r shard_dir; do
+    shard_dirs+=("${shard_dir}")
+  done < <(passk_shard_dirs)
+
+  validate_passk_shards
 
   PYTHONPATH="${REPO_DIR}/src:${PYTHONPATH:-}" "${PYTHON_BIN}" scripts/merge_passk_shards_to_self_consistency.py \
     --shard_dirs "${shard_dirs[@]}" \
@@ -161,10 +187,12 @@ launch_sharded_sc() {
 
 merge_passk() {
   local shard_dirs=()
-  local shard
-  for ((shard = 0; shard < NUM_SHARDS; shard++)); do
-    shard_dirs+=("${PASSK_BASE_OUT}/shard-$(printf '%05d' "${shard}")-of-$(printf '%05d' "${NUM_SHARDS}")")
-  done
+  local shard_dir
+  while IFS= read -r shard_dir; do
+    shard_dirs+=("${shard_dir}")
+  done < <(passk_shard_dirs)
+
+  validate_passk_shards
 
   PYTHONPATH="${REPO_DIR}/src:${PYTHONPATH:-}" "${PYTHON_BIN}" scripts/run_passk_bird.py \
     --merge_shard_dirs "${shard_dirs[@]}" \
@@ -216,6 +244,7 @@ Commands:
   run-passk-shard I [GPUS]  Internal/direct: run one pass@k shard.
   merge-passk               Merge completed pass@k shard directories.
   merge-sharded-sc          Compute SC from completed pass@k shard candidates.
+  validate-passk            Validate shard candidate counts before merge.
   launch-sc [GPUS]          Launch self-consistency in a screen; default GPUS=0,1.
   run-sc [GPUS]             Direct: run self-consistency in this shell.
   status                    Show screens, GPU usage, and key output files.
@@ -252,6 +281,9 @@ case "${command}" in
     ;;
   merge-sharded-sc)
     merge_sharded_sc
+    ;;
+  validate-passk)
+    validate_passk_shards
     ;;
   launch-sc)
     launch_sc "${2:-0,1}"
