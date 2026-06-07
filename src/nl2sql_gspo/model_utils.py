@@ -13,24 +13,6 @@ def _load_auto_tokenizer():
     return AutoTokenizer
 
 
-def _load_model_classes():
-    try:
-        import torch
-        from transformers import AutoModelForCausalLM
-    except ModuleNotFoundError as exc:
-        raise ModuleNotFoundError(
-            "torch and transformers are required for model loading. Install dependencies with "
-            "`pip install -r requirements.txt`."
-        ) from exc
-
-    try:
-        from transformers import AutoModelForImageTextToText
-    except Exception:
-        AutoModelForImageTextToText = None
-
-    return torch, AutoModelForCausalLM, AutoModelForImageTextToText
-
-
 def resolve_tokenizer_source(model_name_or_path: str) -> str:
     model_path = Path(model_name_or_path)
     if not model_path.is_dir():
@@ -122,69 +104,3 @@ def load_tokenizer(model_name_or_path: str):
         )
 
     return tokenizer
-
-
-def load_inference_model_and_tokenizer(model_name_or_path: str, device_map=None):
-    torch, AutoModelForCausalLM, AutoModelForImageTextToText = _load_model_classes()
-    tokenizer = load_tokenizer(model_name_or_path)
-
-    causal_kwargs = {
-        "torch_dtype": torch.bfloat16,
-        "trust_remote_code": True,
-    }
-    if device_map is not None:
-        causal_kwargs["device_map"] = device_map
-
-    try:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name_or_path,
-            attn_implementation="sdpa",
-            **causal_kwargs,
-        )
-        print(
-            "Loaded inference model with AutoModelForCausalLM using sdpa. "
-            f"device_map={device_map!r}"
-        )
-    except Exception as exc:
-        print("AutoModelForCausalLM with sdpa failed for inference.")
-        print(f"Original error: {exc}")
-        try:
-            model = AutoModelForCausalLM.from_pretrained(
-                model_name_or_path,
-                attn_implementation="eager",
-                **causal_kwargs,
-            )
-            print(
-                "Loaded inference model with AutoModelForCausalLM using eager fallback. "
-                f"device_map={device_map!r}"
-            )
-        except Exception as sdpa_exc:
-            print("AutoModelForCausalLM with sdpa failed for inference.")
-            print(f"SDPA fallback error: {sdpa_exc}")
-            try:
-                model = AutoModelForCausalLM.from_pretrained(
-                    model_name_or_path,
-                    **causal_kwargs,
-                )
-                print(
-                    "Loaded inference model with AutoModelForCausalLM default fallback. "
-                    f"device_map={device_map!r}"
-                )
-            except Exception as causal_exc:
-                if AutoModelForImageTextToText is None:
-                    raise RuntimeError(
-                        "AutoModelForCausalLM inference load failed, and AutoModelForImageTextToText "
-                        "is not available in this Transformers version."
-                    ) from causal_exc
-
-                print("AutoModelForCausalLM inference load failed. Falling back to AutoModelForImageTextToText.")
-                print(f"Fallback trigger error: {causal_exc}")
-
-                model = AutoModelForImageTextToText.from_pretrained(
-                    model_name_or_path,
-                    **causal_kwargs,
-                )
-
-    model.eval()
-    model.config.use_cache = True
-    return model, tokenizer

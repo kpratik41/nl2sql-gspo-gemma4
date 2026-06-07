@@ -96,8 +96,6 @@ python scripts/data_generation/build_tool_dataset.py \
   --output outputs/bird_dev-schema-tool.jsonl
 ```
 
-Use `--prompt-template consensus` to include the consensus tool definition.
-
 ## Data Preparation
 
 Generate BM25-based few-shot files:
