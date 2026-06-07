@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build NL2SQL tool-calling training data from a schema-built JSONL file."""
+"""Build NL2SQL tool-calling inference rows from a schema-built JSONL file."""
 
 from __future__ import annotations
 
@@ -108,7 +108,7 @@ def convert_record(record: Dict[str, Any], system_prompt: str, tools: List[Dict[
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Convert bare NL2SQL schema data into native tool-calling RL prompts."
+        description="Convert bare NL2SQL schema rows into native tool-calling inference prompts."
     )
     parser.add_argument("--input", required=True, help="Input bare schema JSONL.")
     parser.add_argument("--output", required=True, help="Output tool-calling JSONL.")

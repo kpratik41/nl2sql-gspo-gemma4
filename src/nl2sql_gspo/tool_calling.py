@@ -1,14 +1,10 @@
-"""Shared NL2SQL tool declarations and GRPO tool loading helpers."""
+"""Shared NL2SQL tool declarations for inference-time tool calling."""
 
 from __future__ import annotations
 
-import asyncio
-import concurrent.futures
-import functools
-import importlib
 import os
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Dict, List
 
 
 def _object_schema(properties: Dict[str, Any], required: List[str]) -> Dict[str, Any]:
@@ -224,48 +220,3 @@ def configure_tool_db_roots(database_dir: str | None = None, extra_roots: str | 
 
     return os.environ["BIRD_DB_ROOTS"]
 
-
-def get_grpo_tool_functions() -> List[Callable[..., Any]]:
-    """Load callable tools used by TRL's GRPO tool-call loop."""
-
-    module = importlib.import_module("gen_tools")
-    return [
-        module.bm25_search_sqlite,
-        module.sqlite_peek,
-        module.sqlite_query,
-    ]
-
-
-def _run_coroutine_in_fresh_thread(coro):
-    """Run an async gen_tools coroutine from a sync TRL tool callback.
-
-    TRL's experimental AsyncGRPO worker currently rejects coroutine tools and
-    calls tools from inside its own event-loop thread, so `asyncio.run()` would
-    fail there. A short-lived helper thread gives each tool call a clean event
-    loop while preserving the sync callable interface TRL expects.
-    """
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(asyncio.run, coro)
-        return future.result()
-
-
-def _sync_tool_wrapper(tool: Callable[..., Any]) -> Callable[..., Any]:
-    @functools.wraps(tool)
-    def wrapped(*args, **kwargs):
-        result = tool(*args, **kwargs)
-        if asyncio.iscoroutine(result):
-            return _run_coroutine_in_fresh_thread(result)
-        return result
-
-    return wrapped
-
-
-def get_sync_grpo_tool_functions() -> List[Callable[..., Any]]:
-    """Load synchronous wrappers for async tools.
-
-    Use this with TRL experimental AsyncGRPOTrainer, whose rollout worker
-    currently accepts only synchronous tool functions.
-    """
-
-    return [_sync_tool_wrapper(tool) for tool in get_grpo_tool_functions()]

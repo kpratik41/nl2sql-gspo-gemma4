@@ -26,7 +26,7 @@ def _extract_from_messages(messages: List[Dict[str, Any]], *patterns: re.Pattern
 
 def normalize_record(example: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Converts harmony/chat JSONL into the prompt format expected by TRL.
+    Converts harmony/chat JSONL into the prompt format expected by inference.
 
     Input example:
     {

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-build_jsonl.py - Build a JSONL fine-tuning dataset from BIRD-SQL dev split.
+schema_build.py - Build schema-augmented JSONL rows from a BIRD-SQL split.
 
 Usage:
     python build_jsonl.py [OPTIONS]
@@ -42,7 +42,7 @@ def examples_to_str(examples: list) -> list:
 def read_json(file_path: str):
     path = Path(file_path)
     with path.open("r", encoding="utf-8") as f:
-        # Train artifacts are JSONL while some dev-side sources are JSON arrays.
+        # Some source artifacts are JSONL while others are JSON arrays.
         # Accept both so the caller can switch datasets without changing loader code.
         if path.suffix.lower() == ".jsonl":
             return [json.loads(line) for line in f if line.strip()]
@@ -82,12 +82,8 @@ def resolve_default_paths(base_dir: Optional[str], split: str) -> Dict[str, str]
     split_data_dir = base_path / "data" / f"bird_{split}_data" / "raw"
     split_db_dir = base_path / "databases" / f"{split}_databases"
 
-    if split == "train":
-        input_name = "train-6601-few-shot.jsonl"
-        meanings_name = "train_column_meaning.json"
-    else:
-        input_name = "dev_20251106-few-shot.json"
-        meanings_name = "column_meaning.json"
+    input_name = "bird_dev-few-shot.json"
+    meanings_name = "column_meaning.json"
 
     # Prefer the repository layout used by this workspace, but retain compatibility
     # with the older standalone bird_sql directory layout this script started from.
@@ -96,7 +92,7 @@ def resolve_default_paths(base_dir: Optional[str], split: str) -> Dict[str, str]
         meanings_path = split_data_dir / meanings_name
         db_dir = split_db_dir
     else:
-        input_path = base_path / ("train-6601-few-shot.jsonl" if split == "train" else "few_shot_bird_dev.json")
+        input_path = base_path / "bird_dev-few-shot.json"
         meanings_path = base_path / meanings_name
         db_dir = base_path / f"{split}_databases"
 
@@ -660,7 +656,7 @@ def build_output_entry(
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Build JSONL fine-tuning data from BIRD train/dev files with enriched schema statistics."
+        description="Build schema-augmented JSONL rows from BIRD files with enriched schema statistics."
     )
     parser.add_argument(
         "--base-dir",
@@ -668,7 +664,7 @@ def parse_args():
         help="Repository root or legacy bird_sql directory (defaults to auto-detected repo root).",
     )
     parser.add_argument(
-        "--split", choices=["train", "dev"], default="train",
+        "--split", choices=["dev"], default="dev",
         help="Dataset split to use when resolving default input, database, and meanings paths.",
     )
     parser.add_argument(
@@ -677,7 +673,7 @@ def parse_args():
     )
     parser.add_argument(
         "--database-dir", default=None,
-        help="Directory containing split databases (for example databases/train_databases).",
+        help="Directory containing split databases (for example databases/dev_databases).",
     )
     parser.add_argument(
         "--meanings-file", default=None,

@@ -27,7 +27,7 @@ if str(SRC_DIR) not in sys.path:
 from nl2sql_gspo.inference_tool_executor import configure_tool_env, extract_and_execute_tools, extract_tool_calls
 from nl2sql_gspo.sql_utils import bird_get_gold_rows, extract_sql
 
-from run_inference_bird import (
+from scripts.run_inference_bird import (
     _async_vllm_generate_text,
     build_generation_detail,
     evaluate_one_bird,
@@ -44,9 +44,9 @@ from run_inference_bird import (
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compute BIRD pass@k from one multi-sample async vLLM run.")
     parser.add_argument("--model_name_or_path", type=str, default="google/gemma-4-31B-it")
-    parser.add_argument("--input_file", type=str, default="outputs/dev-20251106-schema-bare-tool.jsonl")
+    parser.add_argument("--input_file", type=str, default="outputs/bird_dev-schema-tool.jsonl")
     parser.add_argument("--database_dir", type=str, default="databases/dev_databases")
-    parser.add_argument("--diff_json_path", type=str, default="data/bird_dev_data/raw/dev_20251106.json")
+    parser.add_argument("--diff_json_path", type=str, default="data/bird_dev_data/raw/bird_dev.json")
     parser.add_argument("--output_dir", type=str, default="outputs/bird_dev_tool_passk16_vllm_async_temp08")
     parser.add_argument("--limit", type=int, default=-1, help="Number of examples to run; -1 means all examples.")
     parser.add_argument(

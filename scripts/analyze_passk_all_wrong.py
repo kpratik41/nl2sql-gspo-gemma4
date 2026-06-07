@@ -31,21 +31,21 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Analyze all-wrong pass@k examples and export the source rows.")
     parser.add_argument(
         "--passk-dir",
-        default="outputs/bird_dev_schema_tool_passk16_vllm_async_temp08_limit1534-0514",
+        default="outputs/bird_dev_tool_passk16_vllm_async_temp08",
         help="Directory containing passk_candidates.jsonl and passk_per_example.jsonl.",
     )
     parser.add_argument(
         "--source-jsonl",
-        default="outputs/dev-20251106-schema.jsonl",
+        default="outputs/bird_dev-schema.jsonl",
         help="Original JSONL to filter into the all-wrong subset.",
     )
     parser.add_argument(
         "--tool-jsonl",
-        default="outputs/dev-20251106-schema-tool.jsonl",
+        default="outputs/bird_dev-schema-tool.jsonl",
         help="Tool JSONL containing top-level question/evidence/db_id/gold_sql.",
     )
     parser.add_argument("--database-dir", default="databases/dev_databases")
-    parser.add_argument("--output-jsonl", default="outputs/dev-20251106-schema-373.jsonl")
+    parser.add_argument("--output-jsonl", default="outputs/bird_dev-schema-all-wrong.jsonl")
     parser.add_argument(
         "--analysis-jsonl",
         default=None,

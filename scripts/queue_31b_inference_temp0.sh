@@ -16,27 +16,19 @@ VLLM_ASYNC_CONCURRENCY="${VLLM_ASYNC_CONCURRENCY:-16}"
 VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.90}"
 
 job_names=(
-  "old-dev-schema-bare-tool"
-  "old-dev-schema-bare-consensus"
-  "old-dev-schema-consensus"
+  "bird-dev-schema-tool"
 )
 
 input_files=(
-  "outputs/old-dev-schema-bare-tool.jsonl"
-  "outputs/old-dev-schema-bare-consensus.jsonl"
-  "outputs/old-dev-schema-consensus.jsonl"
+  "outputs/bird_dev-schema-tool.jsonl"
 )
 
 output_dirs=(
-  "outputs/inference/dev/old-dev-schema-bare-tool/google-gemma-4-31B-it/vllm_async_tp1_dp1_c16_ctx43k_p34k_o8k_r8_temp0"
-  "outputs/inference/dev/old-dev-schema-bare-consensus/google-gemma-4-31B-it/vllm_async_tp1_dp1_c16_ctx43k_p34k_o8k_r8_temp0"
-  "outputs/inference/dev/old-dev-schema-consensus/google-gemma-4-31B-it/vllm_async_tp1_dp1_c16_ctx43k_p34k_o8k_r8_temp0"
+  "outputs/inference/dev/bird_dev-schema-tool/google-gemma-4-31B-it/vllm_async_tp1_dp1_c16_ctx43k_p34k_o8k_r8_temp0"
 )
 
 log_files=(
-  "logs/infer_31b_old-dev-schema-bare-tool_tp1_temp0.log"
-  "logs/infer_31b_old-dev-schema-bare-consensus_tp1_temp0.log"
-  "logs/infer_31b_old-dev-schema-consensus_tp1_temp0.log"
+  "logs/infer_31b_bird_dev-schema-tool_tp1_temp0.log"
 )
 
 declare -a running_pids=()

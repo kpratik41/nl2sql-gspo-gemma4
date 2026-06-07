@@ -1,62 +1,57 @@
+#!/usr/bin/env python3
+"""Run self-consistency over pass@k candidates only.
+
+This script consumes ``passk_candidates.jsonl`` from ``run_passk_bird.py``.
+It does not load a model and does not use any temperature-0 inference output.
+"""
+
+from __future__ import annotations
+
 import argparse
 import json
+import sys
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = REPO_ROOT / "src"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from nl2sql_gspo.sql_utils import bird_execute_sql, bird_get_gold_rows, bird_result_match, extract_sql
 from scripts.run_inference_bird import build_summary, write_summary_csv, write_summary_markdown
-from scripts.run_passk_bird import (
-    align_rows_with_raw_references,
-    ensure_output_dir,
-    generate_predictions_with_vllm_n,
-)
-from scripts.run_inference_bird import load_diff_rows, load_rows
-from nl2sql_gspo.sql_utils import bird_execute_sql, bird_get_gold_rows, bird_result_match
+from scripts.run_passk_bird import ensure_output_dir
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name_or_path", type=str, required=True)
-    parser.add_argument("--input_file", type=str, default="outputs/dev-20251106-schema.jsonl")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--passk_candidates_path",
+        required=True,
+        help="Path to passk_candidates.jsonl written by scripts/run_passk_bird.py.",
+    )
     parser.add_argument("--database_dir", type=str, default="databases/dev_databases")
-    parser.add_argument("--diff_json_path", type=str, default="data/bird_dev_data/raw/dev_20251106.json")
-    parser.add_argument("--output_dir", type=str, default="outputs/bird_dev_self_consistency")
-    parser.add_argument("--num_examples", type=int, default=-1)
-    parser.add_argument("--max_prompt_length", type=int, default=30000)
-    parser.add_argument("--max_new_tokens", type=int, default=4096)
-    parser.add_argument("--temperature", type=float, default=0.7)
-    parser.add_argument("--top_p", type=float, default=1.0)
-    parser.add_argument("--num_generations", type=int, default=16)
+    parser.add_argument("--output_dir", type=str, default="outputs/self_consistency")
     parser.add_argument("--eval_timeout", type=float, default=60.0)
     parser.add_argument("--eval_workers", type=int, default=8)
-    parser.add_argument("--vllm_tensor_parallel_size", type=int, default=4)
-    parser.add_argument("--vllm_data_parallel_size", type=int, default=2)
-    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.93)
-    parser.add_argument("--vllm_max_model_len", type=int, default=None)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
 
-def print_configuration(args: argparse.Namespace, output_dir: Path) -> None:
-    print("[run] starting self-consistency evaluation")
-    print(f"[run] model_name_or_path={args.model_name_or_path}")
-    print(f"[run] input_file={args.input_file}")
-    print(f"[run] database_dir={args.database_dir}")
-    print(f"[run] diff_json_path={args.diff_json_path}")
-    print(f"[run] output_dir={output_dir}")
-    print(f"[run] num_examples={args.num_examples}")
-    print(f"[run] max_prompt_length={args.max_prompt_length}")
-    print(f"[run] max_new_tokens={args.max_new_tokens}")
-    print(f"[run] temperature={args.temperature}")
-    print(f"[run] top_p={args.top_p}")
-    print(f"[run] num_generations={args.num_generations}")
-    print(f"[run] eval_timeout={args.eval_timeout}")
-    print(f"[run] eval_workers={args.eval_workers}")
-    print(f"[run] vllm_tensor_parallel_size={args.vllm_tensor_parallel_size}")
-    print(f"[run] vllm_data_parallel_size={args.vllm_data_parallel_size}")
-    print(f"[run] vllm_gpu_memory_utilization={args.vllm_gpu_memory_utilization}")
-    print(f"[run] vllm_max_model_len={args.vllm_max_model_len}")
+def read_jsonl(path: Path) -> List[Dict[str, Any]]:
+    with path.open("r", encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
+
+
+def write_jsonl(path: Path, rows: Iterable[Dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def rows_to_vote_signature(rows: Optional[List[Tuple[Any, ...]]]) -> frozenset:
@@ -80,7 +75,9 @@ def is_nonempty_execution_result(rows: Optional[List[Tuple[Any, ...]]]) -> bool:
     return bool(rows)
 
 
-def choose_majority_vote_candidate(candidate_results: List[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], Dict[str, int]]:
+def choose_majority_vote_candidate(
+    candidate_results: List[Dict[str, Any]],
+) -> Tuple[Optional[Dict[str, Any]], Dict[str, int]]:
     valid_candidates = [
         candidate
         for candidate in candidate_results
@@ -100,7 +97,7 @@ def choose_majority_vote_candidate(candidate_results: List[Dict[str, Any]]) -> T
         }
 
     groups: Dict[frozenset, List[Dict[str, Any]]] = OrderedDict()
-    for candidate in valid_candidates:
+    for candidate in sorted(valid_candidates, key=lambda item: int(item["sample_idx"])):
         signature = rows_to_vote_signature(candidate.get("pred_rows"))
         groups.setdefault(signature, []).append(candidate)
 
@@ -108,13 +105,13 @@ def choose_majority_vote_candidate(candidate_results: List[Dict[str, Any]]) -> T
         groups.values(),
         key=lambda items: (
             -len(items),
-            min(item["sample_idx"] for item in items),
+            min(int(item["sample_idx"]) for item in items),
             min(len(item["pred_sql"]) for item in items),
         ),
     )
     winner = min(
         winning_group,
-        key=lambda item: (item["sample_idx"], len(item["pred_sql"]), item["pred_sql"]),
+        key=lambda item: (int(item["sample_idx"]), len(item["pred_sql"]), item["pred_sql"]),
     )
     return winner, {
         "num_candidates": len(candidate_results),
@@ -124,46 +121,61 @@ def choose_majority_vote_candidate(candidate_results: List[Dict[str, Any]]) -> T
     }
 
 
-def should_log_progress_tick(completed: int, total: int) -> bool:
-    if completed == 1 or completed == total:
-        return True
-    if total <= 100:
-        return completed % 10 == 0
-    return completed % 100 == 0
+def normalize_passk_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
+    sample_idx = row.get("sample_idx", row.get("sample_id", 0))
+    return {
+        "idx": int(row.get("idx", row.get("source_idx", -1))),
+        "sample_idx": int(sample_idx),
+        "db_id": row.get("db_id", ""),
+        "difficulty": row.get("difficulty", "unknown"),
+        "prediction_text": row.get("prediction_text", ""),
+        "pred_sql": extract_sql(row.get("pred_sql") or row.get("prediction_text", "")),
+        "gold_sql": extract_sql(row.get("gold_sql", "")),
+        "generation_error": row.get("generation_error", ""),
+    }
 
 
-def evaluate_candidates(
-    prediction_rows: List[Dict[str, Any]],
+def load_passk_candidates(path: Path) -> List[Dict[str, Any]]:
+    candidates = [normalize_passk_candidate(row) for row in read_jsonl(path)]
+    missing = [
+        f"idx={row['idx']} sample={row['sample_idx']}"
+        for row in candidates
+        if not row["db_id"] or not row["gold_sql"]
+    ]
+    if missing:
+        raise ValueError(
+            "pass@k candidates are missing required db_id or gold_sql fields: "
+            + "; ".join(missing[:5])
+        )
+    return candidates
+
+
+def execute_candidates(
+    candidates: List[Dict[str, Any]],
     database_dir: str,
     timeout_s: float,
     max_workers: int,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
-    sample_results: List[Dict[str, Any]] = []
-    selected_results: List[Dict[str, Any]] = []
+) -> List[Dict[str, Any]]:
     worker_count = max(1, min(max_workers, 32))
 
-    prepared_jobs: List[Tuple[int, Dict[str, Any], Dict[str, Any]]] = []
-    for row in prediction_rows:
-        for generation in row["generations"]:
-            prepared_jobs.append((row["idx"], row, generation))
-
-    def _run_job(job: Tuple[int, Dict[str, Any], Dict[str, Any]]) -> Dict[str, Any]:
-        source_idx, row, generation = job
+    def run(candidate: Dict[str, Any]) -> Dict[str, Any]:
         pred_rows: Optional[List[Tuple[Any, ...]]] = None
         pred_executed = False
         pred_error = ""
-        predicted_sql = generation["pred_sql"]
+        predicted_sql = candidate["pred_sql"]
         if predicted_sql.strip():
             pred_executed, pred_rows, pred_error = bird_execute_sql(
                 sql=predicted_sql,
-                db_id=row["db_id"],
+                db_id=candidate["db_id"],
                 database_dir=database_dir,
                 timeout_s=timeout_s,
             )
+        else:
+            pred_error = "empty sql"
 
         gold_executed, gold_row_set, gold_error = bird_get_gold_rows(
-            gold_sql=row["gold_sql"],
-            db_id=row["db_id"],
+            gold_sql=candidate["gold_sql"],
+            db_id=candidate["db_id"],
             database_dir=database_dir,
             timeout_s=timeout_s,
         )
@@ -179,12 +191,7 @@ def evaluate_candidates(
             status = "; ".join(parts) if parts else "error"
 
         return {
-            "idx": source_idx,
-            "db_id": row["db_id"],
-            "difficulty": row.get("difficulty", "unknown"),
-            "sample_idx": generation["sample_idx"],
-            "pred_sql": predicted_sql,
-            "gold_sql": row["gold_sql"],
+            **candidate,
             "pred_rows": pred_rows,
             "pred_row_count": len(pred_rows) if pred_rows else 0,
             "res": int(matched),
@@ -194,20 +201,29 @@ def evaluate_candidates(
             "pred_error": pred_error,
             "gold_error": gold_error,
             "pred_sql_extracted": bool(predicted_sql.strip()),
-            "gold_sql_extracted": bool(row["gold_sql"].strip()),
+            "gold_sql_extracted": bool(candidate["gold_sql"].strip()),
         }
 
+    results: List[Dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        total_jobs = len(prepared_jobs)
-        for job_index, result in enumerate(executor.map(_run_job, prepared_jobs), start=1):
-            sample_results.append(result)
-            if should_log_progress_tick(job_index, total_jobs):
-                print(f"[evaluation] scored {job_index}/{total_jobs} candidate generations")
+        total = len(candidates)
+        for completed, result in enumerate(executor.map(run, candidates), start=1):
+            results.append(result)
+            if completed == 1 or completed == total or completed % 100 == 0:
+                print(f"[evaluation] scored {completed}/{total} pass@k candidates")
 
+    results.sort(key=lambda row: (int(row["idx"]), int(row["sample_idx"])))
+    return results
+
+
+def select_self_consistency_results(
+    sample_results: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     sample_results_by_idx: Dict[int, List[Dict[str, Any]]] = {}
     for result in sample_results:
-        sample_results_by_idx.setdefault(result["idx"], []).append(result)
+        sample_results_by_idx.setdefault(int(result["idx"]), []).append(result)
 
+    selected_results: List[Dict[str, Any]] = []
     voting_stats = {
         "examples_with_valid_vote": 0,
         "examples_without_valid_vote": 0,
@@ -215,8 +231,9 @@ def evaluate_candidates(
         "selected_vote_count_total": 0,
     }
 
-    for row_index, row in enumerate(prediction_rows, start=1):
-        candidate_results = sorted(sample_results_by_idx[row["idx"]], key=lambda item: item["sample_idx"])
+    for row_index, (idx, candidate_results) in enumerate(sorted(sample_results_by_idx.items()), start=1):
+        candidate_results = sorted(candidate_results, key=lambda item: int(item["sample_idx"]))
+        base = candidate_results[0]
         winner, vote_meta = choose_majority_vote_candidate(candidate_results)
         voting_stats["ignored_empty_results"] += vote_meta["ignored_empty_results"]
         voting_stats["selected_vote_count_total"] += vote_meta["winning_vote_count"]
@@ -224,11 +241,11 @@ def evaluate_candidates(
         if winner is None:
             selected_results.append(
                 {
-                    "idx": row["idx"],
-                    "db_id": row["db_id"],
-                    "difficulty": row.get("difficulty", "unknown"),
+                    "idx": idx,
+                    "db_id": base["db_id"],
+                    "difficulty": base.get("difficulty", "unknown"),
                     "pred_sql": "",
-                    "gold_sql": row["gold_sql"],
+                    "gold_sql": base["gold_sql"],
                     "res": 0,
                     "status": "no valid non-empty vote candidates",
                     "pred_executed": False,
@@ -236,7 +253,7 @@ def evaluate_candidates(
                     "pred_error": "no valid non-empty vote candidates",
                     "gold_error": next((item["gold_error"] for item in candidate_results if item["gold_error"]), ""),
                     "pred_sql_extracted": False,
-                    "gold_sql_extracted": bool(row["gold_sql"].strip()),
+                    "gold_sql_extracted": bool(base["gold_sql"].strip()),
                     "selected_sample_idx": None,
                     "selected_vote_count": 0,
                     "valid_vote_candidates": 0,
@@ -249,7 +266,7 @@ def evaluate_candidates(
                 {
                     "idx": winner["idx"],
                     "db_id": winner["db_id"],
-                    "difficulty": winner["difficulty"],
+                    "difficulty": winner.get("difficulty", "unknown"),
                     "pred_sql": winner["pred_sql"],
                     "gold_sql": winner["gold_sql"],
                     "res": winner["res"],
@@ -268,16 +285,10 @@ def evaluate_candidates(
             )
             voting_stats["examples_with_valid_vote"] += 1
 
-        if should_log_progress_tick(row_index, len(prediction_rows)):
-            print(f"[selection] selected {row_index}/{len(prediction_rows)} majority-vote predictions")
+        if row_index == 1 or row_index == len(sample_results_by_idx) or row_index % 100 == 0:
+            print(f"[selection] selected {row_index}/{len(sample_results_by_idx)} majority-vote predictions")
 
-    summary = build_summary(selected_results)
-    summary["self_consistency"] = {
-        **voting_stats,
-        "num_generations": prediction_rows[0]["generations"][-1]["sample_idx"] + 1 if prediction_rows else 0,
-        "selection_rule": "majority vote over executable non-empty result sets; ties break by earliest sample idx then shorter SQL",
-    }
-    return sample_results, selected_results, summary
+    return selected_results, voting_stats
 
 
 def write_self_consistency_markdown(summary: Dict[str, Any], markdown_path: Path) -> None:
@@ -289,7 +300,6 @@ def write_self_consistency_markdown(summary: Dict[str, Any], markdown_path: Path
         handle.write(f"- examples_without_valid_vote: {details['examples_without_valid_vote']}\n")
         handle.write(f"- ignored_empty_results: {details['ignored_empty_results']}\n")
         handle.write(f"- selected_vote_count_total: {details['selected_vote_count_total']}\n")
-        handle.write(f"- num_generations: {details['num_generations']}\n")
         handle.write(f"- selection_rule: {details['selection_rule']}\n")
 
 
@@ -297,29 +307,28 @@ def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
     ensure_output_dir(output_dir, args.overwrite)
-    print_configuration(args, output_dir)
 
-    rows = load_rows(args.input_file, args.num_examples)
-    print(f"[run] loaded {len(rows)} input rows")
-    diff_rows = load_diff_rows(args.diff_json_path)
-    print(f"[run] loaded {len(diff_rows)} diff rows")
-    rows = align_rows_with_raw_references(rows, diff_rows)
+    candidates_path = Path(args.passk_candidates_path)
+    candidates = load_passk_candidates(candidates_path)
+    print(f"[run] loaded {len(candidates)} pass@k candidates from {candidates_path}")
 
-    prediction_rows, skipped_rows = generate_predictions_with_vllm_n(rows, args)
-    if skipped_rows:
-        raise RuntimeError(
-            f"Found {len(skipped_rows)} prompts exceeding max_prompt_length={args.max_prompt_length}; rerun with a larger context budget."
-        )
-
-    sample_results, selected_results, summary = evaluate_candidates(
-        prediction_rows=prediction_rows,
+    sample_results = execute_candidates(
+        candidates=candidates,
         database_dir=args.database_dir,
         timeout_s=args.eval_timeout,
         max_workers=args.eval_workers,
     )
+    selected_results, voting_stats = select_self_consistency_results(sample_results)
+    summary = build_summary(selected_results)
+    summary["self_consistency"] = {
+        **voting_stats,
+        "source": str(candidates_path),
+        "selection_rule": (
+            "majority vote over executable non-empty pass@k result sets; "
+            "ties break by earliest sample idx then shorter SQL"
+        ),
+    }
 
-    generations_path = output_dir / "prediction_samples.jsonl"
-    filtered_path = output_dir / "filtered_examples.jsonl"
     sample_results_path = output_dir / "eval_results_samples.jsonl"
     selected_results_path = output_dir / "self_consistency_results.jsonl"
     summary_path = output_dir / "self_consistency_summary.json"
@@ -327,27 +336,16 @@ def main() -> None:
     difficulty_csv_path = output_dir / "self_consistency_summary_by_difficulty.csv"
     db_csv_path = output_dir / "self_consistency_summary_by_db.csv"
 
-    with generations_path.open("w", encoding="utf-8") as handle:
-        for row in prediction_rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-    with filtered_path.open("w", encoding="utf-8") as handle:
-        for row in skipped_rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-    with sample_results_path.open("w", encoding="utf-8") as handle:
-        for row in sample_results:
-            serializable = dict(row)
-            serializable.pop("pred_rows", None)
-            handle.write(json.dumps(serializable, ensure_ascii=False) + "\n")
-
-    with selected_results_path.open("w", encoding="utf-8") as handle:
-        for row in selected_results:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    serializable_samples = []
+    for row in sample_results:
+        serializable = dict(row)
+        serializable.pop("pred_rows", None)
+        serializable_samples.append(serializable)
+    write_jsonl(sample_results_path, serializable_samples)
+    write_jsonl(selected_results_path, selected_results)
 
     with summary_path.open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, ensure_ascii=False, indent=2)
-
     write_self_consistency_markdown(summary, summary_markdown_path)
     write_summary_csv(summary["by_difficulty"], difficulty_csv_path)
     write_summary_csv(summary["by_db"], db_csv_path)
@@ -357,8 +355,6 @@ def main() -> None:
         f"[summary] self-consistency EX accuracy: {total['accuracy']:.2f}% "
         f"({total['correct']}/{total['count']})"
     )
-    print(f"Saved generation samples to {generations_path}")
-    print(f"Saved filtered-example report to {filtered_path}")
     print(f"Saved sample evaluation results to {sample_results_path}")
     print(f"Saved self-consistency results to {selected_results_path}")
     print(f"Saved self-consistency summary to {summary_path}")

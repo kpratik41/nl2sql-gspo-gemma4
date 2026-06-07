@@ -76,9 +76,8 @@ def extract_final_answer_sql(completion: Any) -> str:
     """Extract SQL only from the final-answer contract used by tool prompts.
 
     This intentionally ignores draft SQL in ``<scratch_pad>`` and SQL embedded
-    inside tool calls/responses. During tool-call RL a rollout that stops after
-    a tool call should not receive execution/result reward for an unfinished
-    candidate query.
+    inside tool calls/responses. A generation that stops after a tool call is
+    unfinished and should not be evaluated as if it emitted a final query.
     """
 
     text = extract_completion_text(completion).strip()
@@ -139,8 +138,8 @@ def extract_sql(completion: Any, *, prefer_final_answer: bool = True) -> str:
             return clean_sql(candidate)
 
     # If the completion contains tool-call syntax but no final-answer SQL, it
-    # is an unfinished agentic rollout. Do not reward a draft CandidateSQL from
-    # the scratchpad or a SQL argument inside a tool call as the final answer.
+    # is unfinished. Do not treat draft CandidateSQL from the scratchpad or a
+    # SQL argument inside a tool call as the final answer.
     if TOOL_CALL_MARKER_RE.search(text):
         return ""
 
@@ -281,7 +280,7 @@ def result_match(
 # compares results with raw `set(predicted_res) == set(ground_truth_res)` — no
 # normalization of strings, floats, or whitespace, and a per-query timeout.
 #
-# These helpers reproduce that behavior for use inside training rewards.
+# These helpers reproduce that behavior for local inference evaluation.
 
 _BIRD_GOLD_CACHE: Dict[Tuple[str, str], Tuple[bool, Optional[frozenset], str]] = {}
 _BIRD_GOLD_CACHE_LOCK = threading.Lock()
@@ -357,9 +356,7 @@ def bird_get_gold_rows(
     database_dir: str,
     timeout_s: float = 30.0,
 ) -> Tuple[bool, Optional[frozenset], str]:
-    """Cache gold-side execution by (db_id, gold_sql) since gold is fixed per
-    training row but we re-evaluate it once per rollout in a group of G.
-    """
+    """Cache gold-side execution by (db_id, gold_sql) across evaluations."""
     key = (db_id, gold_sql)
     with _BIRD_GOLD_CACHE_LOCK:
         cached = _BIRD_GOLD_CACHE.get(key)
