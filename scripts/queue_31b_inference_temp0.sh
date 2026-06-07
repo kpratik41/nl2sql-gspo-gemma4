@@ -24,7 +24,7 @@ input_files=(
 )
 
 output_dirs=(
-  "outputs/inference/dev/bird_dev-schema-tool/google-gemma-4-31B-it/vllm_async_tp1_dp1_c16_ctx43k_p34k_o8k_r8_temp0"
+  "outputs/inference/dev/bird_dev-schema-tool/google-gemma-4-31B-it/vllm_async_tp1_c16_ctx43k_p34k_o8k_r8_temp0"
 )
 
 log_files=(
@@ -94,7 +94,6 @@ launch_job() {
   (
     INFERENCE_CUDA_VISIBLE_DEVICES="${gpu}" \
     PYTHON_BIN=".venv/bin/python" \
-    INFERENCE_BACKEND="vllm_async" \
     MODEL_PATH="${MODEL_PATH}" \
     INPUT_FILE="${input_file}" \
     OUTPUT_DIR="${output_dir}" \
@@ -106,7 +105,6 @@ launch_job() {
     TEMPERATURE=0.0 \
     TOP_P=1.0 \
     VLLM_TENSOR_PARALLEL_SIZE=1 \
-    VLLM_DATA_PARALLEL_SIZE=1 \
     VLLM_ASYNC_CONCURRENCY="${VLLM_ASYNC_CONCURRENCY}" \
     VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION}" \
     VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN}" \

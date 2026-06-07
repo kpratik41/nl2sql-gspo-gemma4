@@ -6,7 +6,6 @@ export TOKENIZERS_PARALLELISM=false
 export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
-INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
 MODEL_PATH="${MODEL_PATH:-outputs/gemma4_31b_gspo_bird}"
 INPUT_FILE="${INPUT_FILE:-outputs/bird_dev-schema.jsonl}"
 DATABASE_DIR="${DATABASE_DIR:-databases/dev_databases}"
@@ -20,26 +19,15 @@ TEMPERATURE="${TEMPERATURE:-0.0}"
 TOP_P="${TOP_P:-1.0}"
 EVAL_TIMEOUT="${EVAL_TIMEOUT:-60}"
 EVAL_WORKERS="${EVAL_WORKERS:-16}"
+SHARD_INDEX="${SHARD_INDEX:-0}"
+NUM_SHARDS="${NUM_SHARDS:-1}"
+NO_APPEND_SHARD_TO_OUTPUT_DIR="${NO_APPEND_SHARD_TO_OUTPUT_DIR:-0}"
 VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.93}"
 VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-43000}"
 VLLM_ASYNC_CONCURRENCY="${VLLM_ASYNC_CONCURRENCY:-16}"
 APPEND_OUTPUT_TIMESTAMP="${APPEND_OUTPUT_TIMESTAMP:-1}"
 OUTPUT_TIMESTAMP="${OUTPUT_TIMESTAMP:-}"
-
-case "${INFERENCE_BACKEND}" in
-  vllm)
-    VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-2}"
-    VLLM_DATA_PARALLEL_SIZE="${VLLM_DATA_PARALLEL_SIZE:-4}"
-    ;;
-  vllm_async)
-    VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-8}"
-    VLLM_DATA_PARALLEL_SIZE="${VLLM_DATA_PARALLEL_SIZE:-1}"
-    ;;
-  *)
-    echo "[launcher] unsupported INFERENCE_BACKEND=${INFERENCE_BACKEND}; use vllm or vllm_async" >&2
-    exit 2
-    ;;
-esac
+VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-8}"
 
 sanitize_path_part() {
   local value="$1"
@@ -76,10 +64,7 @@ build_default_output_dir() {
   output_k="$(( (MAX_NEW_TOKENS + 999) / 1000 ))k"
   context_k="$(( (VLLM_MAX_MODEL_LEN + 999) / 1000 ))k"
 
-  run_tag="${INFERENCE_BACKEND}_tp${VLLM_TENSOR_PARALLEL_SIZE}_dp${VLLM_DATA_PARALLEL_SIZE}"
-  if [[ "${INFERENCE_BACKEND}" == "vllm_async" ]]; then
-    run_tag="${run_tag}_c${VLLM_ASYNC_CONCURRENCY}"
-  fi
+  run_tag="vllm_async_tp${VLLM_TENSOR_PARALLEL_SIZE}_c${VLLM_ASYNC_CONCURRENCY}"
   run_tag="${run_tag}_ctx${context_k}_p${prompt_k}_o${output_k}_r${MAX_TOOL_ROUNDS}"
 
   printf 'outputs/inference/%s/%s/%s/%s' "${split_name}" "${input_tag}" "${model_tag}" "${run_tag}"
@@ -106,7 +91,6 @@ echo "[launcher] output_dir=${OUTPUT_DIR}"
 cmd=(
   "${PYTHON_BIN}"
   scripts/run_inference_bird.py
-  --inference_backend "${INFERENCE_BACKEND}"
   --model_name_or_path "${MODEL_PATH}"
   --input_file "${INPUT_FILE}"
   --database_dir "${DATABASE_DIR}"
@@ -120,27 +104,24 @@ cmd=(
   --top_p "${TOP_P}"
   --eval_timeout "${EVAL_TIMEOUT}"
   --eval_workers "${EVAL_WORKERS}"
+  --shard_index "${SHARD_INDEX}"
+  --num_shards "${NUM_SHARDS}"
   --overwrite
 )
 
-if [[ -n "${VLLM_TENSOR_PARALLEL_SIZE}" ]]; then
-  cmd+=(--vllm_tensor_parallel_size "${VLLM_TENSOR_PARALLEL_SIZE}")
+if [[ "${NO_APPEND_SHARD_TO_OUTPUT_DIR}" == "1" ]]; then
+  cmd+=(--no_append_shard_to_output_dir)
 fi
 
-if [[ -n "${VLLM_DATA_PARALLEL_SIZE}" ]]; then
-  cmd+=(--vllm_data_parallel_size "${VLLM_DATA_PARALLEL_SIZE}")
+if [[ -n "${VLLM_TENSOR_PARALLEL_SIZE}" ]]; then
+  cmd+=(--vllm_tensor_parallel_size "${VLLM_TENSOR_PARALLEL_SIZE}")
 fi
 
 if [[ -n "${VLLM_MAX_MODEL_LEN}" ]]; then
   cmd+=(--vllm_max_model_len "${VLLM_MAX_MODEL_LEN}")
 fi
 
-if [[ "${INFERENCE_BACKEND}" == "vllm" || "${INFERENCE_BACKEND}" == "vllm_async" ]]; then
-  cmd+=(--vllm_gpu_memory_utilization "${VLLM_GPU_MEMORY_UTILIZATION}")
-fi
-
-if [[ "${INFERENCE_BACKEND}" == "vllm_async" ]]; then
-  cmd+=(--vllm_async_concurrency "${VLLM_ASYNC_CONCURRENCY}")
-fi
+cmd+=(--vllm_gpu_memory_utilization "${VLLM_GPU_MEMORY_UTILIZATION}")
+cmd+=(--vllm_async_concurrency "${VLLM_ASYNC_CONCURRENCY}")
 
 "${cmd[@]}"

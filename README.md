@@ -16,16 +16,16 @@ The launchers expect `PYTHONPATH` to include `src`; `scripts/launch_inference.sh
 bash scripts/launch_inference.sh
 ```
 
-By default, the launcher loads `outputs/gemma4_31b_gspo_bird`, reads `outputs/bird_dev-schema.jsonl`, writes official-style `predict_dev.json`, and computes BIRD-style execution accuracy against `databases/dev_databases`.
+The launcher uses async vLLM, loads `outputs/gemma4_31b_gspo_bird`, reads `outputs/bird_dev-schema.jsonl`, writes official-style `predict_dev.json`, and computes BIRD-style execution accuracy against `databases/dev_databases`.
 
 Common overrides:
 
 ```bash
-INFERENCE_BACKEND=vllm MODEL_PATH=google/gemma-4-E4B-it NUM_EXAMPLES=2 bash scripts/launch_inference.sh
-INFERENCE_BACKEND=vllm_async INPUT_FILE=outputs/bird_dev-schema-tool.jsonl MODEL_PATH=google/gemma-4-E4B-it NUM_EXAMPLES=2 bash scripts/launch_inference.sh
+MODEL_PATH=google/gemma-4-E4B-it NUM_EXAMPLES=2 bash scripts/launch_inference.sh
+INPUT_FILE=outputs/bird_dev-schema-tool.jsonl MODEL_PATH=google/gemma-4-E4B-it NUM_EXAMPLES=2 bash scripts/launch_inference.sh
 ```
 
-Standalone inference supports `--inference_backend vllm|vllm_async`. The shell launcher mirrors this through `INFERENCE_BACKEND` and forwards `MAX_PROMPT_LENGTH`, `MAX_NEW_TOKENS`, `VLLM_TENSOR_PARALLEL_SIZE`, `VLLM_DATA_PARALLEL_SIZE`, `VLLM_GPU_MEMORY_UTILIZATION`, `VLLM_MAX_MODEL_LEN`, and `VLLM_ASYNC_CONCURRENCY`.
+Standalone inference is async-vLLM-only. The shell launcher forwards `MAX_PROMPT_LENGTH`, `MAX_NEW_TOKENS`, `SHARD_INDEX`, `NUM_SHARDS`, `VLLM_TENSOR_PARALLEL_SIZE`, `VLLM_GPU_MEMORY_UTILIZATION`, `VLLM_MAX_MODEL_LEN`, and `VLLM_ASYNC_CONCURRENCY`.
 
 When `OUTPUT_DIR` is not set, the launcher creates a descriptive output directory under:
 
@@ -33,7 +33,41 @@ When `OUTPUT_DIR` is not set, the launcher creates a descriptive output director
 outputs/inference/<split>/<input_stem>/<model_tag>/
 ```
 
-The final run folder includes backend, tensor/data parallel settings, async concurrency when applicable, context/prompt/output limits, tool-round budget, and a timestamp suffix. Set `APPEND_OUTPUT_TIMESTAMP=0` to keep an explicit `OUTPUT_DIR` unchanged.
+The final run folder includes backend, tensor-parallel size, async concurrency, context/prompt/output limits, tool-round budget, and a timestamp suffix. Set `APPEND_OUTPUT_TIMESTAMP=0` to keep an explicit `OUTPUT_DIR` unchanged.
+
+### Native Sharding
+
+Inference and pass@k both support process-level sharding with original example indices preserved. Each shard keeps rows where `source_idx % NUM_SHARDS == SHARD_INDEX`; when `NUM_SHARDS > 1`, standalone inference and the launcher append a directory name like `shard-00000-of-00008` under `OUTPUT_DIR`.
+
+Run temperature-0 async vLLM inference with tensor parallel size 1 across 8 one-GPU shards:
+
+```bash
+for shard in $(seq 0 7); do
+  SHARD_INDEX="${shard}" \
+  NUM_SHARDS=8 \
+  INFERENCE_CUDA_VISIBLE_DEVICES="${shard}" \
+  VLLM_TENSOR_PARALLEL_SIZE=1 \
+  TEMPERATURE=0.0 \
+  TOP_P=1.0 \
+  INPUT_FILE=outputs/old-dev-schema-tool.jsonl \
+  OUTPUT_DIR=outputs/inference/old-dev-schema-tool/temp0_async_tp1_shards8 \
+  APPEND_OUTPUT_TIMESTAMP=0 \
+  bash scripts/launch_inference.sh &
+done
+wait
+```
+
+Merge completed inference shards:
+
+```bash
+python scripts/run_inference_bird.py \
+  --input_file outputs/old-dev-schema-tool.jsonl \
+  --database_dir databases/dev_databases \
+  --diff_json_path data/bird_dev_data/raw/bird_dev.json \
+  --output_dir outputs/inference/old-dev-schema-tool/temp0_async_tp1_shards8_merged \
+  --merge_shard_dirs outputs/inference/old-dev-schema-tool/temp0_async_tp1_shards8/shard-* \
+  --overwrite
+```
 
 ## Outputs
 
@@ -98,6 +132,21 @@ python scripts/run_passk_bird.py \
   --temperature 0.7 \
   --overwrite
 ```
+
+Pass@k uses the same sharding flags:
+
+```bash
+python scripts/run_passk_bird.py \
+  --model_name_or_path outputs/gemma4_31b_gspo_bird/checkpoint-80 \
+  --input_file outputs/bird_dev-schema-tool.jsonl \
+  --output_dir outputs/passk/checkpoint-80_shards8 \
+  --num_generations 16 \
+  --shard_index 0 \
+  --num_shards 8 \
+  --overwrite
+```
+
+Merge pass@k shards with `--merge_shard_dirs outputs/passk/checkpoint-80_shards8/shard-*`.
 
 Run self-consistency evaluation:
 

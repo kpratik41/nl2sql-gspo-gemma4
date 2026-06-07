@@ -5,13 +5,18 @@ import json
 import multiprocessing as mp
 import os
 import sqlite3
+import sys
 import time
-import traceback
 import uuid
 from collections import Counter, OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = REPO_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 from nl2sql_gspo.data import normalize_record
 from nl2sql_gspo.sql_utils import bird_execute_sql, bird_get_gold_rows, bird_result_match, extract_sql, get_database_path
@@ -47,7 +52,7 @@ def has_sql_content(sql: str) -> bool:
 
 def print_run_configuration(args: argparse.Namespace, output_dir: Path) -> None:
     print("[run] starting standalone inference")
-    print(f"[run] inference_backend={args.inference_backend}")
+    print("[run] inference_backend=vllm_async")
     print(f"[run] model_name_or_path={args.model_name_or_path}")
     print(f"[run] input_file={args.input_file}")
     print(f"[run] database_dir={args.database_dir}")
@@ -59,14 +64,13 @@ def print_run_configuration(args: argparse.Namespace, output_dir: Path) -> None:
     print(f"[run] eval_timeout={args.eval_timeout}")
     print(f"[run] eval_workers={args.eval_workers}")
     print(f"[run] skip_generation={args.skip_generation}")
+    print(f"[run] shard_index={args.shard_index}")
+    print(f"[run] num_shards={args.num_shards}")
     print(f"[run] CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<unset>')}")
-    if args.inference_backend in {"vllm", "vllm_async"}:
-        print(f"[run] vllm_tensor_parallel_size={args.vllm_tensor_parallel_size}")
-        print(f"[run] vllm_data_parallel_size={args.vllm_data_parallel_size}")
-        print(f"[run] vllm_gpu_memory_utilization={args.vllm_gpu_memory_utilization}")
-        print(f"[run] vllm_max_model_len={args.vllm_max_model_len}")
-    if args.inference_backend == "vllm_async":
-        print(f"[run] vllm_async_concurrency={args.vllm_async_concurrency}")
+    print(f"[run] vllm_tensor_parallel_size={args.vllm_tensor_parallel_size}")
+    print(f"[run] vllm_gpu_memory_utilization={args.vllm_gpu_memory_utilization}")
+    print(f"[run] vllm_max_model_len={args.vllm_max_model_len}")
+    print(f"[run] vllm_async_concurrency={args.vllm_async_concurrency}")
     print(f"[run] max_tool_rounds={args.max_tool_rounds}")
 
 
@@ -103,7 +107,6 @@ def load_diff_rows(diff_json_path: str) -> List[Dict[str, Any]]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--inference_backend", type=str, choices=["vllm", "vllm_async"], default="vllm")
     parser.add_argument("--model_name_or_path", type=str, default=None)
     parser.add_argument("--input_file", type=str, default="outputs/bird_dev-schema.jsonl")
     parser.add_argument("--database_dir", type=str, default="databases/dev_databases")
@@ -117,25 +120,74 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval_timeout", type=float, default=60.0)
     parser.add_argument("--eval_workers", type=int, default=16)
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=None)
-    parser.add_argument("--vllm_data_parallel_size", type=int, default=None)
     parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.93)
     parser.add_argument("--vllm_max_model_len", type=int, default=43000)
     parser.add_argument("--vllm_async_concurrency", type=int, default=16)
     parser.add_argument("--max_tool_rounds", type=int, default=8)
+    parser.add_argument(
+        "--shard_index",
+        type=int,
+        default=0,
+        help="Zero-based shard index. Use with --num_shards to split examples across processes/GPUs.",
+    )
+    parser.add_argument(
+        "--num_shards",
+        type=int,
+        default=1,
+        help="Total number of example shards. Each shard keeps original source_idx values.",
+    )
+    parser.add_argument(
+        "--no_append_shard_to_output_dir",
+        action="store_true",
+        help=(
+            "Do not append shard-XXXXX-of-YYYYY to output_dir when num_shards > 1. "
+            "Only use this when each shard already has a unique output_dir."
+        ),
+    )
+    parser.add_argument(
+        "--merge_shard_dirs",
+        nargs="*",
+        default=None,
+        help=(
+            "Merge already-evaluated shard output directories instead of running generation. "
+            "Each directory must contain predict_dev.json and eval_results.jsonl."
+        ),
+    )
+    parser.add_argument(
+        "--merge_output_dir",
+        type=str,
+        default=None,
+        help="Directory for merged inference outputs. Defaults to --output_dir.",
+    )
     parser.add_argument("--skip_generation", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
-    if args.inference_backend == "vllm_async":
-        if args.vllm_tensor_parallel_size is None:
-            args.vllm_tensor_parallel_size = 8
-        if args.vllm_data_parallel_size is None:
-            args.vllm_data_parallel_size = 1
-    else:
-        if args.vllm_tensor_parallel_size is None:
-            args.vllm_tensor_parallel_size = 2
-        if args.vllm_data_parallel_size is None:
-            args.vllm_data_parallel_size = 4
+    if args.num_shards < 1:
+        parser.error("--num_shards must be >= 1")
+    if args.shard_index < 0 or args.shard_index >= args.num_shards:
+        parser.error("--shard_index must satisfy 0 <= shard_index < num_shards")
+    if args.vllm_tensor_parallel_size is None:
+        args.vllm_tensor_parallel_size = 8
     return args
+
+
+def resolve_output_dir(args: argparse.Namespace) -> Path:
+    output_dir = Path(args.output_dir)
+    if args.num_shards > 1 and not args.no_append_shard_to_output_dir:
+        shard_name = f"shard-{args.shard_index:05d}-of-{args.num_shards:05d}"
+        if output_dir.name != shard_name:
+            output_dir = output_dir / shard_name
+    return output_dir
+
+
+def shard_rows(rows: List[Dict[str, Any]], shard_index: int, num_shards: int) -> List[Dict[str, Any]]:
+    if num_shards == 1:
+        return rows
+    return [
+        row
+        for row in rows
+        if int(row.get("source_idx", -1)) % num_shards == shard_index
+    ]
 
 
 def load_rows(input_file: str, num_examples: int) -> List[Dict[str, Any]]:
@@ -267,48 +319,6 @@ def filter_rows_by_prompt_length(rows: List[Dict[str, Any]], tokenizer, max_prom
     return kept_rows, skipped_rows
 
 
-def infer_visible_gpu_count() -> int:
-    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
-    if not visible_devices:
-        return 1
-
-    return max(1, len([device for device in visible_devices.split(",") if device.strip()]))
-
-
-def get_visible_devices() -> List[str]:
-    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
-    if not visible_devices:
-        return ["0"]
-
-    devices = [device.strip() for device in visible_devices.split(",") if device.strip()]
-    return devices or ["0"]
-
-
-def plan_vllm_device_groups(tensor_parallel_size: int, data_parallel_size: int) -> List[List[str]]:
-    visible_devices = get_visible_devices()
-    required_devices = tensor_parallel_size * data_parallel_size
-
-    if len(visible_devices) < required_devices:
-        raise ValueError(
-            "Not enough visible GPUs for the requested vLLM parallelism: "
-            f"need {required_devices} GPUs for tensor_parallel_size={tensor_parallel_size} "
-            f"and data_parallel_size={data_parallel_size}, but CUDA_VISIBLE_DEVICES exposes "
-            f"{len(visible_devices)} ({','.join(visible_devices)})."
-        )
-
-    return [
-        visible_devices[offset: offset + tensor_parallel_size]
-        for offset in range(0, required_devices, tensor_parallel_size)
-    ]
-
-
-def shard_rows_for_data_parallel(rows: List[Dict[str, Any]], num_shards: int) -> List[List[Dict[str, Any]]]:
-    shards: List[List[Dict[str, Any]]] = [[] for _ in range(num_shards)]
-    for row_index, row in enumerate(rows):
-        shards[row_index % num_shards].append(row)
-    return shards
-
-
 def prepare_rows_for_generation(rows: List[Dict[str, Any]], tokenizer, max_prompt_length: int) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     rows, skipped_rows = filter_rows_by_prompt_length(rows, tokenizer, max_prompt_length)
     print(f"[inference] running generation for {len(rows)} prompts")
@@ -410,85 +420,6 @@ def keep_first_tool_call_only(generated_text: str, tool_calls: List[Dict[str, An
     first_call = dict(tool_calls[0])
     end = int(first_call.get("end") or len(generated_text or ""))
     return (generated_text or "")[:end].strip(), [first_call]
-
-
-def generate_one_with_vllm_tool_loop(
-    llm,
-    sampling_params_cls,
-    tokenizer,
-    row: Dict[str, Any],
-    max_new_tokens: int,
-    max_tool_rounds: int,
-    eval_timeout: float,
-    temperature: float,
-    top_p: float,
-) -> Dict[str, Any]:
-    messages = [dict(message) for message in get_generation_messages(row)]
-    tools = row.get("tools")
-    generated_parts: List[str] = []
-    prompt_token_count = int(row["prompt_tokens"])
-    completion_token_count = 0
-    tool_rounds = 0
-    tool_call_count = 0
-    stop_reason = "finished"
-
-    for round_index in range(max_tool_rounds + 1):
-        remaining_tokens = max_new_tokens - completion_token_count
-        if remaining_tokens <= 0:
-            stop_reason = "max_new_tokens"
-            break
-
-        prompt_text = render_prompt(tokenizer, messages, tools)
-        current_prompt_tokens = len(tokenizer(prompt_text, truncation=False)["input_ids"])
-        if round_index == 0:
-            prompt_token_count = current_prompt_tokens
-
-        sampling_params = sampling_params_cls(
-            temperature=temperature,
-            top_p=top_p,
-            max_tokens=remaining_tokens,
-            stop_token_ids=gemma_tool_loop_stop_token_ids(tokenizer),
-        )
-        request_output = llm.generate([prompt_text], sampling_params=sampling_params, use_tqdm=False)[0]
-        first_output = request_output.outputs[0] if request_output.outputs else None
-        generated_text = (first_output.text or "").strip() if first_output else ""
-        round_tokens = len(first_output.token_ids) if first_output else 0
-        tool_calls = extract_tool_calls(generated_text)
-        if not tool_calls:
-            completion_token_count += round_tokens
-            if generated_text:
-                generated_parts.append(generated_text)
-            stop_reason = "max_new_tokens" if round_tokens >= remaining_tokens else "finished"
-            break
-
-        if round_index >= max_tool_rounds:
-            stop_reason = "max_tool_rounds"
-            break
-
-        generated_text, tool_calls = keep_first_tool_call_only(generated_text, tool_calls)
-        completion_token_count += len(
-            tokenizer(generated_text, truncation=False, add_special_tokens=False)["input_ids"]
-        )
-        if generated_text:
-            generated_parts.append(generated_text)
-
-        tool_responses = execute_tool_calls(tool_calls, timeout_s=eval_timeout)
-        for response in tool_responses:
-            generated_parts.append(response["rendered"])
-        messages.append(build_assistant_tool_message(generated_text, tool_calls, tool_responses))
-        tool_rounds += 1
-        tool_call_count += len(tool_calls)
-
-    prediction_text = "\n".join(part for part in generated_parts if part).strip()
-    return build_generation_detail(
-        row=row,
-        prediction_text=prediction_text,
-        prompt_token_count=prompt_token_count,
-        completion_token_count=completion_token_count,
-        tool_rounds=tool_rounds,
-        tool_call_count=tool_call_count,
-        stop_reason=stop_reason,
-    )
 
 
 async def _async_vllm_generate_text(
@@ -636,342 +567,6 @@ async def generate_one_with_vllm_async_tool_loop(
     )
 
 
-def _vllm_generate_worker(
-    queue,
-    shard_id: int,
-    device_group: List[str],
-    rows: List[Dict[str, Any]],
-    llm_config: Dict[str, Any],
-) -> None:
-    try:
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(device_group)
-
-        from vllm import LLM, SamplingParams
-
-        llm = LLM(
-            model=llm_config["model_name_or_path"],
-            tokenizer=llm_config["tokenizer_name_or_path"],
-            trust_remote_code=True,
-            tensor_parallel_size=llm_config["tensor_parallel_size"],
-            distributed_executor_backend="mp",
-            gpu_memory_utilization=llm_config["gpu_memory_utilization"],
-            max_model_len=llm_config["max_model_len"],
-            dtype="bfloat16",
-        )
-        from nl2sql_gspo.model_utils import load_tokenizer
-
-        tokenizer = load_tokenizer(llm_config["tokenizer_name_or_path"])
-
-        results = []
-        for row in rows:
-            if should_use_agentic_tool_loop(row, llm_config["max_tool_rounds"]):
-                configure_tool_env(llm_config.get("database_dir", "databases"))
-                results.append(
-                    generate_one_with_vllm_tool_loop(
-                        llm=llm,
-                        sampling_params_cls=SamplingParams,
-                        tokenizer=tokenizer,
-                        row=row,
-                        max_new_tokens=llm_config["max_new_tokens"],
-                        max_tool_rounds=llm_config["max_tool_rounds"],
-                        eval_timeout=llm_config.get("eval_timeout", 60.0),
-                        temperature=llm_config["temperature"],
-                        top_p=llm_config["top_p"],
-                    )
-                )
-                continue
-
-            sampling_params = SamplingParams(
-                temperature=llm_config["temperature"],
-                top_p=llm_config["top_p"],
-                max_tokens=llm_config["max_new_tokens"],
-            )
-            request_output = llm.generate([row["prompt_text"]], sampling_params=sampling_params, use_tqdm=False)[0]
-            first_output = request_output.outputs[0] if request_output.outputs else None
-            prediction_text = (first_output.text or "").strip() if first_output else ""
-            completion_token_count = len(first_output.token_ids) if first_output else 0
-
-            if "call:" in prediction_text:
-                configure_tool_env(llm_config.get("database_dir", "databases"))
-                prediction_text = extract_and_execute_tools(prediction_text, timeout_s=llm_config.get("eval_timeout", 60.0))
-
-            results.append(
-                build_generation_detail(
-                    row=row,
-                    prediction_text=prediction_text,
-                    prompt_token_count=int(row["prompt_tokens"]),
-                    completion_token_count=completion_token_count,
-                    tool_rounds=0,
-                    tool_call_count=len(extract_tool_calls(prediction_text)),
-                    stop_reason="finished",
-                )
-            )
-
-        queue.put({"status": "ok", "shard_id": shard_id, "results": results})
-    except Exception:
-        queue.put({"status": "error", "shard_id": shard_id, "error": traceback.format_exc()})
-
-
-def generate_predictions_with_vllm_data_parallel(
-    rows: List[Dict[str, Any]],
-    args: argparse.Namespace,
-    tensor_parallel_size: int,
-    data_parallel_size: int,
-    vllm_max_model_len: int,
-) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[Dict[str, Any]], List[Dict[str, Any]]]:
-    device_groups = plan_vllm_device_groups(tensor_parallel_size, data_parallel_size)
-    row_shards = shard_rows_for_data_parallel(rows, data_parallel_size)
-    active_shards = [
-        (shard_id, device_group, shard_rows)
-        for shard_id, (device_group, shard_rows) in enumerate(zip(device_groups, row_shards))
-        if shard_rows
-    ]
-
-    print(
-        "[inference] loading vLLM engines in multi-process data-parallel mode "
-        f"tensor_parallel_size={tensor_parallel_size} data_parallel_size={data_parallel_size} "
-        f"device_groups={['+'.join(group) for group in device_groups]} max_model_len={vllm_max_model_len}"
-    )
-
-    llm_config = {
-        "model_name_or_path": args.model_name_or_path,
-        "tokenizer_name_or_path": resolve_vllm_tokenizer_source(args.model_name_or_path),
-        "tensor_parallel_size": tensor_parallel_size,
-        "gpu_memory_utilization": args.vllm_gpu_memory_utilization,
-        "max_model_len": vllm_max_model_len,
-        "temperature": args.temperature,
-        "top_p": args.top_p,
-        "max_new_tokens": args.max_new_tokens,
-        "max_tool_rounds": args.max_tool_rounds,
-        "database_dir": args.database_dir,
-        "eval_timeout": args.eval_timeout,
-    }
-
-    ctx = mp.get_context("spawn")
-    queue = ctx.Queue()
-    processes = []
-    collect_error: Optional[BaseException] = None
-
-    for shard_id, device_group, shard_rows in active_shards:
-        print(
-            f"[inference] starting vLLM shard {shard_id + 1}/{len(active_shards)} "
-            f"gpus={','.join(device_group)} prompts={len(shard_rows)}"
-        )
-        process = ctx.Process(
-            target=_vllm_generate_worker,
-            args=(queue, shard_id, device_group, shard_rows, llm_config),
-        )
-        process.start()
-        processes.append(process)
-
-    collected_results: Dict[int, Dict[str, Any]] = {}
-    try:
-        for _ in processes:
-            message = queue.get()
-            if message.get("status") != "ok":
-                collect_error = RuntimeError(
-                    "vLLM data-parallel worker failed"
-                    + (f" (shard {message.get('shard_id')})" if "shard_id" in message else "")
-                    + ":\n"
-                    + message.get("error", "unknown error")
-                )
-                raise collect_error
-
-            for result in message["results"]:
-                collected_results[result["source_idx"]] = result
-    finally:
-        for process in processes:
-            process.join(timeout=30)
-            if process.is_alive() and collect_error is not None:
-                process.terminate()
-                process.join(timeout=5)
-
-    for process in processes:
-        if process.is_alive():
-            print(
-                f"[inference] warning: vLLM worker pid={process.pid} was still shutting down after results were collected; "
-                "continuing without waiting for a clean exit"
-            )
-            process.terminate()
-            process.join(timeout=5)
-
-    for process in processes:
-        if collect_error is None and process.exitcode in (0, None, -15):
-            continue
-        if process.exitcode not in (0, None):
-            raise RuntimeError(f"vLLM data-parallel worker exited with code {process.exitcode}")
-
-    official_predictions: Dict[str, str] = {}
-    detailed_predictions: List[Dict[str, Any]] = []
-    log_each_example = should_log_each_example(len(rows))
-
-    for idx, row in enumerate(rows):
-        source_idx = row.get("source_idx", idx)
-        generated = collected_results.get(source_idx)
-        if generated is None:
-            raise RuntimeError(f"Missing vLLM generation result for idx={source_idx}")
-
-        db_id = generated["db_id"]
-        pred_sql = generated["pred_sql"]
-        prediction_text = generated["prediction_text"]
-        prompt_token_count = generated["prompt_tokens"]
-        completion_token_count = generated["completion_token_count"]
-
-        official_predictions[str(source_idx)] = f"{pred_sql}{BIRD_SPLIT_MARKER}{db_id}"
-        detailed_predictions.append(
-            {
-                "idx": source_idx,
-                "db_id": db_id,
-                "prediction_text": prediction_text,
-                "pred_sql": pred_sql,
-                "gold_sql": extract_sql(row.get("gold_sql", "")),
-                "prompt_tokens": prompt_token_count,
-                "completion_token_count": completion_token_count,
-                "tool_rounds": generated.get("tool_rounds", 0),
-                "tool_call_count": generated.get("tool_call_count", 0),
-                "stop_reason": generated.get("stop_reason", ""),
-            }
-        )
-
-        if log_each_example:
-            print(
-                f"[inference] finished sample {idx + 1}/{len(rows)} "
-                f"idx={source_idx} completion_tokens={completion_token_count} "
-                f"pred_sql={preview_text(pred_sql, max_chars=120)}"
-            )
-
-        if should_log_progress_tick(idx, len(rows)):
-            print(f"[inference] generated {idx + 1}/{len(rows)} prompts")
-
-    return rows, official_predictions, detailed_predictions, []
-
-
-def generate_predictions_with_vllm(rows: List[Dict[str, Any]], args: argparse.Namespace) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[Dict[str, Any]], List[Dict[str, Any]]]:
-    try:
-        from vllm import LLM, SamplingParams
-    except Exception as exc:
-        raise RuntimeError(
-            "vLLM backend requested, but vllm could not be imported in the current environment."
-        ) from exc
-
-    from nl2sql_gspo.model_utils import load_tokenizer
-
-    tokenizer = load_tokenizer(args.model_name_or_path)
-    rows, skipped_rows = prepare_rows_for_generation(rows, tokenizer, args.max_prompt_length)
-
-    tensor_parallel_size = args.vllm_tensor_parallel_size
-    data_parallel_size = args.vllm_data_parallel_size
-    vllm_max_model_len = args.vllm_max_model_len or (args.max_prompt_length + args.max_new_tokens)
-
-    print(
-        "[inference] loading vLLM engine "
-        f"tensor_parallel_size={tensor_parallel_size} data_parallel_size={data_parallel_size} "
-        f"max_model_len={vllm_max_model_len}"
-    )
-
-    if data_parallel_size > 1:
-        return generate_predictions_with_vllm_data_parallel(
-            rows=rows,
-            args=args,
-            tensor_parallel_size=tensor_parallel_size,
-            data_parallel_size=data_parallel_size,
-            vllm_max_model_len=vllm_max_model_len,
-        )
-
-    llm = LLM(
-        model=args.model_name_or_path,
-        tokenizer=resolve_vllm_tokenizer_source(args.model_name_or_path),
-        trust_remote_code=True,
-        tensor_parallel_size=tensor_parallel_size,
-        distributed_executor_backend="mp",
-        gpu_memory_utilization=args.vllm_gpu_memory_utilization,
-        max_model_len=vllm_max_model_len,
-        dtype="bfloat16",
-    )
-
-    official_predictions: Dict[str, str] = {}
-    detailed_predictions: List[Dict[str, Any]] = []
-    log_each_example = should_log_each_example(len(rows))
-
-    for idx, row in enumerate(rows):
-        source_idx = row.get("source_idx", idx)
-        db_id = row.get("db_id", "")
-        prompt_token_count = int(row["prompt_tokens"])
-
-        if log_each_example:
-            print(
-                f"[inference] generating sample {idx + 1}/{len(rows)} "
-                f"idx={source_idx} db_id={db_id} prompt_tokens={prompt_token_count}"
-            )
-
-        if should_use_agentic_tool_loop(row, args.max_tool_rounds):
-            generated = generate_one_with_vllm_tool_loop(
-                llm=llm,
-                sampling_params_cls=SamplingParams,
-                tokenizer=tokenizer,
-                row=row,
-                max_new_tokens=args.max_new_tokens,
-                max_tool_rounds=args.max_tool_rounds,
-                eval_timeout=args.eval_timeout,
-                temperature=args.temperature,
-                top_p=args.top_p,
-            )
-            prediction_text = generated["prediction_text"]
-            pred_sql = generated["pred_sql"]
-            prompt_token_count = generated["prompt_tokens"]
-            completion_token_count = generated["completion_token_count"]
-        else:
-            sampling_params = SamplingParams(
-                temperature=args.temperature,
-                top_p=args.top_p,
-                max_tokens=args.max_new_tokens,
-            )
-            request_output = llm.generate([row["prompt_text"]], sampling_params=sampling_params, use_tqdm=False)[0]
-            first_output = request_output.outputs[0] if request_output.outputs else None
-            prediction_text = (first_output.text or "").strip() if first_output else ""
-            if "call:" in prediction_text:
-                prediction_text = extract_and_execute_tools(prediction_text, timeout_s=args.eval_timeout)
-            pred_sql = extract_sql(prediction_text)
-            completion_token_count = len(first_output.token_ids) if first_output else 0
-            generated = build_generation_detail(
-                row=row,
-                prediction_text=prediction_text,
-                prompt_token_count=prompt_token_count,
-                completion_token_count=completion_token_count,
-                tool_rounds=0,
-                tool_call_count=len(extract_tool_calls(prediction_text)),
-                stop_reason="finished",
-            )
-
-        official_predictions[str(source_idx)] = f"{pred_sql}{BIRD_SPLIT_MARKER}{db_id}"
-        detailed_predictions.append(
-            {
-                "idx": source_idx,
-                "db_id": db_id,
-                "prediction_text": prediction_text,
-                "pred_sql": pred_sql,
-                "gold_sql": extract_sql(row.get("gold_sql", "")),
-                "prompt_tokens": prompt_token_count,
-                "completion_token_count": completion_token_count,
-                "tool_rounds": generated.get("tool_rounds", 0),
-                "tool_call_count": generated.get("tool_call_count", 0),
-                "stop_reason": generated.get("stop_reason", ""),
-            }
-        )
-
-        if log_each_example:
-            print(
-                f"[inference] finished sample {idx + 1}/{len(rows)} "
-                f"idx={source_idx} completion_tokens={completion_token_count} "
-                f"pred_sql={preview_text(pred_sql, max_chars=120)}"
-            )
-
-        if should_log_progress_tick(idx, len(rows)):
-            print(f"[inference] generated {idx + 1}/{len(rows)} prompts")
-
-    return rows, official_predictions, detailed_predictions, skipped_rows
-
-
 async def _generate_predictions_with_vllm_async_impl(
     rows: List[Dict[str, Any]],
     args: argparse.Namespace,
@@ -985,9 +580,6 @@ async def _generate_predictions_with_vllm_async_impl(
         ) from exc
 
     from nl2sql_gspo.model_utils import load_tokenizer
-
-    if args.vllm_data_parallel_size != 1:
-        raise ValueError("vllm_async currently supports VLLM_DATA_PARALLEL_SIZE=1; use tensor parallelism plus async concurrency.")
 
     tokenizer_source = resolve_vllm_tokenizer_source(args.model_name_or_path)
     tokenizer = load_tokenizer(tokenizer_source)
@@ -1164,18 +756,25 @@ def generate_predictions(rows: List[Dict[str, Any]], args: argparse.Namespace) -
     if not args.model_name_or_path:
         raise ValueError("--model_name_or_path is required unless --skip_generation is set")
 
-    if args.inference_backend == "vllm":
-        return generate_predictions_with_vllm(rows, args)
-
-    if args.inference_backend == "vllm_async":
-        return generate_predictions_with_vllm_async(rows, args)
-
-    raise ValueError(f"Unsupported inference backend: {args.inference_backend}")
+    return generate_predictions_with_vllm_async(rows, args)
 
 
 def load_predictions(predictions_path: Path) -> Dict[str, str]:
     with predictions_path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def read_jsonl(path: Path) -> List[Dict[str, Any]]:
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
+
+
+def write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def _execute_query_pair(queue, predicted_sql: str, ground_sql: str, db_path: str) -> None:
@@ -1604,20 +1203,21 @@ def render_run_config(args: argparse.Namespace, row_count: int) -> List[str]:
     return [
         "## Run Configuration",
         "",
-        f"- inference_backend: `{args.inference_backend}`",
+        "- inference_backend: `vllm_async`",
         f"- model_name_or_path: `{args.model_name_or_path}`",
         f"- input_file: `{args.input_file}`",
         f"- database_dir: `{args.database_dir}`",
         f"- diff_json_path: `{args.diff_json_path}`",
         f"- num_examples: `{args.num_examples}`",
         f"- loaded_rows: `{row_count}`",
+        f"- shard_index: `{args.shard_index}`",
+        f"- num_shards: `{args.num_shards}`",
         f"- max_prompt_length: `{args.max_prompt_length}`",
         f"- max_new_tokens: `{args.max_new_tokens}`",
         f"- max_tool_rounds: `{args.max_tool_rounds}`",
         f"- eval_timeout: `{args.eval_timeout}`",
         f"- eval_workers: `{args.eval_workers}`",
         f"- vllm_tensor_parallel_size: `{args.vllm_tensor_parallel_size}`",
-        f"- vllm_data_parallel_size: `{args.vllm_data_parallel_size}`",
         f"- vllm_async_concurrency: `{args.vllm_async_concurrency}`",
         f"- vllm_gpu_memory_utilization: `{args.vllm_gpu_memory_utilization}`",
         f"- vllm_max_model_len: `{args.vllm_max_model_len}`",
@@ -1916,15 +1516,213 @@ def ensure_output_dir(output_dir: Path, overwrite: bool) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
 
+def load_shard_timing(shard_dir: Path) -> Dict[str, float]:
+    summary_path = shard_dir / "eval_summary.json"
+    if not summary_path.exists():
+        return {"generation": 0.0, "evaluation": 0.0, "total": 0.0}
+
+    with summary_path.open("r", encoding="utf-8") as handle:
+        summary = json.load(handle)
+    timing = summary.get("timing_seconds") or {}
+    return {
+        "generation": float(timing.get("generation") or 0.0),
+        "evaluation": float(timing.get("evaluation") or 0.0),
+        "total": float(timing.get("total") or 0.0),
+    }
+
+
+def _preview_duplicates(values: List[Any]) -> str:
+    return ", ".join(str(value) for value in values[:10])
+
+
+def merge_shard_outputs(args: argparse.Namespace) -> None:
+    shard_dirs = [Path(path) for path in args.merge_shard_dirs or []]
+    if not shard_dirs:
+        raise ValueError("--merge_shard_dirs requires at least one shard output directory")
+
+    output_dir = Path(args.merge_output_dir or args.output_dir)
+    ensure_output_dir(output_dir, args.overwrite)
+    print(f"[merge] output_dir={output_dir}")
+
+    rows = load_rows(args.input_file, args.num_examples)
+    diff_rows = load_diff_rows(args.diff_json_path)
+
+    official_predictions: Dict[str, str] = {}
+    detailed_predictions: List[Dict[str, Any]] = []
+    filtered_rows: List[Dict[str, Any]] = []
+    per_example_results: List[Dict[str, Any]] = []
+
+    seen_prediction_idxs = set()
+    seen_detail_idxs = set()
+    seen_filtered_idxs = set()
+    seen_eval_idxs = set()
+    duplicate_prediction_idxs: List[int] = []
+    duplicate_detail_idxs: List[int] = []
+    duplicate_filtered_idxs: List[int] = []
+    duplicate_eval_idxs: List[int] = []
+    timing = {"generation": 0.0, "evaluation": 0.0, "total": 0.0}
+
+    for shard_dir in shard_dirs:
+        predictions_path = shard_dir / "predict_dev.json"
+        details_path = shard_dir / "prediction_details.jsonl"
+        filtered_path = shard_dir / "filtered_examples.jsonl"
+        eval_path = shard_dir / "eval_results.jsonl"
+
+        if not predictions_path.exists():
+            raise FileNotFoundError(predictions_path)
+        if not eval_path.exists():
+            raise FileNotFoundError(eval_path)
+
+        shard_predictions = load_predictions(predictions_path)
+        shard_details = read_jsonl(details_path)
+        shard_filtered = read_jsonl(filtered_path)
+        shard_eval = read_jsonl(eval_path)
+        print(
+            f"[merge] reading {shard_dir} "
+            f"predictions={len(shard_predictions)} eval_rows={len(shard_eval)} "
+            f"filtered={len(shard_filtered)}"
+        )
+
+        for key, value in shard_predictions.items():
+            idx = int(key)
+            if idx in seen_prediction_idxs:
+                duplicate_prediction_idxs.append(idx)
+            seen_prediction_idxs.add(idx)
+            official_predictions[str(idx)] = value
+
+        for detail in shard_details:
+            idx = int(detail.get("idx", detail.get("source_idx", -1)))
+            if idx in seen_detail_idxs:
+                duplicate_detail_idxs.append(idx)
+            seen_detail_idxs.add(idx)
+            normalized_detail = dict(detail)
+            normalized_detail["idx"] = idx
+            detailed_predictions.append(normalized_detail)
+
+        for filtered in shard_filtered:
+            idx = int(filtered.get("idx", filtered.get("source_idx", -1)))
+            if idx in seen_filtered_idxs:
+                duplicate_filtered_idxs.append(idx)
+            seen_filtered_idxs.add(idx)
+            normalized_filtered = dict(filtered)
+            normalized_filtered["idx"] = idx
+            filtered_rows.append(normalized_filtered)
+
+        for result in shard_eval:
+            idx = int(result["idx"])
+            if idx in seen_eval_idxs:
+                duplicate_eval_idxs.append(idx)
+            seen_eval_idxs.add(idx)
+            normalized_result = dict(result)
+            normalized_result["idx"] = idx
+            if idx < len(diff_rows):
+                normalized_result["difficulty"] = diff_rows[idx].get(
+                    "difficulty",
+                    normalized_result.get("difficulty", "unknown"),
+                )
+            per_example_results.append(normalized_result)
+
+        shard_timing = load_shard_timing(shard_dir)
+        for key in timing:
+            timing[key] += shard_timing.get(key, 0.0)
+
+    duplicate_messages = []
+    if duplicate_prediction_idxs:
+        duplicate_messages.append(f"predictions={_preview_duplicates(duplicate_prediction_idxs)}")
+    if duplicate_detail_idxs:
+        duplicate_messages.append(f"details={_preview_duplicates(duplicate_detail_idxs)}")
+    if duplicate_filtered_idxs:
+        duplicate_messages.append(f"filtered={_preview_duplicates(duplicate_filtered_idxs)}")
+    if duplicate_eval_idxs:
+        duplicate_messages.append(f"eval={_preview_duplicates(duplicate_eval_idxs)}")
+    if duplicate_messages:
+        raise ValueError("Duplicate shard rows found: " + "; ".join(duplicate_messages))
+
+    official_predictions = {
+        str(idx): official_predictions[str(idx)]
+        for idx in sorted(int(key) for key in official_predictions)
+    }
+    detailed_predictions.sort(key=lambda row: int(row.get("idx", -1)))
+    filtered_rows.sort(key=lambda row: int(row.get("idx", -1)))
+    per_example_results.sort(key=lambda row: int(row.get("idx", -1)))
+
+    evaluated_idxs = {int(row["idx"]) for row in per_example_results}
+    filtered_idxs = {int(row["idx"]) for row in filtered_rows}
+    expected_idxs = {int(row.get("source_idx", idx)) for idx, row in enumerate(rows)}
+    missing_idxs = sorted(expected_idxs - evaluated_idxs - filtered_idxs)
+    if missing_idxs:
+        print(
+            "[merge] warning: merged shards are missing "
+            f"{len(missing_idxs)} loaded rows; first_missing={missing_idxs[:10]}"
+        )
+
+    summary = build_summary(per_example_results)
+    summary["timing_seconds"] = timing
+    summary["generation_stats"] = build_generation_stats(detailed_predictions, filtered_rows)
+    summary["merged_shards"] = [str(path) for path in shard_dirs]
+    summary["merge_coverage"] = {
+        "loaded_rows": len(rows),
+        "evaluated_rows": len(per_example_results),
+        "filtered_rows": len(filtered_rows),
+        "missing_rows": len(missing_idxs),
+    }
+
+    predictions_path = output_dir / "predict_dev.json"
+    details_path = output_dir / "prediction_details.jsonl"
+    filtered_path = output_dir / "filtered_examples.jsonl"
+    per_example_eval_path = output_dir / "eval_results.jsonl"
+    summary_path = output_dir / "eval_summary.json"
+    summary_markdown_path = output_dir / "eval_summary.md"
+    run_report_path = output_dir / "run_report.md"
+    per_example_report_csv_path = output_dir / "per_example_report.csv"
+    difficulty_csv_path = output_dir / "eval_summary_by_difficulty.csv"
+    db_csv_path = output_dir / "eval_summary_by_db.csv"
+
+    with predictions_path.open("w", encoding="utf-8") as handle:
+        json.dump(official_predictions, handle, ensure_ascii=False, indent=2)
+    write_jsonl(details_path, detailed_predictions)
+    write_jsonl(filtered_path, filtered_rows)
+    write_jsonl(per_example_eval_path, per_example_results)
+    with summary_path.open("w", encoding="utf-8") as handle:
+        json.dump(summary, handle, ensure_ascii=False, indent=2)
+
+    report_rows = build_per_example_report_rows(detailed_predictions, per_example_results)
+    write_per_example_report_csv(report_rows, per_example_report_csv_path)
+    write_summary_markdown(summary, summary_markdown_path, args, len(rows))
+    write_run_report_markdown(summary, report_rows, run_report_path, args, len(rows))
+    write_summary_csv(summary["by_difficulty"], difficulty_csv_path)
+    write_summary_csv(summary["by_db"], db_csv_path)
+    print_summary_tables(summary)
+    print(f"[merge] merged {len(shard_dirs)} shards into {output_dir}")
+    print(f"[merge] wrote {run_report_path}")
+
+
 def main() -> None:
     run_started_at = time.monotonic()
     args = parse_args()
-    output_dir = Path(args.output_dir)
+    if args.merge_shard_dirs is not None:
+        merge_shard_outputs(args)
+        return
+
+    output_dir = resolve_output_dir(args)
+    args.output_dir = str(output_dir)
     ensure_output_dir(output_dir, args.overwrite)
     print_run_configuration(args, output_dir)
 
     rows = load_rows(args.input_file, args.num_examples)
-    print(f"[run] loaded {len(rows)} input rows")
+    original_row_count = len(rows)
+    print(f"[run] loaded {original_row_count} input rows")
+    rows = shard_rows(rows, args.shard_index, args.num_shards)
+    if not rows:
+        raise ValueError(
+            f"Shard {args.shard_index}/{args.num_shards} received no rows from "
+            f"{original_row_count} loaded examples."
+        )
+    if args.num_shards > 1:
+        print(
+            f"[run] shard rows={len(rows)}/{original_row_count} "
+            f"first_idx={rows[0].get('source_idx')} last_idx={rows[-1].get('source_idx')}"
+        )
 
     # Configure tool environment for database access
     configure_tool_env(args.database_dir)
