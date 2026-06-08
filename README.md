@@ -115,6 +115,24 @@ python scripts/data_generation/schema_build.py \
 
 The schema builder writes top-level `db_id`, `gold_sql`, `evidence`, and `question` fields alongside `messages`, injects per-column meanings, and renders table/column statistics for prompting. Older message-only rows are still accepted by the shared loader.
 
+For leaderboard-style BIRD test inputs, build the prompt JSONL first and keep it as the reproducible inference artifact. Test rows do not contain gold SQL, so local EX accuracy is skipped; inference still writes official-format predictions and prediction-execution sanity reports.
+
+```bash
+python scripts/data_generation/schema_build.py \
+  --split test \
+  --input-file data/bird_test_data/raw/test.json \
+  --database-dir databases/test_databases \
+  --meanings-file data/bird_test_data/raw/column_meaning.json \
+  --n-examples -1 \
+  --output outputs/bird_test-schema.jsonl
+
+python scripts/data_generation/build_tool_dataset.py \
+  --input outputs/bird_test-schema.jsonl \
+  --output outputs/bird_test-schema-tool.jsonl
+```
+
+Then run inference against `outputs/bird_test-schema-tool.jsonl` and `databases/test_databases`. Use `--predictions_filename predict_test.json` only if the submission instructions require that filename; the JSON values remain in official BIRD format (`SQL\t----- bird -----\tdb_id`).
+
 ## Pass@k And Self-Consistency
 
 Run pass@k evaluation:
@@ -157,3 +175,5 @@ python scripts/run_self_consistency_bird.py \
 ```
 
 Self-consistency consumes the sampled candidates written by pass@k, executes them on SQLite, discards empty execution results, and majority-votes over raw result sets. It does not use temperature-0 inference outputs. Ties break by earliest sample index and then shorter SQL.
+
+On unlabeled test inputs, pass@k and self-consistency still run, but accuracy/pass@k fields are reported as `n/a`. Self-consistency writes an official prediction file in its output directory.

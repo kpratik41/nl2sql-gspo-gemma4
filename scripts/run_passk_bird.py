@@ -30,6 +30,7 @@ from nl2sql_gspo.sql_utils import bird_get_gold_rows, extract_sql
 from scripts.run_inference_bird import (
     _async_vllm_generate_text,
     build_generation_detail,
+    evaluate_prediction_only,
     evaluate_one_bird,
     generate_one_with_vllm_async_tool_loop,
     load_diff_rows,
@@ -37,6 +38,7 @@ from scripts.run_inference_bird import (
     prepare_rows_for_generation,
     preview_text,
     resolve_vllm_tokenizer_source,
+    rows_have_gold_sql,
     should_use_agentic_tool_loop,
 )
 
@@ -95,7 +97,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=8)
     parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.93)
     parser.add_argument("--vllm_max_model_len", type=int, default=None)
-    parser.add_argument("--vllm_async_concurrency", type=int, default=16)
+    parser.add_argument("--vllm_async_concurrency", type=int, default=8)
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     if args.num_shards < 1:
@@ -315,6 +317,7 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
             return {
                 "idx": source_idx,
                 "sample_id": sample_id,
+                "difficulty": row_for_sample.get("difficulty", "unknown"),
                 "generation_error": generation_error,
                 **generated,
             }
@@ -335,29 +338,54 @@ def evaluate_candidates(
     rows: List[Dict[str, Any]],
     args: argparse.Namespace,
 ) -> List[Dict[str, Any]]:
-    gold_by_idx = evaluate_gold_rows(rows, args.database_dir, args.eval_timeout, args.eval_workers)
+    has_gold_labels = rows_have_gold_sql(rows)
+    if has_gold_labels:
+        gold_by_idx = evaluate_gold_rows(rows, args.database_dir, args.eval_timeout, args.eval_workers)
+    else:
+        print("[passk] no complete gold SQL labels found; checking candidate execution only")
+        gold_by_idx = {
+            int(row.get("source_idx", -1)): {
+                "idx": int(row.get("source_idx", -1)),
+                "gold_sql": "",
+                "gold_executed": False,
+                "gold_row_set": None,
+                "gold_error": "",
+            }
+            for row in rows
+        }
 
     def run(candidate: Dict[str, Any]) -> Dict[str, Any]:
         idx = int(candidate["idx"])
         gold = gold_by_idx[idx]
-        result = evaluate_one_bird(
-            predicted_sql=candidate.get("pred_sql", ""),
-            db_id=candidate.get("db_id", ""),
-            database_dir=args.database_dir,
-            timeout_s=args.eval_timeout,
-            gold_executed=gold["gold_executed"],
-            gold_row_set=gold["gold_row_set"],
-            gold_error=gold["gold_error"],
-        )
+        if has_gold_labels:
+            result = evaluate_one_bird(
+                predicted_sql=candidate.get("pred_sql", ""),
+                db_id=candidate.get("db_id", ""),
+                database_dir=args.database_dir,
+                timeout_s=args.eval_timeout,
+                gold_executed=gold["gold_executed"],
+                gold_row_set=gold["gold_row_set"],
+                gold_error=gold["gold_error"],
+            )
+            correct = int(result["res"])
+        else:
+            result = evaluate_prediction_only(
+                predicted_sql=candidate.get("pred_sql", ""),
+                db_id=candidate.get("db_id", ""),
+                database_dir=args.database_dir,
+                timeout_s=args.eval_timeout,
+            )
+            correct = None
         return {
             **candidate,
             "gold_sql": gold["gold_sql"],
-            "correct": int(result["res"]),
+            "correct": correct,
             "status": result["status"],
             "pred_executed": result["pred_executed"],
             "gold_executed": result["gold_executed"],
             "pred_error": result["pred_error"],
             "gold_error": result["gold_error"],
+            "pred_row_count": result.get("pred_row_count"),
             "tool_order": tool_order(candidate.get("prediction_text", "")),
         }
 
@@ -383,6 +411,7 @@ def build_passk_summary(
     for candidate in evaluated:
         by_idx.setdefault(int(candidate["idx"]), []).append(candidate)
 
+    has_gold_labels = bool(evaluated) and all(candidate.get("correct") is not None for candidate in evaluated)
     per_example: List[Dict[str, Any]] = []
     passk_sums = {k: 0.0 for k in range(1, args.num_generations + 1)}
     prefix_sums = {k: 0.0 for k in range(1, args.num_generations + 1)}
@@ -391,30 +420,31 @@ def build_passk_summary(
     for row in rows:
         idx = int(row.get("source_idx", -1))
         candidates = sorted(by_idx.get(idx, []), key=lambda item: int(item["sample_id"]))
-        corrects = [int(candidate.get("correct", 0)) for candidate in candidates]
+        corrects = [int(candidate.get("correct") or 0) for candidate in candidates]
         n = len(corrects)
         c = sum(corrects)
-        example_passk: Dict[str, float] = {}
-        example_prefix: Dict[str, int] = {}
+        example_passk: Dict[str, Optional[float]] = {}
+        example_prefix: Dict[str, Optional[int]] = {}
         for k in range(1, args.num_generations + 1):
             effective_k = min(k, n)
-            estimated = pass_at_k(n, c, effective_k) if n else 0.0
-            prefix = int(any(corrects[:effective_k])) if effective_k else 0
+            estimated = pass_at_k(n, c, effective_k) if has_gold_labels and n else None
+            prefix = int(any(corrects[:effective_k])) if has_gold_labels and effective_k else None
             example_passk[str(k)] = estimated
             example_prefix[str(k)] = prefix
-            passk_sums[k] += estimated
-            prefix_sums[k] += prefix
+            if has_gold_labels:
+                passk_sums[k] += estimated or 0.0
+                prefix_sums[k] += prefix or 0
 
         per_example.append(
             {
                 "idx": idx,
                 "db_id": row.get("db_id", ""),
                 "num_candidates": n,
-                "num_correct": c,
+                "num_correct": c if has_gold_labels else None,
                 "first_correct_sample_id": next(
                     (candidate["sample_id"] for candidate in candidates if candidate.get("correct")),
                     None,
-                ),
+                ) if has_gold_labels else None,
                 "pass_at_k": example_passk,
                 "prefix_pass_at_k": example_prefix,
                 "stop_reasons": dict(Counter(candidate.get("stop_reason", "") for candidate in candidates)),
@@ -444,20 +474,26 @@ def build_passk_summary(
         "total_candidates": len(evaluated),
         "candidates_per_example": dict(candidates_per_example),
         "pass_at_k_estimated": {
-            str(k): 100.0 * passk_sums[k] / denominator
+            str(k): 100.0 * passk_sums[k] / denominator if has_gold_labels else None
             for k in range(1, args.num_generations + 1)
         },
         "prefix_pass_at_k": {
-            str(k): 100.0 * prefix_sums[k] / denominator
+            str(k): 100.0 * prefix_sums[k] / denominator if has_gold_labels else None
             for k in range(1, args.num_generations + 1)
         },
         "candidate_accuracy": {
-            "correct": sum(int(candidate.get("correct", 0)) for candidate in evaluated),
+            "correct": sum(int(candidate.get("correct") or 0) for candidate in evaluated) if has_gold_labels else None,
             "count": len(evaluated),
-            "accuracy": 100.0
-            * sum(int(candidate.get("correct", 0)) for candidate in evaluated)
-            / max(1, len(evaluated)),
+            "accuracy": (
+                100.0
+                * sum(int(candidate.get("correct") or 0) for candidate in evaluated)
+                / max(1, len(evaluated))
+                if has_gold_labels
+                else None
+            ),
         },
+        "has_gold_sql": has_gold_labels,
+        "evaluation_mode": "pass_at_k" if has_gold_labels else "candidate_execution_only",
         "pred_execution": {
             "executed": sum(int(candidate.get("pred_executed", False)) for candidate in evaluated),
             "failed": sum(int(not candidate.get("pred_executed", False)) for candidate in evaluated),
@@ -492,18 +528,28 @@ def write_markdown_summary(path: Path, summary: Dict[str, Any]) -> None:
         ]
     )
     for k in summary["pass_at_k_estimated"]:
+        passk_value = summary["pass_at_k_estimated"][k]
+        prefix_value = summary["prefix_pass_at_k"][k]
+        passk_text = f"{passk_value:.2f}" if isinstance(passk_value, (int, float)) else "n/a"
+        prefix_text = f"{prefix_value:.2f}" if isinstance(prefix_value, (int, float)) else "n/a"
         lines.append(
-            f"| {k} | {summary['pass_at_k_estimated'][k]:.2f} | "
-            f"{summary['prefix_pass_at_k'][k]:.2f} |"
+            f"| {k} | {passk_text} | {prefix_text} |"
         )
     candidate_accuracy = summary["candidate_accuracy"]
+    accuracy = candidate_accuracy.get("accuracy")
+    accuracy_text = f"{accuracy:.2f}%" if isinstance(accuracy, (int, float)) else "n/a"
+    correct_text = (
+        f"{candidate_accuracy['correct']}/{candidate_accuracy['count']}"
+        if candidate_accuracy.get("correct") is not None
+        else f"n/a/{candidate_accuracy['count']}"
+    )
     lines.extend(
         [
             "",
             "## Candidate Accuracy",
             "",
-            f"- correct: `{candidate_accuracy['correct']}/{candidate_accuracy['count']}`",
-            f"- accuracy: `{candidate_accuracy['accuracy']:.2f}%`",
+            f"- correct: `{correct_text}`",
+            f"- accuracy: `{accuracy_text}`",
             "",
             "## Execution",
             "",
@@ -654,7 +700,11 @@ def main() -> None:
     print("[passk] complete")
     print(f"[passk] wrote {output_dir / 'passk_summary.md'}")
     for k, value in summary["pass_at_k_estimated"].items():
-        print(f"[passk] pass@{k} estimated={value:.2f}% prefix={summary['prefix_pass_at_k'][k]:.2f}%")
+        prefix = summary["prefix_pass_at_k"][k]
+        if isinstance(value, (int, float)) and isinstance(prefix, (int, float)):
+            print(f"[passk] pass@{k} estimated={value:.2f}% prefix={prefix:.2f}%")
+        else:
+            print(f"[passk] pass@{k} estimated=n/a prefix=n/a")
 
 
 if __name__ == "__main__":

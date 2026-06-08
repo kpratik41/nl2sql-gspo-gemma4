@@ -132,7 +132,7 @@ def main() -> None:
             converted = convert_record(record, system_prompt, tools)
             missing_fields = [
                 name
-                for name in ("db_id", "gold_sql", "question")
+                for name in ("db_id", "question")
                 if not converted.get(name)
             ]
             if missing_fields and len(missing) < 10:

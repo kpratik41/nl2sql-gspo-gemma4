@@ -24,7 +24,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from nl2sql_gspo.sql_utils import bird_execute_sql, bird_get_gold_rows, bird_result_match, extract_sql
-from scripts.run_inference_bird import build_summary, write_summary_csv, write_summary_markdown
+from scripts.run_inference_bird import BIRD_SPLIT_MARKER, build_summary, write_summary_csv
 from scripts.run_passk_bird import ensure_output_dir
 
 
@@ -37,6 +37,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--database_dir", type=str, default="databases/dev_databases")
     parser.add_argument("--output_dir", type=str, default="outputs/self_consistency")
+    parser.add_argument(
+        "--predictions_filename",
+        type=str,
+        default="predict_dev.json",
+        help="Official BIRD-format self-consistency predictions filename to write.",
+    )
     parser.add_argument("--eval_timeout", type=float, default=60.0)
     parser.add_argument("--eval_workers", type=int, default=8)
     parser.add_argument("--overwrite", action="store_true")
@@ -140,11 +146,11 @@ def load_passk_candidates(path: Path) -> List[Dict[str, Any]]:
     missing = [
         f"idx={row['idx']} sample={row['sample_idx']}"
         for row in candidates
-        if not row["db_id"] or not row["gold_sql"]
+        if not row["db_id"]
     ]
     if missing:
         raise ValueError(
-            "pass@k candidates are missing required db_id or gold_sql fields: "
+            "pass@k candidates are missing required db_id fields: "
             + "; ".join(missing[:5])
         )
     return candidates
@@ -173,15 +179,22 @@ def execute_candidates(
         else:
             pred_error = "empty sql"
 
-        gold_executed, gold_row_set, gold_error = bird_get_gold_rows(
-            gold_sql=candidate["gold_sql"],
-            db_id=candidate["db_id"],
-            database_dir=database_dir,
-            timeout_s=timeout_s,
-        )
+        has_gold_sql = bool(candidate["gold_sql"].strip())
+        if has_gold_sql:
+            gold_executed, gold_row_set, gold_error = bird_get_gold_rows(
+                gold_sql=candidate["gold_sql"],
+                db_id=candidate["db_id"],
+                database_dir=database_dir,
+                timeout_s=timeout_s,
+            )
+        else:
+            gold_executed, gold_row_set, gold_error = False, None, ""
+
         matched = pred_executed and gold_executed and bird_result_match(pred_rows, gold_row_set)
         if pred_executed and gold_executed:
             status = "ok" if matched else "mismatch"
+        elif pred_executed and not has_gold_sql:
+            status = "pred_ok"
         else:
             parts = []
             if pred_error:
@@ -194,7 +207,7 @@ def execute_candidates(
             **candidate,
             "pred_rows": pred_rows,
             "pred_row_count": len(pred_rows) if pred_rows else 0,
-            "res": int(matched),
+            "res": int(matched) if has_gold_sql else None,
             "status": status,
             "pred_executed": bool(pred_executed),
             "gold_executed": bool(gold_executed),
@@ -292,15 +305,32 @@ def select_self_consistency_results(
 
 
 def write_self_consistency_markdown(summary: Dict[str, Any], markdown_path: Path) -> None:
-    write_summary_markdown(summary, markdown_path)
     details = summary["self_consistency"]
-    with markdown_path.open("a", encoding="utf-8") as handle:
+    total = summary["total"]
+    has_gold_sql = bool(summary.get("has_gold_sql"))
+    accuracy_line = (
+        f"- EX accuracy: `{total['accuracy']:.2f}% ({total['correct']}/{total['count']})`"
+        if has_gold_sql
+        else f"- EX accuracy: `n/a; no gold SQL labels found for {total['count']} rows`"
+    )
+    with markdown_path.open("w", encoding="utf-8") as handle:
+        handle.write("# BIRD Self-Consistency Summary\n\n")
+        handle.write("## Overall\n\n")
+        handle.write(accuracy_line + "\n")
+        handle.write(f"- evaluation_mode: `{summary.get('evaluation_mode')}`\n")
         handle.write("\n## Self-Consistency Stats\n\n")
         handle.write(f"- examples_with_valid_vote: {details['examples_with_valid_vote']}\n")
         handle.write(f"- examples_without_valid_vote: {details['examples_without_valid_vote']}\n")
         handle.write(f"- ignored_empty_results: {details['ignored_empty_results']}\n")
         handle.write(f"- selected_vote_count_total: {details['selected_vote_count_total']}\n")
         handle.write(f"- selection_rule: {details['selection_rule']}\n")
+
+
+def build_official_predictions(selected_results: List[Dict[str, Any]]) -> Dict[str, str]:
+    return {
+        str(int(row["idx"])): f"{row.get('pred_sql', '')}{BIRD_SPLIT_MARKER}{row.get('db_id', '')}"
+        for row in sorted(selected_results, key=lambda item: int(item["idx"]))
+    }
 
 
 def main() -> None:
@@ -333,6 +363,7 @@ def main() -> None:
     selected_results_path = output_dir / "self_consistency_results.jsonl"
     summary_path = output_dir / "self_consistency_summary.json"
     summary_markdown_path = output_dir / "self_consistency_summary.md"
+    predictions_path = output_dir / args.predictions_filename
     difficulty_csv_path = output_dir / "self_consistency_summary_by_difficulty.csv"
     db_csv_path = output_dir / "self_consistency_summary_by_db.csv"
 
@@ -346,17 +377,23 @@ def main() -> None:
 
     with summary_path.open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, ensure_ascii=False, indent=2)
+    with predictions_path.open("w", encoding="utf-8") as handle:
+        json.dump(build_official_predictions(selected_results), handle, ensure_ascii=False, indent=2)
     write_self_consistency_markdown(summary, summary_markdown_path)
     write_summary_csv(summary["by_difficulty"], difficulty_csv_path)
     write_summary_csv(summary["by_db"], db_csv_path)
 
     total = summary["total"]
-    print(
-        f"[summary] self-consistency EX accuracy: {total['accuracy']:.2f}% "
-        f"({total['correct']}/{total['count']})"
-    )
+    if isinstance(total.get("accuracy"), (int, float)):
+        print(
+            f"[summary] self-consistency EX accuracy: {total['accuracy']:.2f}% "
+            f"({total['correct']}/{total['count']})"
+        )
+    else:
+        print(f"[summary] self-consistency EX accuracy: n/a ({total['count']} unlabeled rows)")
     print(f"Saved sample evaluation results to {sample_results_path}")
     print(f"Saved self-consistency results to {selected_results_path}")
+    print(f"Saved official BIRD predictions to {predictions_path}")
     print(f"Saved self-consistency summary to {summary_path}")
     print(f"Saved self-consistency markdown summary to {summary_markdown_path}")
     print(f"Saved self-consistency difficulty CSV to {difficulty_csv_path}")

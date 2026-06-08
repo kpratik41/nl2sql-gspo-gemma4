@@ -99,7 +99,14 @@ def resolve_vllm_tokenizer_source(model_name_or_path: str) -> str:
 
 
 def load_diff_rows(diff_json_path: str) -> List[Dict[str, Any]]:
-    with open(diff_json_path, "r", encoding="utf-8") as handle:
+    if not diff_json_path:
+        return []
+    path = Path(diff_json_path)
+    if not path.exists():
+        print(f"[run] metadata path not found: {diff_json_path}; using unknown difficulty labels")
+        return []
+
+    with path.open("r", encoding="utf-8") as handle:
         loaded = json.load(handle)
 
     return loaded if isinstance(loaded, list) else [loaded]
@@ -112,6 +119,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--database_dir", type=str, default="databases/dev_databases")
     parser.add_argument("--diff_json_path", type=str, default="data/bird_dev_data/raw/bird_dev.json")
     parser.add_argument("--output_dir", type=str, default="outputs/bird_dev_inference")
+    parser.add_argument(
+        "--predictions_filename",
+        type=str,
+        default="predict_dev.json",
+        help="Official BIRD-format predictions filename to read/write.",
+    )
     parser.add_argument("--max_prompt_length", type=int, default=34000)
     parser.add_argument("--max_new_tokens", type=int, default=8000)
     parser.add_argument("--temperature", type=float, default=0.0)
@@ -122,7 +135,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=None)
     parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.93)
     parser.add_argument("--vllm_max_model_len", type=int, default=43000)
-    parser.add_argument("--vllm_async_concurrency", type=int, default=16)
+    parser.add_argument("--vllm_async_concurrency", type=int, default=8)
     parser.add_argument("--max_tool_rounds", type=int, default=8)
     parser.add_argument(
         "--shard_index",
@@ -149,8 +162,8 @@ def parse_args() -> argparse.Namespace:
         nargs="*",
         default=None,
         help=(
-            "Merge already-evaluated shard output directories instead of running generation. "
-            "Each directory must contain predict_dev.json and eval_results.jsonl."
+            "Merge already-generated shard output directories instead of running generation. "
+            "Each directory must contain the predictions file and may contain eval_results.jsonl."
         ),
     )
     parser.add_argument(
@@ -169,6 +182,18 @@ def parse_args() -> argparse.Namespace:
     if args.vllm_tensor_parallel_size is None:
         args.vllm_tensor_parallel_size = 8
     return args
+
+
+def predictions_path_for(output_dir: Path, args: argparse.Namespace) -> Path:
+    return output_dir / args.predictions_filename
+
+
+def row_has_gold_sql(row: Dict[str, Any]) -> bool:
+    return has_sql_content(extract_sql(row.get("gold_sql", "")))
+
+
+def rows_have_gold_sql(rows: List[Dict[str, Any]]) -> bool:
+    return bool(rows) and all(row_has_gold_sql(row) for row in rows)
 
 
 def resolve_output_dir(args: argparse.Namespace) -> Path:
@@ -214,8 +239,6 @@ def load_rows(input_file: str, num_examples: int) -> List[Dict[str, Any]]:
         missing_fields = []
         if not row.get("db_id"):
             missing_fields.append("db_id")
-        if not row.get("gold_sql"):
-            missing_fields.append("gold_sql")
 
         if missing_fields:
             missing_examples.append(
@@ -925,10 +948,42 @@ def evaluate_one_bird(
         "gold_error": gold_error,
     }
 
+
+def evaluate_prediction_only(
+    predicted_sql: str,
+    db_id: str,
+    database_dir: str,
+    timeout_s: float,
+) -> Dict[str, Any]:
+    pred_rows = None
+    pred_executed = False
+    pred_error = ""
+
+    if has_sql_content(predicted_sql):
+        pred_executed, pred_rows, pred_error = bird_execute_sql(
+            sql=predicted_sql,
+            db_id=db_id,
+            database_dir=database_dir,
+            timeout_s=timeout_s,
+        )
+    else:
+        pred_error = "empty sql"
+
+    return {
+        "res": None,
+        "status": "pred_ok" if pred_executed else f"pred_error: {pred_error}",
+        "pred_executed": pred_executed,
+        "gold_executed": False,
+        "pred_error": pred_error,
+        "gold_error": "",
+        "pred_row_count": len(pred_rows) if pred_rows is not None else None,
+    }
+
 def build_group_summary(
     results: List[Dict[str, Any]],
     group_key: str,
     group_order: Optional[List[str]] = None,
+    has_gold_labels: bool = True,
 ) -> OrderedDict[str, Dict[str, Any]]:
     summary: Dict[str, Dict[str, Any]] = {}
 
@@ -940,7 +995,7 @@ def build_group_summary(
                 "count": 0,
             }
 
-        summary[group_value]["correct"] += int(result["res"])
+        summary[group_value]["correct"] += int(result.get("res") or 0)
         summary[group_value]["count"] += 1
 
     ordered_summary: OrderedDict[str, Dict[str, Any]] = OrderedDict()
@@ -949,12 +1004,12 @@ def build_group_summary(
         for group_value in group_order:
             values = summary.pop(group_value, {"correct": 0, "count": 0})
             count = values["count"]
-            values["accuracy"] = 100.0 * values["correct"] / max(1, count)
+            values["accuracy"] = 100.0 * values["correct"] / max(1, count) if has_gold_labels else None
             ordered_summary[group_value] = values
 
     for group_value, values in sorted(summary.items(), key=lambda item: (-item[1]["count"], item[0])):
         count = values["count"]
-        values["accuracy"] = 100.0 * values["correct"] / max(1, count)
+        values["accuracy"] = 100.0 * values["correct"] / max(1, count) if has_gold_labels else None
         ordered_summary[group_value] = values
 
     return ordered_summary
@@ -982,7 +1037,8 @@ def build_execution_stats(results: List[Dict[str, Any]]) -> Dict[str, int]:
 
 
 def build_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
-    total_correct = sum(int(result["res"]) for result in results)
+    has_gold_labels = bool(results) and all(bool(result.get("gold_sql_extracted")) for result in results)
+    total_correct = sum(int(result.get("res") or 0) for result in results)
     total_count = len(results)
 
     return {
@@ -990,14 +1046,17 @@ def build_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             results,
             group_key="difficulty",
             group_order=["simple", "moderate", "challenging"],
+            has_gold_labels=has_gold_labels,
         ),
-        "by_db": build_group_summary(results, group_key="db_id"),
+        "by_db": build_group_summary(results, group_key="db_id", has_gold_labels=has_gold_labels),
         "total": {
             "correct": total_correct,
             "count": total_count,
-            "accuracy": 100.0 * total_correct / max(1, total_count),
+            "accuracy": 100.0 * total_correct / max(1, total_count) if has_gold_labels else None,
         },
         "execution_stats": build_execution_stats(results),
+        "has_gold_sql": has_gold_labels,
+        "evaluation_mode": "execution_accuracy" if has_gold_labels else "prediction_execution_only",
     }
 
 
@@ -1045,8 +1104,10 @@ def render_markdown_table(title: str, rows: OrderedDict[str, Dict[str, Any]]) ->
     lines = [f"## {title}", "", "| Group | Correct | Count | Accuracy |", "| --- | ---: | ---: | ---: |"]
 
     for group_name, values in rows.items():
+        accuracy = values.get("accuracy")
+        accuracy_text = f"{accuracy:.2f}" if isinstance(accuracy, (int, float)) else "n/a"
         lines.append(
-            f"| {group_name} | {values['correct']} | {values['count']} | {values['accuracy']:.2f} |"
+            f"| {group_name} | {values['correct']} | {values['count']} | {accuracy_text} |"
         )
 
     return "\n".join(lines)
@@ -1057,8 +1118,10 @@ def print_summary_tables(summary: Dict[str, Any]) -> None:
         print(title)
         print(f"{'group':20} {'correct':>10} {'count':>10} {'accuracy':>10}")
         for group_name, values in rows.items():
+            accuracy = values.get("accuracy")
+            accuracy_text = f"{accuracy:.2f}" if isinstance(accuracy, (int, float)) else "n/a"
             print(
-                f"{group_name:20} {values['correct']:>10} {values['count']:>10} {values['accuracy']:>9.2f}"
+                f"{group_name:20} {values['correct']:>10} {values['count']:>10} {accuracy_text:>10}"
             )
         print()
 
@@ -1066,9 +1129,12 @@ def print_summary_tables(summary: Dict[str, Any]) -> None:
     print_group("DB Summary", summary["by_db"])
 
     total = summary["total"]
-    print(
-        f"Total EX Accuracy: {total['accuracy']:.2f}% ({total['correct']}/{total['count']})"
-    )
+    if isinstance(total.get("accuracy"), (int, float)):
+        print(
+            f"Total EX Accuracy: {total['accuracy']:.2f}% ({total['correct']}/{total['count']})"
+        )
+    else:
+        print(f"Total EX Accuracy: n/a (no gold SQL; checked {total['count']} predictions)")
 
     execution_stats = summary["execution_stats"]
     print("Execution Stats")
@@ -1147,7 +1213,7 @@ def build_per_example_report_rows(
                 "idx": idx,
                 "db_id": result.get("db_id", detail.get("db_id", "")),
                 "difficulty": result.get("difficulty", ""),
-                "correct": int(result.get("res", 0)),
+                "correct": "" if result.get("res") is None else int(result.get("res", 0)),
                 "status": result.get("status", ""),
                 "stop_reason": detail.get("stop_reason", ""),
                 "prompt_tokens": detail.get("prompt_tokens", ""),
@@ -1162,6 +1228,7 @@ def build_per_example_report_rows(
                 "gold_executed": result.get("gold_executed", ""),
                 "pred_error": result.get("pred_error", ""),
                 "gold_error": result.get("gold_error", ""),
+                "pred_row_count": result.get("pred_row_count", ""),
                 "pred_sql": result.get("pred_sql", ""),
                 "gold_sql": result.get("gold_sql", ""),
             }
@@ -1190,6 +1257,7 @@ def write_per_example_report_csv(report_rows: List[Dict[str, Any]], csv_path: Pa
         "gold_executed",
         "pred_error",
         "gold_error",
+        "pred_row_count",
         "pred_sql",
         "gold_sql",
     ]
@@ -1208,6 +1276,9 @@ def render_run_config(args: argparse.Namespace, row_count: int) -> List[str]:
         f"- input_file: `{args.input_file}`",
         f"- database_dir: `{args.database_dir}`",
         f"- diff_json_path: `{args.diff_json_path}`",
+        f"- predictions_filename: `{args.predictions_filename}`",
+        f"- temperature: `{args.temperature}`",
+        f"- top_p: `{args.top_p}`",
         f"- num_examples: `{args.num_examples}`",
         f"- loaded_rows: `{row_count}`",
         f"- shard_index: `{args.shard_index}`",
@@ -1296,12 +1367,13 @@ def render_per_example_markdown(report_rows: List[Dict[str, Any]], limit: int = 
 def render_report_stats(report_rows: List[Dict[str, Any]]) -> List[str]:
     stop_counts = Counter(str(row.get("stop_reason") or "unknown") for row in report_rows)
     status_counts = Counter(str(row.get("status") or "unknown") for row in report_rows)
-    correct_counts = Counter(int(row.get("correct", 0)) for row in report_rows)
+    correct_counts = Counter(row.get("correct", "") for row in report_rows)
     return [
         "## Report Counts",
         "",
         f"- correct: `{correct_counts.get(1, 0)}`",
         f"- incorrect: `{correct_counts.get(0, 0)}`",
+        f"- unlabeled: `{correct_counts.get('', 0)}`",
         f"- stop_reasons: `{dict(stop_counts)}`",
         f"- eval_statuses: `{dict(status_counts)}`",
         "",
@@ -1315,8 +1387,15 @@ def write_summary_markdown(
     row_count: int,
 ) -> None:
     execution_stats = summary["execution_stats"]
+    has_gold_sql = bool(summary.get("has_gold_sql"))
+    accuracy_line = (
+        f"Overall EX Accuracy: {summary['total']['accuracy']:.2f}% "
+        f"({summary['total']['correct']}/{summary['total']['count']})"
+        if has_gold_sql
+        else f"Overall EX Accuracy: n/a; no gold SQL labels found for {summary['total']['count']} rows."
+    )
     content = [
-        "# BIRD Dev Execution Accuracy Summary",
+        "# BIRD Inference Summary",
         "",
         *render_run_config(args, row_count),
         *render_timing(summary),
@@ -1325,10 +1404,7 @@ def write_summary_markdown(
         "",
         render_markdown_table("By Database", summary["by_db"]),
         "",
-        (
-            f"Overall EX Accuracy: {summary['total']['accuracy']:.2f}% "
-            f"({summary['total']['correct']}/{summary['total']['count']})"
-        ),
+        accuracy_line,
         "",
         "## Execution Stats",
         "",
@@ -1354,6 +1430,13 @@ def write_run_report_markdown(
     args: argparse.Namespace,
     row_count: int,
 ) -> None:
+    has_gold_sql = bool(summary.get("has_gold_sql"))
+    accuracy_line = (
+        f"Overall EX Accuracy: {summary['total']['accuracy']:.2f}% "
+        f"({summary['total']['correct']}/{summary['total']['count']})"
+        if has_gold_sql
+        else f"Overall EX Accuracy: n/a; no gold SQL labels found for {summary['total']['count']} rows."
+    )
     content = [
         "# Inference Run Report",
         "",
@@ -1364,10 +1447,7 @@ def write_run_report_markdown(
         "",
         render_markdown_table("By Database", summary["by_db"]),
         "",
-        (
-            f"Overall EX Accuracy: {summary['total']['accuracy']:.2f}% "
-            f"({summary['total']['correct']}/{summary['total']['count']})"
-        ),
+        accuracy_line,
         "",
         *render_report_stats(report_rows),
         *render_per_example_markdown(report_rows),
@@ -1385,7 +1465,11 @@ def write_summary_csv(rows: OrderedDict[str, Dict[str, Any]], csv_path: Path) ->
                     "group": group_name,
                     "correct": values["correct"],
                     "count": values["count"],
-                    "accuracy": f"{values['accuracy']:.2f}",
+                    "accuracy": (
+                        f"{values['accuracy']:.2f}"
+                        if isinstance(values.get("accuracy"), (int, float))
+                        else ""
+                    ),
                 }
             )
 
@@ -1432,8 +1516,51 @@ def evaluate_predictions(
             }
         )
 
+    has_gold_labels = bool(prepared_examples) and all(
+        example["gold_sql_extracted"] for example in prepared_examples
+    )
     worker_count = max(1, eval_workers)
     eval_results: List[Dict[str, Any]] = [None] * len(prepared_examples)
+    if not has_gold_labels:
+        print("[evaluation] no complete gold SQL labels found; running prediction execution checks only")
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            ordered_results = executor.map(
+                lambda example: evaluate_prediction_only(
+                    example["predicted_sql"],
+                    example["db_id"],
+                    database_dir,
+                    timeout_s,
+                ),
+                prepared_examples,
+            )
+
+            for example, eval_result in zip(prepared_examples, ordered_results):
+                idx = example["idx"]
+                source_idx = example["source_idx"]
+                eval_results[idx] = {
+                    "idx": source_idx,
+                    "db_id": example["db_id"],
+                    "difficulty": example["difficulty"],
+                    "pred_sql": example["predicted_sql"],
+                    "gold_sql": example["gold_sql"],
+                    "pred_sql_extracted": example["pred_sql_extracted"],
+                    "gold_sql_extracted": example["gold_sql_extracted"],
+                    "res": None,
+                    "status": eval_result["status"],
+                    "pred_executed": bool(eval_result["pred_executed"]),
+                    "gold_executed": False,
+                    "pred_error": eval_result["pred_error"],
+                    "gold_error": "",
+                    "pred_row_count": eval_result.get("pred_row_count"),
+                }
+
+                if should_log_progress_tick(idx, len(rows)):
+                    print(f"[evaluation] checked {idx + 1}/{len(rows)} predictions")
+
+        per_example_results = eval_results
+        summary = build_summary(per_example_results)
+        return per_example_results, summary
+
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         gold_eval_results = list(
             executor.map(
@@ -1563,15 +1690,17 @@ def merge_shard_outputs(args: argparse.Namespace) -> None:
     timing = {"generation": 0.0, "evaluation": 0.0, "total": 0.0}
 
     for shard_dir in shard_dirs:
-        predictions_path = shard_dir / "predict_dev.json"
+        predictions_path = predictions_path_for(shard_dir, args)
+        if not predictions_path.exists() and args.predictions_filename != "predict_dev.json":
+            legacy_predictions_path = shard_dir / "predict_dev.json"
+            if legacy_predictions_path.exists():
+                predictions_path = legacy_predictions_path
         details_path = shard_dir / "prediction_details.jsonl"
         filtered_path = shard_dir / "filtered_examples.jsonl"
         eval_path = shard_dir / "eval_results.jsonl"
 
         if not predictions_path.exists():
             raise FileNotFoundError(predictions_path)
-        if not eval_path.exists():
-            raise FileNotFoundError(eval_path)
 
         shard_predictions = load_predictions(predictions_path)
         shard_details = read_jsonl(details_path)
@@ -1656,7 +1785,21 @@ def merge_shard_outputs(args: argparse.Namespace) -> None:
             f"{len(missing_idxs)} loaded rows; first_missing={missing_idxs[:10]}"
         )
 
-    summary = build_summary(per_example_results)
+    if not per_example_results:
+        print("[merge] no shard eval rows found; rebuilding evaluation/prediction checks from merged predictions")
+        evaluation_started_at = time.monotonic()
+        per_example_results, summary = evaluate_predictions(
+            rows=rows,
+            predictions=official_predictions,
+            database_dir=args.database_dir,
+            diff_rows=diff_rows,
+            timeout_s=args.eval_timeout,
+            eval_workers=args.eval_workers,
+        )
+        timing["evaluation"] += time.monotonic() - evaluation_started_at
+        timing["total"] += timing["evaluation"]
+    else:
+        summary = build_summary(per_example_results)
     summary["timing_seconds"] = timing
     summary["generation_stats"] = build_generation_stats(detailed_predictions, filtered_rows)
     summary["merged_shards"] = [str(path) for path in shard_dirs]
@@ -1667,7 +1810,7 @@ def merge_shard_outputs(args: argparse.Namespace) -> None:
         "missing_rows": len(missing_idxs),
     }
 
-    predictions_path = output_dir / "predict_dev.json"
+    predictions_path = predictions_path_for(output_dir, args)
     details_path = output_dir / "prediction_details.jsonl"
     filtered_path = output_dir / "filtered_examples.jsonl"
     per_example_eval_path = output_dir / "eval_results.jsonl"
@@ -1712,6 +1855,10 @@ def main() -> None:
     rows = load_rows(args.input_file, args.num_examples)
     original_row_count = len(rows)
     print(f"[run] loaded {original_row_count} input rows")
+    if rows_have_gold_sql(rows):
+        print("[run] gold SQL labels detected; local EX evaluation will run")
+    else:
+        print("[run] no complete gold SQL labels detected; writing predictions and execution-check reports only")
     rows = shard_rows(rows, args.shard_index, args.num_shards)
     if not rows:
         raise ValueError(
@@ -1727,7 +1874,7 @@ def main() -> None:
     # Configure tool environment for database access
     configure_tool_env(args.database_dir)
     
-    predictions_path = output_dir / "predict_dev.json"
+    predictions_path = predictions_path_for(output_dir, args)
     details_path = output_dir / "prediction_details.jsonl"
     filtered_path = output_dir / "filtered_examples.jsonl"
     per_example_eval_path = output_dir / "eval_results.jsonl"

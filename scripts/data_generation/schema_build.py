@@ -82,7 +82,7 @@ def resolve_default_paths(base_dir: Optional[str], split: str) -> Dict[str, str]
     split_data_dir = base_path / "data" / f"bird_{split}_data" / "raw"
     split_db_dir = base_path / "databases" / f"{split}_databases"
 
-    input_name = "bird_dev-few-shot.json"
+    input_name = "bird_dev-few-shot.json" if split == "dev" else "test.json"
     meanings_name = "column_meaning.json"
 
     # Prefer the repository layout used by this workspace, but retain compatibility
@@ -637,8 +637,9 @@ def build_output_entry(
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_msg},
-        {"role": "assistant", "content": format_assistant(gold_sql)},
     ]
+    if gold_sql:
+        messages.append({"role": "assistant", "content": format_assistant(gold_sql)})
     if messages_only:
         return {"messages": messages}
     return {
@@ -664,7 +665,7 @@ def parse_args():
         help="Repository root or legacy bird_sql directory (defaults to auto-detected repo root).",
     )
     parser.add_argument(
-        "--split", choices=["dev"], default="dev",
+        "--split", choices=["dev", "test"], default="dev",
         help="Dataset split to use when resolving default input, database, and meanings paths.",
     )
     parser.add_argument(
