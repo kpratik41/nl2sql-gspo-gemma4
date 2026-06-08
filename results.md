@@ -960,3 +960,62 @@ Training reward means come from the completed metric rows in the same log. `aer 
 | 80 | `65.84%` | `29` | `8.837e-07` | `0.9935` | `0.987` | `0.7591` | `0.8633` | `0.849` | `0.9831` | `5.435` | `0` | `0` | `0` |
 | 90 | `66.23%` | `35` | `8.649e-07` | `0.9974` | `0.9974` | `0.7682` | `0.793` | `0.8376` | `0.9896` | `5.383` | `0` | `0` | `0` |
 | 100 | `67.01%` | `38` | `8.462e-07` | `0.9896` | `0.9648` | `0.6576` | `0.8945` | `0.8483` | `0.9375` | `5.292` | `0` | `0` | `0` |
+
+# BIRD Dev 4B pass@8 Results
+
+All runs below use `google/gemma-4-E4B-it` with async vLLM, tensor parallel size `1`, `8` process shards, tool-calling prompts, column meanings, and schema statistics. Self-consistency (SC) uses only the pass@k candidates and does not include temperature-0 inference.
+
+## Summary
+
+| Run | Temp | Few-shot examples | Async concurrency | pass@1 | pass@8 | SC EX |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| No few-shot | 0.8 | 0 | 16 | 64.20% | 74.25% | 67.41% |
+| 3-shot | 0.8 | 3 | 16 | 65.88% | 76.79% | 68.19% |
+| 5-shot | 0.8 | 5 | 16 | 65.69% | 77.57% | 68.32% |
+| 5-shot | 1.2 | 5 | 8 | 64.47% | 77.71% | 69.10% |
+
+Best SC result so far:
+
+```text
+5-shot, temp 1.2: 69.10% EX (1060/1534)
+```
+
+## Interpretation
+
+The `temp=1.2` 5-shot run reduced single-sample accuracy but improved the final SC result. Compared with the `temp=0.8` 5-shot run:
+
+```text
+pass@1: 65.69% -> 64.47%  (-1.21)
+pass@8: 77.57% -> 77.71%  (+0.13)
+SC EX:  68.32% -> 69.10%  (+0.78, 1048/1534 -> 1060/1534)
+```
+
+This suggests the higher temperature produced noisier individual samples but enough useful diversity for result-set majority voting to improve.
+
+One caveat: the `temp=1.2` run had more failed candidate executions:
+
+```text
+temp 0.8, 5-shot: 329 failed candidate executions
+temp 1.2, 5-shot: 575 failed candidate executions
+```
+
+Also note that the older `temp=0.8` comparison runs used async concurrency `16`, while the `temp=1.2` run used the newer default async concurrency `8`.
+
+## Run Paths
+
+| Run | Path |
+| --- | --- |
+| No few-shot, temp 0.8 | `outputs/passk/bird_dev-schema-tool-nofewshot/gemma-4-E4B-it/pass8_async_tp1_shards8_20260607_214813` |
+| 3-shot, temp 0.8 | `outputs/passk/bird_dev-schema-tool-fewshot3/gemma-4-E4B-it/pass8_async_tp1_shards8_20260607_222550` |
+| 5-shot, temp 0.8 | `outputs/passk/bird_dev-schema-tool-fewshot/gemma-4-E4B-it/pass8_async_tp1_shards8_20260607_201748` |
+| 5-shot, temp 1.2 | `outputs/passk/bird_dev-schema-tool-fewshot5/gemma-4-E4B-it/pass8_async_tp1_shards8_temp1p2_20260608_034643` |
+
+## Detailed Metrics
+
+| Run | Candidate accuracy | Failed candidate executions | Valid SC vote examples | No-vote examples | Stop reasons |
+| --- | ---: | ---: | ---: | ---: | --- |
+| No few-shot, temp 0.8 | 64.20% | 347 | 1531 | 3 | `finished=12232`, `max_tool_rounds=38`, `context_length_exceeded=2` |
+| 3-shot, temp 0.8 | 65.88% | 320 | 1531 | 3 | `finished=12239`, `max_tool_rounds=28`, `context_length_exceeded=4`, `max_new_tokens=1` |
+| 5-shot, temp 0.8 | 65.69% | 329 | 1530 | 4 | `finished=12235`, `max_tool_rounds=35`, `context_length_exceeded=1`, `max_new_tokens=1` |
+| 5-shot, temp 1.2 | 64.47% | 575 | 1530 | 4 | `finished=12253`, `max_tool_rounds=11`, `context_length_exceeded=8` |
+
