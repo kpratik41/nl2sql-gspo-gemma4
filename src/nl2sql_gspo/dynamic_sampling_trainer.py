@@ -246,6 +246,76 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             current = beta
         return float(current)
 
+    @staticmethod
+    def _latest_scalar(metrics: Dict[str, List[Any]], key: str) -> Optional[float]:
+        values = metrics.get(key, [])
+        if not values:
+            return None
+        value = values[-1]
+        if not isinstance(value, (int, float)) or value != value:
+            return None
+        return float(value)
+
+    @staticmethod
+    def _format_scalar(value: Optional[float], fmt: str = ".4g") -> Optional[str]:
+        if value is None:
+            return None
+        return format(value, fmt)
+
+    def _reward_log_suffix(self, mode: str = "train") -> str:
+        metrics = self._metrics.get(mode, {})
+        reward_bits = []
+        for reward_name in ["result_reward", "execution_reward", "format_reward"]:
+            value = self._latest_scalar(metrics, f"rewards/{reward_name}/mean")
+            formatted = self._format_scalar(value)
+            if formatted is not None:
+                reward_bits.append(f"{reward_name}={formatted}")
+        return " " + " ".join(reward_bits) if reward_bits else ""
+
+    def _cispo_log_suffix(self, mode: str = "train") -> str:
+        if getattr(self, "loss_type", None) != "cispo":
+            return ""
+
+        metrics = self._metrics.get(mode, {})
+        bits = [
+            f"cispo_mu={getattr(self, 'num_iterations', 'na')}",
+            f"cispo_eps_high={getattr(self, 'epsilon_high', 'na')}",
+        ]
+
+        latest_specs = [
+            ("cispo_clip_ratio", "prev_cispo_clip", ".2%"),
+            ("cispo/ratio_p99", "ratio_p99", ".4g"),
+            ("cispo/ratio_max", "ratio_max", ".4g"),
+            ("cispo/pos_adv_ratio_p99", "pos_ratio_p99", ".4g"),
+            ("cispo/pos_adv_ratio_max", "pos_ratio_max", ".4g"),
+            ("cispo/ratio_gt_eps_high", "ratio_gt_eps", ".2%"),
+            ("cispo/pos_adv_fraction", "pos_adv", ".2%"),
+            ("cispo/abs_adv_mean", "abs_adv", ".4g"),
+            ("cispo/weighted_abs_adv_mean", "weighted_abs_adv", ".4g"),
+            ("entropy", "prev_entropy", ".4g"),
+            ("sampling/importance_sampling_ratio/min", "is_min", ".4g"),
+            ("sampling/importance_sampling_ratio/mean", "is_mean", ".4g"),
+            ("sampling/importance_sampling_ratio/max", "is_max", ".4g"),
+            ("sampling/sampling_logp_difference/mean", "logp_delta_mean", ".4g"),
+            ("sampling/sampling_logp_difference/max", "logp_delta_max", ".4g"),
+        ]
+        for key, label, fmt in latest_specs:
+            formatted = self._format_scalar(self._latest_scalar(metrics, key), fmt)
+            if formatted is not None:
+                bits.append(f"{label}={formatted}")
+
+        beta = self._latest_scalar(metrics, "beta")
+        if beta is None:
+            try:
+                beta = self._current_beta()
+            except Exception:
+                beta = None
+        formatted_beta = self._format_scalar(beta)
+        if formatted_beta is not None:
+            bits.append(f"beta={formatted_beta}")
+
+        return " " + " ".join(bits)
+
     def _wait_for_everyone(self) -> None:
         wait_for_everyone = getattr(self.accelerator, "wait_for_everyone", None)
         if callable(wait_for_everyone):
@@ -1809,6 +1879,272 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         finally:
             self.beta = original_beta
 
+    def _append_gathered_scalar_metric(self, mode: str, key: str, value: torch.Tensor, reduce: str = "mean") -> None:
+        gathered = self.accelerator.gather(value.detach())
+        if reduce == "max":
+            scalar = nanmax(gathered).item()
+        elif reduce == "min":
+            scalar = nanmin(gathered).item()
+        else:
+            scalar = gathered.nanmean().item()
+        self._metrics[mode][key].append(scalar)
+
+    def _compute_loss(self, model, inputs):
+        # Mostly mirrors TRL GRPOTrainer._compute_loss, with extra CISPO ratio diagnostics.
+        prompt_ids, prompt_mask = inputs["prompt_ids"], inputs["prompt_mask"]
+        completion_ids, completion_mask = inputs["completion_ids"], inputs["completion_mask"]
+        input_ids = torch.cat([prompt_ids, completion_ids], dim=1)
+        attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)
+        logits_to_keep = completion_ids.size(1)
+        mask = completion_mask if "tool_mask" not in inputs else completion_mask * inputs["tool_mask"]
+
+        per_token_logps, entropies = self._get_per_token_logps_and_entropies(
+            model,
+            input_ids,
+            attention_mask,
+            logits_to_keep,
+            compute_entropy=True,
+            pixel_values=inputs.get("pixel_values"),
+            image_grid_thw=inputs.get("image_grid_thw"),
+            num_images=inputs.get("num_images"),
+            pixel_attention_mask=inputs.get("pixel_attention_mask"),
+            image_sizes=inputs.get("image_sizes"),
+            token_type_ids=inputs.get("token_type_ids"),
+            mm_token_type_ids=inputs.get("mm_token_type_ids"),
+            image_position_ids=inputs.get("image_position_ids"),
+        )
+
+        if self.top_entropy_quantile < 1.0:
+            entropy_mask = self.get_high_entropy_mask(entropies, mask, 1 - self.top_entropy_quantile)
+        else:
+            entropy_mask = None
+
+        advantages = inputs["advantages"]
+        if advantages.dim() == 1:
+            advantages = advantages.unsqueeze(1)
+
+        old_per_token_logps = inputs.get("old_per_token_logps")
+        old_per_token_logps = per_token_logps.detach() if old_per_token_logps is None else old_per_token_logps
+
+        if self.off_policy_mask_threshold is not None:
+            sampling_per_token_logps = inputs.get("sampling_per_token_logps", old_per_token_logps)
+            off_policy_mask = self.get_off_policy_mask(
+                advantages=advantages,
+                per_token_logps=per_token_logps,
+                sampling_per_token_logps=sampling_per_token_logps,
+                mask=mask,
+                off_policy_threshold=self.off_policy_mask_threshold,
+            )
+
+        log_ratio = per_token_logps - old_per_token_logps
+        if self.importance_sampling_level == "token":
+            log_importance_weights = log_ratio
+        elif self.importance_sampling_level == "sequence":
+            log_importance_weights = (log_ratio * mask).sum(-1) / mask.sum(-1).clamp(min=1.0)
+            log_importance_weights = log_importance_weights.unsqueeze(-1)
+        else:
+            raise ValueError(
+                f"Unknown importance_sampling_level: {self.importance_sampling_level}. "
+                "Possible values are 'token' and 'sequence'."
+            )
+
+        coef_1 = torch.exp(log_importance_weights)
+
+        if self.beta != 0.0:
+            ref_per_token_logps = inputs["ref_per_token_logps"]
+            per_token_kl = (
+                torch.exp(ref_per_token_logps - per_token_logps) - (ref_per_token_logps - per_token_logps) - 1
+            )
+            if self.args.use_bias_correction_kl:
+                per_token_kl = per_token_kl * coef_1
+
+        if self.loss_type == "cispo":
+            clamped_ratios = torch.clamp(coef_1, max=self.epsilon_high).detach()
+            per_token_loss = -clamped_ratios * advantages * per_token_logps
+        elif self.loss_type in ["grpo", "bnpo", "dr_grpo", "dapo", "luspo"]:
+            coef_2 = torch.clamp(coef_1, 1 - self.epsilon_low, 1 + self.epsilon_high)
+            if self.args.delta is not None:
+                coef_1 = torch.clamp(coef_1, max=self.args.delta)
+
+            per_token_loss1 = coef_1 * advantages
+            per_token_loss2 = coef_2 * advantages
+            per_token_loss = -torch.min(per_token_loss1, per_token_loss2)
+        elif self.loss_type == "sapo":
+            temperatures = torch.where(advantages > 0, self.args.sapo_temperature_pos, self.args.sapo_temperature_neg)
+            soft_coef_1 = torch.sigmoid(temperatures * (coef_1 - 1)) * 4 / temperatures
+            per_token_loss = -soft_coef_1 * advantages
+        elif self.loss_type == "vespo":
+            phi_seq = self.get_gamma_weights(
+                advantages=advantages,
+                log_ratio_per_token=log_ratio,
+                mask=mask,
+                importance_sampling_ratio=inputs.get("importance_sampling_ratio"),
+                k_pos=self.args.vespo_k_pos,
+                lambda_pos=self.args.vespo_lambda_pos,
+                k_neg=self.args.vespo_k_neg,
+                lambda_neg=self.args.vespo_lambda_neg,
+            )
+            per_token_loss = -phi_seq * advantages * per_token_logps
+        else:
+            raise ValueError(f"Unknown loss type: {self.loss_type}")
+
+        if self.off_policy_mask_threshold is not None:
+            per_token_loss = per_token_loss * off_policy_mask
+
+        if entropy_mask is not None:
+            per_token_loss = per_token_loss * entropy_mask
+
+        if self.use_vllm and self.vllm_importance_sampling_correction and self.loss_type != "vespo":
+            per_token_loss = per_token_loss * inputs["importance_sampling_ratio"]
+
+        if self.beta != 0.0:
+            per_token_loss = per_token_loss + self.beta * per_token_kl
+
+        mode = "train" if self.model.training else "eval"
+        if self.loss_type in ["grpo", "sapo"]:
+            loss = ((per_token_loss * mask).sum(-1) / mask.sum(-1).clamp(min=1.0)).mean()
+            normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0
+            loss = loss / normalizer
+        elif self.loss_type == "bnpo":
+            loss = (per_token_loss * mask).sum() / mask.sum().clamp(min=1.0)
+            normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0
+            loss = loss / normalizer
+        elif self.loss_type == "dr_grpo":
+            loss = (per_token_loss * mask).sum() / (per_token_loss.size(0) * self.max_completion_length)
+            normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0
+            loss = loss / normalizer
+        elif self.loss_type in ["cispo", "dapo", "vespo"]:
+            normalizer = inputs["num_items_in_batch"] / self.accelerator.num_processes
+            loss = (per_token_loss * mask).sum() / normalizer
+        elif self.loss_type == "luspo":
+            loss = (per_token_loss * mask.sum(1, keepdim=True)).mean()
+            normalizer = self.current_gradient_accumulation_steps if mode == "train" else 1.0
+            loss = loss / normalizer
+        else:
+            raise ValueError(f"Unknown loss type: {self.loss_type}")
+
+        completion_token_count = mask.sum().clamp(min=1.0)
+
+        def masked_batch_mean(x):
+            if x.shape[1] == 1:
+                return x.mean()
+            return (x * mask).sum() / completion_token_count
+
+        if self.beta != 0.0:
+            mean_kl = masked_batch_mean(per_token_kl)
+            self._metrics[mode]["kl"].append(self.accelerator.gather(mean_kl).nanmean().item())
+
+        mean_entropy = masked_batch_mean(entropies)
+        self._metrics[mode]["entropy"].append(self.accelerator.gather(mean_entropy).nanmean().item())
+
+        if self.loss_type in ["grpo", "bnpo", "dr_grpo", "dapo", "luspo"]:
+            is_low_clipped = (coef_1 < 1 - self.epsilon_low) & (advantages < 0)
+            is_high_clipped = (coef_1 > 1 + self.epsilon_high) & (advantages > 0)
+            is_region_clipped = is_low_clipped | is_high_clipped
+
+            low_clip = masked_batch_mean(is_low_clipped.float())
+            high_clip = masked_batch_mean(is_high_clipped.float())
+            clip_ratio = masked_batch_mean(is_region_clipped.float())
+
+            gathered_low_clip = self.accelerator.gather(low_clip)
+            self._metrics[mode]["clip_ratio/low_mean"].append(gathered_low_clip.nanmean().item())
+            self._metrics[mode]["clip_ratio/low_min"].append(nanmin(gathered_low_clip).item())
+            gathered_high_clip = self.accelerator.gather(high_clip)
+            self._metrics[mode]["clip_ratio/high_mean"].append(gathered_high_clip.nanmean().item())
+            self._metrics[mode]["clip_ratio/high_max"].append(nanmax(gathered_high_clip).item())
+            gathered_clip_ratio = self.accelerator.gather(clip_ratio)
+            self._metrics[mode]["clip_ratio/region_mean"].append(gathered_clip_ratio.nanmean().item())
+        elif self.loss_type == "cispo":
+            self._log_cispo_ratio_metrics(mode, coef_1, log_importance_weights, advantages, mask, clamped_ratios)
+        elif self.loss_type == "vespo":
+            gathered_phi_seq = self.accelerator.gather(phi_seq)
+            self._metrics[mode]["vespo/phi_seq_mean"].append(gathered_phi_seq.nanmean().item())
+
+        return loss
+
+    def _log_cispo_ratio_metrics(
+        self,
+        mode: str,
+        ratios: torch.Tensor,
+        log_ratios: torch.Tensor,
+        advantages: torch.Tensor,
+        mask: torch.Tensor,
+        clamped_ratios: torch.Tensor,
+    ) -> None:
+        device = ratios.device
+
+        def masked_values(x: torch.Tensor) -> torch.Tensor:
+            if x.shape[1] == 1:
+                valid = mask.sum(dim=1, keepdim=True) > 0
+                return x[valid].float()
+            return x[mask.bool()].float()
+
+        def scalar(value: float) -> torch.Tensor:
+            return torch.tensor(value, device=device, dtype=torch.float32)
+
+        def local_mean(values: torch.Tensor) -> torch.Tensor:
+            return values.mean() if values.numel() else scalar(float("nan"))
+
+        def local_min(values: torch.Tensor) -> torch.Tensor:
+            return values.min() if values.numel() else scalar(float("nan"))
+
+        def local_max(values: torch.Tensor) -> torch.Tensor:
+            return values.max() if values.numel() else scalar(float("nan"))
+
+        def local_quantile(values: torch.Tensor, q: float) -> torch.Tensor:
+            return torch.quantile(values, q) if values.numel() else scalar(float("nan"))
+
+        ratio_values = masked_values(ratios)
+        log_ratio_values = masked_values(log_ratios)
+        ratio_shape = ratios.shape
+        adv_for_ratios = advantages.expand(ratio_shape) if advantages.shape != ratio_shape else advantages
+        adv_values = masked_values(adv_for_ratios)
+        abs_adv_values = adv_values.abs()
+        pos_mask = adv_for_ratios > 0
+        valid_mask = (mask.sum(dim=1, keepdim=True) > 0) if ratios.shape[1] == 1 else mask.bool()
+        pos_values = ratios[(pos_mask & valid_mask)].float()
+        weighted_abs_adv_values = masked_values(clamped_ratios * adv_for_ratios.abs())
+
+        is_cispo_clipped = (ratios > self.epsilon_high) & (adv_for_ratios > 0)
+        cispo_clip_ratio = masked_values(is_cispo_clipped.float()).mean()
+        ratio_gt_eps_high = masked_values((ratios > self.epsilon_high).float()).mean()
+
+        self._append_gathered_scalar_metric(mode, "cispo_clip_ratio", cispo_clip_ratio)
+        self._append_gathered_scalar_metric(mode, "cispo/ratio_gt_eps_high", ratio_gt_eps_high)
+        self._append_gathered_scalar_metric(mode, "cispo/ratio_gt_1", masked_values((ratios > 1.0).float()).mean())
+        self._append_gathered_scalar_metric(mode, "cispo/ratio_gt_2", masked_values((ratios > 2.0).float()).mean())
+        self._append_gathered_scalar_metric(mode, "cispo/ratio_gt_3", masked_values((ratios > 3.0).float()).mean())
+        self._append_gathered_scalar_metric(mode, "cispo/ratio_gt_4", masked_values((ratios > 4.0).float()).mean())
+        self._append_gathered_scalar_metric(mode, "cispo/pos_adv_fraction", masked_values(pos_mask.float()).mean())
+
+        for name, values in [
+            ("cispo/ratio", ratio_values),
+            ("cispo/log_ratio", log_ratio_values),
+            ("cispo/abs_adv", abs_adv_values),
+            ("cispo/weighted_abs_adv", weighted_abs_adv_values),
+            ("cispo/pos_adv_ratio", pos_values),
+        ]:
+            self._append_gathered_scalar_metric(mode, f"{name}_mean", local_mean(values))
+            self._append_gathered_scalar_metric(mode, f"{name}_min", local_min(values), reduce="min")
+            self._append_gathered_scalar_metric(mode, f"{name}_max", local_max(values), reduce="max")
+            self._append_gathered_scalar_metric(mode, f"{name}_p95", local_quantile(values, 0.95))
+            self._append_gathered_scalar_metric(mode, f"{name}_p99", local_quantile(values, 0.99))
+
+        pos_ratio_max = local_max(pos_values)
+        if pos_ratio_max == pos_ratio_max:
+            self._append_gathered_scalar_metric(
+                mode,
+                "cispo/pos_adv_ratio_to_eps_high_max",
+                pos_ratio_max / max(float(self.epsilon_high), 1e-12),
+                reduce="max",
+            )
+            self._append_gathered_scalar_metric(
+                mode,
+                "cispo/pos_adv_margin_to_eps_high_min",
+                scalar(float(self.epsilon_high)) - pos_ratio_max,
+                reduce="min",
+            )
+
     def _oversample_and_filter(self, inputs, target_local_groups: int):
         """Single-shot oversample by ``dapo_oversample_factor``.
 
@@ -1925,13 +2261,6 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
 
         if getattr(self.accelerator, "is_main_process", True):
             step = int(getattr(self.state, "global_step", 0))
-            reward_bits = []
-            for reward_name in ["result_reward", "execution_reward", "format_reward"]:
-                key = f"rewards/{reward_name}/mean"
-                values = self._metrics.get("train", {}).get(key, [])
-                if values:
-                    reward_bits.append(f"{reward_name}={values[-1]:.4g}")
-            reward_suffix = " " + " ".join(reward_bits) if reward_bits else ""
             bucket_suffix = ""
             if g_all_correct is not None and g_all_wrong is not None:
                 bucket_suffix = f" all_correct={g_all_correct} all_wrong={g_all_wrong}"
@@ -1940,7 +2269,8 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 f"attempted={g_attempted} candidate_het={g_candidate_het} "
                 f"candidate_het_rate={candidate_het_rate:.2%} "
                 f"selected={g_kept}/{g_kept + g_padded} padded={g_padded} "
-                f"fill_rate={fill_rate:.2%}{bucket_suffix}{reward_suffix}"
+                f"fill_rate={fill_rate:.2%}{bucket_suffix}"
+                f"{self._reward_log_suffix('train')}{self._cispo_log_suffix('train')}"
             )
         return self._add_policy_logps_for_kept(out)
 
@@ -2114,6 +2444,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 f"candidate_het_rate={candidate_het_rate:.2%} "
                 f"selected={g_kept}/{g_kept + g_padded} padded={g_padded} "
                 f"fill_rate={fill_rate:.2%}{bucket_suffix}"
+                f"{self._reward_log_suffix('train')}{self._cispo_log_suffix('train')}"
             )
 
         return self._add_policy_logps_for_kept(out)

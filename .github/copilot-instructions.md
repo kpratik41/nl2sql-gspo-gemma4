@@ -4,7 +4,7 @@
 
 This repository trains and evaluates a Gemma 4 31B instruction model on BIRD-style NL2SQL with reinforcement learning, tool-call rollouts, SQLite execution rewards, vLLM rollout serving, and post-training BIRD execution-accuracy evaluation.
 
-The repository name still contains `gspo`, but the current standard GRPO training path no longer enables GSPO sequence-level importance sampling. Do not re-add `importance_sampling_level="sequence"` unless the user explicitly asks to restore GSPO. The active GRPO path is a TRL `GRPOTrainer` subclass with DAPO-style loss settings and DAPO-style dynamic sampling.
+The repository name still contains `gspo`, but the current standard GRPO training path no longer enables GSPO sequence-level importance sampling. Do not re-add `importance_sampling_level="sequence"` unless the user explicitly asks to restore GSPO. The active GRPO path is a TRL `GRPOTrainer` subclass using a CISPO policy objective together with DAPO-style dynamic sampling and DAPO-style length penalty.
 
 The target task is NL2SQL: given a natural-language question, schema, optional hint/evidence, and optional tool access, generate valid SQLite SQL inside the required final-answer XML shape.
 
@@ -109,11 +109,11 @@ FSDP_CONFIG=configs/fsdp_gemma4_bf16.json
 Training output directory naming:
 
 - If `OUTPUT_DIR` is unset, `scripts/launch_train.sh` creates a timestamped default under `outputs/training/<train_file_stem>/<model_tag>/`.
-- The run folder includes trainer backend, distributed backend, prompt/completion lengths, `num_generations`, temperature, per-device batch size, gradient accumulation, learning rate, and timestamp.
-- Full-schema tool default example: `outputs/training/train-6601-schema-tool/gemma-4-31B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_lr1e-6_<timestamp>`.
-- Bare-schema tool example: `outputs/training/train-6601-schema-bare-tool/gemma-4-31B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_lr1e-6_<timestamp>`.
+- The run folder includes trainer backend, distributed backend, prompt/completion lengths, `num_generations`, temperature, per-device batch size, gradient accumulation, loss type, `num_iterations`, learning rate, and timestamp.
+- Full-schema tool default example: `outputs/training/train-6601-schema-tool/gemma-4-31B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_cispo_mu2_lr1e-6_<timestamp>`.
+- Bare-schema tool example: `outputs/training/train-6601-schema-bare-tool/gemma-4-31B-it/grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_cispo_mu2_lr1e-6_<timestamp>`.
 - If `OUTPUT_DIR` is set manually, the launcher preserves it exactly.
-- The default W&B `RUN_NAME` includes the train file stem and the same run tag, e.g. `train-6601-schema-tool-grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_lr1e-6_<timestamp>`.
+- The default W&B `RUN_NAME` includes the train file stem and the same run tag, e.g. `train-6601-schema-tool-grpo_deepspeed_p15500_c8000_g16_t1p2_bs3_ga16_cispo_mu2_lr1e-6_<timestamp>`.
 
 Rollout and sampling defaults:
 
@@ -133,6 +133,7 @@ Optimization defaults:
 
 ```text
 PER_DEVICE_TRAIN_BATCH_SIZE=3
+PER_DEVICE_EVAL_BATCH_SIZE=16
 GRADIENT_ACCUMULATION_STEPS=16
 LEARNING_RATE=1e-6
 NUM_TRAIN_EPOCHS=1
@@ -144,12 +145,13 @@ BF16=true
 Objective and clipping defaults:
 
 ```text
-loss_type=dapo
+loss_type=cispo
 scale_rewards=batch
 beta=0.0
+BETA_SCHEDULE unset by default
 epsilon=0.2
-epsilon_high=0.28
-num_iterations=1
+epsilon_high=5.0
+num_iterations=2
 steps_per_generation=None unless STEPS_PER_GENERATION is set
 mask_truncated_completions=false
 ```
@@ -207,12 +209,13 @@ The default path uses `TRAINER_BACKEND=grpo`, which instantiates `DynamicSamplin
 
 Current GRPO path:
 
-- Uses `loss_type="dapo"`
+- Uses `loss_type="cispo"`
 - Uses `scale_rewards="batch"`
-- Uses asymmetric clipping through `epsilon=0.2`, `epsilon_high=0.28`
+- Uses CISPO clipped importance weights through `epsilon_high=5.0`
 - Uses DAPO-style dynamic sampling in the custom trainer
 - Uses vLLM server-mode rollouts
 - Does not set `importance_sampling_level="sequence"`
+- Does not apply KL/reference beta by default because `beta=0.0`; beta scheduling is opt-in via `BETA_SCHEDULE` / `--beta_schedule`
 
 Do not describe the current GRPO path as GSPO-enabled. The old setting:
 
@@ -241,13 +244,13 @@ Core behavior:
 - `num_items_in_batch` is recomputed from the final completion mask.
 - If all final groups are zero-masked, the trainer can skip the expensive policy loss path and return zero loss.
 
-Current default single-shot volume with 6 trainer ranks, `per_device_train_batch_size=1`, `num_generations=16`, and `dapo_oversample_factor=12`:
+Current default single-shot volume with 6 trainer ranks, `per_device_train_batch_size=3`, `num_generations=16`, and `dapo_oversample_factor=12`:
 
 ```text
-6 ranks * 1 group/rank * 16 generations/group * 12 oversample = 1152 candidate completions per generation step
+6 ranks * 3 groups/rank * 16 generations/group * 12 oversample = 3456 candidate completions per generation step
 ```
 
-If `PER_DEVICE_TRAIN_BATCH_SIZE=2`, this doubles to `3072` candidate completions per generation step.
+If `PER_DEVICE_TRAIN_BATCH_SIZE=2`, this is `2304` candidate completions per generation step.
 
 Logged DAPO/debug metrics include:
 
@@ -280,7 +283,7 @@ Always pass row-level `tools` while counting tool-dataset prompt length. Gemma t
 Current default:
 
 ```text
-MAX_PROMPT_LENGTH=13500
+MAX_PROMPT_LENGTH=15500
 MAX_COMPLETION_LENGTH=8000
 VLLM_MAX_MODEL_LEN=24576
 ```
@@ -360,7 +363,7 @@ CUDA_VISIBLE_DEVICES=6,7
 MODEL_NAME=google/gemma-4-31B-it
 VLLM_SERVER_KIND=trl
 VLLM_TENSOR_PARALLEL_SIZE=2
-VLLM_GPU_MEMORY_UTILIZATION=0.90
+VLLM_GPU_MEMORY_UTILIZATION=0.93
 VLLM_MAX_MODEL_LEN=24576
 dtype=bfloat16
 port=8000

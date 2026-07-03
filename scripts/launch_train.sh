@@ -76,11 +76,24 @@ NUM_GENERATIONS="${NUM_GENERATIONS:-16}"
 TEMPERATURE="${TEMPERATURE:-1.2}"
 TOP_P="${TOP_P:-0.95}"
 PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-3}"
-PER_DEVICE_EVAL_BATCH_SIZE="${PER_DEVICE_EVAL_BATCH_SIZE:-8}"
+PER_DEVICE_EVAL_BATCH_SIZE="${PER_DEVICE_EVAL_BATCH_SIZE:-16}"
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-16}"
-LEARNING_RATE="${LEARNING_RATE:-${LR:-1e-6}}"
+LEARNING_RATE="${LEARNING_RATE:-${LR:-3e-6}}"
 MAX_STEPS="${MAX_STEPS:--1}"
 ACCELERATE_NUM_PROCESSES="${ACCELERATE_NUM_PROCESSES:-6}"
+NUM_ITERATIONS="${NUM_ITERATIONS:-2}"
+LOSS_TYPE="${LOSS_TYPE:-cispo}"
+SCALE_REWARDS="${SCALE_REWARDS:-batch}"
+BETA="${BETA:-0.0}"
+BETA_SCHEDULE="${BETA_SCHEDULE:-}"
+EPSILON="${EPSILON:-0.2}"
+if [[ -z "${EPSILON_HIGH:-}" ]]; then
+  if [[ "${LOSS_TYPE}" == "cispo" ]]; then
+    EPSILON_HIGH=5.0
+  else
+    EPSILON_HIGH=0.28
+  fi
+fi
 
 MODEL_NAME="${MODEL_NAME:-google/gemma-4-31B-it}"
 USER_OUTPUT_DIR="${OUTPUT_DIR:-}"
@@ -126,7 +139,7 @@ build_default_output_dir() {
   temp_tag="$(format_number_tag "${TEMPERATURE}")"
   run_tag="${TRAINER_BACKEND}_${DISTRIBUTED_BACKEND}_p${MAX_PROMPT_LENGTH}_c${MAX_COMPLETION_LENGTH}"
   run_tag="${run_tag}_g${NUM_GENERATIONS}_t${temp_tag}_bs${PER_DEVICE_TRAIN_BATCH_SIZE}"
-  run_tag="${run_tag}_ga${GRADIENT_ACCUMULATION_STEPS}_lr${lr_tag}_${RUN_TIMESTAMP}"
+  run_tag="${run_tag}_ga${GRADIENT_ACCUMULATION_STEPS}_${LOSS_TYPE}_mu${NUM_ITERATIONS}_lr${lr_tag}_${RUN_TIMESTAMP}"
 
   printf 'outputs/training/%s/%s/%s' "${train_tag}" "${model_tag}" "${run_tag}"
 }
@@ -172,8 +185,6 @@ EVAL_STEPS="${EVAL_STEPS:-10}"
 LOGGING_STEPS="${LOGGING_STEPS:-1}"
 LOG_COMPLETIONS="${LOG_COMPLETIONS:-0}"
 NUM_COMPLETIONS_TO_PRINT="${NUM_COMPLETIONS_TO_PRINT:-0}"
-BETA="${BETA:-0.0}"
-BETA_SCHEDULE="${BETA_SCHEDULE:-}"
 EVAL_MODE="${EVAL_MODE:-reward_only}"
 REWARD_ONLY_EVAL="${REWARD_ONLY_EVAL:-}"
 if [[ -z "${REWARD_ONLY_EVAL}" ]]; then
@@ -224,12 +235,9 @@ else
   SAVE_LATEST_FULL_CHECKPOINT_ARGS=()
 fi
 
-# DAPO oversample-and-replace controls. Each optimizer step keeps
-# exactly G heterogeneous groups (G = world_size * per_device_batch *
-# steps_per_generation). With per_device_batch=1, world=6, steps_per_gen=1
-# this is G=6 heterogeneous prompts per step. Set ENABLE_DYNAMIC_SAMPLING=0
-# to skip filtering entirely.
-NUM_ITERATIONS="${NUM_ITERATIONS:-1}"
+# DAPO oversample-and-replace controls. Each generation batch keeps the
+# heterogeneous prompt groups selected by the dynamic sampler. Set
+# ENABLE_DYNAMIC_SAMPLING=0 to skip filtering entirely.
 ENABLE_DYNAMIC_SAMPLING="${ENABLE_DYNAMIC_SAMPLING:-1}"
 DYNAMIC_SAMPLING_MIN_STD="${DYNAMIC_SAMPLING_MIN_STD:-1e-6}"
 DAPO_MAX_ROUNDS="${DAPO_MAX_ROUNDS:-1}"  # max rollout rounds per step (1 = no resampling)
@@ -332,11 +340,11 @@ fi
   ${EVAL_ON_START_ARG:+$EVAL_ON_START_ARG} \
   "${REWARD_ONLY_EVAL_ARGS[@]}" \
   "${LOG_COMPLETIONS_ARGS[@]}" \
-  --loss_type dapo \
-  --scale_rewards batch \
+  --loss_type "${LOSS_TYPE}" \
+  --scale_rewards "${SCALE_REWARDS}" \
   --beta "${BETA}" \
   "${BETA_SCHEDULE_ARGS[@]}" \
-  --epsilon 0.2 \
-  --epsilon_high 0.28 \
+  --epsilon "${EPSILON}" \
+  --epsilon_high "${EPSILON_HIGH}" \
   "${DAPO_ARGS[@]}" \
   "${RESUME_ARGS[@]}"

@@ -687,6 +687,7 @@ class DynamicSamplingTrainerHelperTests(unittest.TestCase):
                 "process_index": process_index,
                 "num_processes": num_processes,
                 "is_main_process": True,
+                "gather": lambda self, tensor: tensor,
             },
         )()
         return trainer, torch
@@ -848,6 +849,78 @@ class DynamicSamplingTrainerHelperTests(unittest.TestCase):
         self.assertIs(returned, output)
         self.assertEqual(returned["importance_sampling_ratio"].tolist(), [[1.0] * 3] * 4)
         trainer._get_per_token_logps_and_entropies.assert_not_called()
+
+    def test_reward_and_cispo_log_suffixes_include_latest_metrics(self):
+        from collections import defaultdict
+
+        trainer, _ = self._make_bare_trainer()
+        trainer.loss_type = "cispo"
+        trainer.num_iterations = 2
+        trainer.epsilon_high = 5.0
+        trainer.beta_schedule = []
+        trainer._static_beta = 0.0
+        trainer.state = type("_FakeState", (), {"global_step": 7})()
+        trainer._metrics = {"train": defaultdict(list)}
+        metrics = trainer._metrics["train"]
+        metrics["rewards/result_reward/mean"].append(0.25)
+        metrics["rewards/execution_reward/mean"].append(1.0)
+        metrics["rewards/format_reward/mean"].append(0.75)
+        metrics["cispo_clip_ratio"].append(0.125)
+        metrics["entropy"].append(0.9876)
+        metrics["sampling/importance_sampling_ratio/min"].append(0.5)
+        metrics["sampling/importance_sampling_ratio/mean"].append(1.0)
+        metrics["sampling/importance_sampling_ratio/max"].append(2.0)
+        metrics["sampling/sampling_logp_difference/mean"].append(0.01)
+        metrics["sampling/sampling_logp_difference/max"].append(0.2)
+        metrics["beta"].append(0.0)
+
+        reward_suffix = trainer._reward_log_suffix("train")
+        cispo_suffix = trainer._cispo_log_suffix("train")
+
+        self.assertIn("result_reward=0.25", reward_suffix)
+        self.assertIn("execution_reward=1", reward_suffix)
+        self.assertIn("format_reward=0.75", reward_suffix)
+        self.assertIn("cispo_mu=2", cispo_suffix)
+        self.assertIn("cispo_eps_high=5.0", cispo_suffix)
+        self.assertIn("prev_cispo_clip=12.50%", cispo_suffix)
+        self.assertIn("prev_entropy=0.9876", cispo_suffix)
+        self.assertIn("is_min=0.5", cispo_suffix)
+        self.assertIn("is_mean=1", cispo_suffix)
+        self.assertIn("is_max=2", cispo_suffix)
+        self.assertIn("logp_delta_mean=0.01", cispo_suffix)
+        self.assertIn("logp_delta_max=0.2", cispo_suffix)
+        self.assertIn("beta=0", cispo_suffix)
+
+    def test_log_cispo_ratio_metrics_records_ratio_and_advantage_details(self):
+        from collections import defaultdict
+
+        trainer, torch = self._make_bare_trainer()
+        trainer.epsilon_high = 5.0
+        trainer._metrics = {"train": defaultdict(list)}
+
+        ratios = torch.tensor([[1.0, 6.0], [2.0, 4.0]])
+        log_ratios = ratios.log()
+        advantages = torch.tensor([[1.0], [-1.0]])
+        mask = torch.ones_like(ratios)
+        clamped_ratios = ratios.clamp(max=trainer.epsilon_high)
+
+        trainer._log_cispo_ratio_metrics(
+            "train",
+            ratios=ratios,
+            log_ratios=log_ratios,
+            advantages=advantages,
+            mask=mask,
+            clamped_ratios=clamped_ratios,
+        )
+
+        metrics = trainer._metrics["train"]
+        self.assertAlmostEqual(metrics["cispo_clip_ratio"][-1], 0.25)
+        self.assertAlmostEqual(metrics["cispo/ratio_gt_eps_high"][-1], 0.25)
+        self.assertAlmostEqual(metrics["cispo/pos_adv_fraction"][-1], 0.5)
+        self.assertAlmostEqual(metrics["cispo/ratio_max"][-1], 6.0)
+        self.assertAlmostEqual(metrics["cispo/pos_adv_ratio_max"][-1], 6.0)
+        self.assertAlmostEqual(metrics["cispo/pos_adv_ratio_to_eps_high_max"][-1], 1.2)
+        self.assertAlmostEqual(metrics["cispo/pos_adv_margin_to_eps_high_min"][-1], -1.0)
 
     def test_iterative_dapo_uses_candidate_generation_before_policy_logps(self):
         from collections import defaultdict
