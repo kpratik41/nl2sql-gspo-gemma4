@@ -54,6 +54,11 @@ VLLM_SERVER_KIND="${VLLM_SERVER_KIND:-trl}"
 VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-2}"
 VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.93}"
 VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-24576}"
+VLLM_ENFORCE_EAGER="${VLLM_ENFORCE_EAGER:-0}"
+VLLM_EAGER_ARGS=()
+if [[ "${VLLM_ENFORCE_EAGER}" == "1" ]]; then
+  VLLM_EAGER_ARGS=(--enforce_eager True)
+fi
 
 if [[ "${VLLM_SERVER_KIND}" == "async_grpo" || "${VLLM_SERVER_KIND}" == "async" ]]; then
   export VLLM_SERVER_DEV_MODE="${VLLM_SERVER_DEV_MODE:-1}"
@@ -66,7 +71,8 @@ if [[ "${VLLM_SERVER_KIND}" == "async_grpo" || "${VLLM_SERVER_KIND}" == "async" 
     --max-model-len "${VLLM_MAX_MODEL_LEN}" \
     --dtype bfloat16 \
     --logprobs-mode processed_logprobs \
-    --weight-transfer-config '{"backend":"nccl"}'
+    --weight-transfer-config '{"backend":"nccl"}' \
+    "${VLLM_EAGER_ARGS[@]}"
 else
   echo "[launch_vllm] starting TRL compatibility vLLM server"
   "${PYTHON_BIN}" -m nl2sql_gspo.vllm_serve_compat \
@@ -76,5 +82,6 @@ else
     --tensor_parallel_size "${VLLM_TENSOR_PARALLEL_SIZE}" \
     --gpu_memory_utilization "${VLLM_GPU_MEMORY_UTILIZATION}" \
     --max_model_len "${VLLM_MAX_MODEL_LEN}" \
-    --dtype bfloat16
+    --dtype bfloat16 \
+    "${VLLM_EAGER_ARGS[@]}"
 fi
