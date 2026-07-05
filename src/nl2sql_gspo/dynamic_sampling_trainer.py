@@ -2195,19 +2195,18 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             self._append_gathered_scalar_metric(mode, f"{name}_p99", local_quantile(values, 0.99))
 
         pos_ratio_max = local_max(pos_values)
-        if pos_ratio_max == pos_ratio_max:
-            self._append_gathered_scalar_metric(
-                mode,
-                "cispo/pos_adv_ratio_to_eps_high_max",
-                pos_ratio_max / max(float(self.epsilon_high), 1e-12),
-                reduce="max",
-            )
-            self._append_gathered_scalar_metric(
-                mode,
-                "cispo/pos_adv_margin_to_eps_high_min",
-                scalar(float(self.epsilon_high)) - pos_ratio_max,
-                reduce="min",
-            )
+        self._append_gathered_scalar_metric(
+            mode,
+            "cispo/pos_adv_ratio_to_eps_high_max",
+            pos_ratio_max / max(float(self.epsilon_high), 1e-12),
+            reduce="max",
+        )
+        self._append_gathered_scalar_metric(
+            mode,
+            "cispo/pos_adv_margin_to_eps_high_min",
+            scalar(float(self.epsilon_high)) - pos_ratio_max,
+            reduce="min",
+        )
 
     def _oversample_and_filter(self, inputs, target_local_groups: int):
         """Single-shot oversample by ``dapo_oversample_factor``.
