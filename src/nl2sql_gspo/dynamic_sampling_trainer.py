@@ -1309,6 +1309,70 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
 
         return final
 
+    def _pad_row_batched_tensors_across_processes(self, output: Dict[str, Any]) -> Dict[str, Any]:
+        """Keep ZeRO-3 forwards aligned after per-rank DAPO filtering.
+
+        DAPO can select different completion groups on each rank. Local concat
+        pads tensors only to each rank's local max width, but ZeRO-3 forwards
+        must execute the same collective sequence on every rank. Padding the
+        row-batched 2D tensors to global widths prevents one rank from finishing
+        a shorter forward path and entering scalar metric gathers while another
+        rank is still in parameter all-gathers.
+        """
+        if int(getattr(self.accelerator, "num_processes", 1)) <= 1:
+            return output
+        ref = output.get("prompt_ids")
+        if not isinstance(ref, torch.Tensor) or ref.dim() < 1:
+            return output
+
+        local_n = int(ref.size(0))
+        row_batched_keys = (
+            "prompt_ids",
+            "prompt_mask",
+            "completion_ids",
+            "completion_mask",
+            "tool_mask",
+            "sampling_per_token_logps",
+            "old_per_token_logps",
+            "ref_per_token_logps",
+            "importance_sampling_ratio",
+            "token_type_ids",
+            "mm_token_type_ids",
+        )
+        for key in row_batched_keys:
+            value = output.get(key)
+            present = torch.tensor(
+                [int(isinstance(value, torch.Tensor) and value.dim() == 2 and int(value.size(0)) == local_n)],
+                device=ref.device,
+                dtype=torch.long,
+            )
+            present_count = int(self.accelerator.gather(present).sum().item())
+            if present_count == 0:
+                continue
+            if present_count != int(getattr(self.accelerator, "num_processes", 1)):
+                raise RuntimeError(f"DAPO tensor key {key!r} is present on only {present_count} ranks")
+            if (
+                not isinstance(value, torch.Tensor)
+                or value.dim() != 2
+                or int(value.size(0)) != local_n
+            ):
+                raise RuntimeError(f"DAPO tensor key {key!r} is not a row-batched 2D tensor on this rank")
+
+            local_width = torch.tensor([int(value.size(1))], device=value.device, dtype=torch.long)
+            target_width = int(self.accelerator.gather(local_width).max().item())
+            if target_width <= int(value.size(1)):
+                continue
+
+            if key == "prompt_ids":
+                pad_value, side = self._tokenizer.pad_token_id, "left"
+            elif key == "completion_ids":
+                pad_value, side = self._tokenizer.pad_token_id, "right"
+            else:
+                pad_value, side = _PAD_SPEC.get(key, (0, "right"))
+            output[key] = _pad_to_width(value, target_width, pad_value, side)
+
+        return output
+
     # ------------------------------------------------------------------ #
     # Single-shot oversample path (preferred when K>1)
     # ------------------------------------------------------------------ #
@@ -2201,7 +2265,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 chunks.append(ck)
                 n_padded_local += len(fallback_idx)
 
-        out = self._concat_chunks(chunks)
+        out = self._pad_row_batched_tensors_across_processes(self._concat_chunks(chunks))
 
         # Recompute num_items_in_batch (DAPO loss normalizer)
         try:
@@ -2366,7 +2430,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                     kept_chunks.append(pad_chunk)
                     padded_groups = take
 
-        out = self._concat_chunks(kept_chunks)
+        out = self._pad_row_batched_tensors_across_processes(self._concat_chunks(kept_chunks))
 
         # Recompute num_items_in_batch (DAPO loss normalizer)
         try:
