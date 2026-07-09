@@ -60,7 +60,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--vllm_server_base_url", default="http://127.0.0.1:8000")
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=8)
-    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.90)
+    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.93)
     parser.add_argument("--vllm_max_model_len", type=int, default=24576)
 
     parser.add_argument("--exec_timeout_s", type=float, default=60.0)

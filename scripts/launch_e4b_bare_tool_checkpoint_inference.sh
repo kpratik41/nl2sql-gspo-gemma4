@@ -47,7 +47,7 @@ launch_one() {
       --vllm_tensor_parallel_size 1 \
       --vllm_data_parallel_size 1 \
       --vllm_max_model_len 44000 \
-      --vllm_gpu_memory_utilization 0.90 \
+      --vllm_gpu_memory_utilization 0.93 \
       --vllm_async_concurrency 16 \
     > "${log_file}" 2>&1 &
 

@@ -148,7 +148,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num_rules", type=int, default=12)
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=4)
     parser.add_argument("--vllm_data_parallel_size", type=int, default=2)
-    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.9)
+    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.93)
     parser.add_argument("--vllm_max_model_len", type=int, default=24576)
     parser.add_argument("--skip_generation", action="store_true")
     parser.add_argument("--prediction_samples_file", type=str, default=None)

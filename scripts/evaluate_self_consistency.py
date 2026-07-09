@@ -50,6 +50,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=16)
     parser.add_argument("--eval-timeout", type=float, default=60.0)
     parser.add_argument("--output-dir", default="outputs/analysis/maskfix_self_consistency")
+    parser.add_argument(
+        "--no-temp0",
+        action="store_true",
+        help="Use only pass@k candidates; do not load or add temperature-0 predictions.",
+    )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
@@ -155,12 +160,13 @@ def load_checkpoint_inputs(
     passk_dir: Path,
     checkpoint_dir: Path,
     num_generations: int,
+    use_temp0: bool,
 ) -> Tuple[Dict[int, List[Dict[str, Any]]], Dict[int, Dict[str, Any]], Dict[int, str]]:
     passk_path = passk_dir / "passk_candidates.jsonl"
     temp0_path = checkpoint_dir / "eval_results.jsonl"
     if not passk_path.exists():
         raise FileNotFoundError(passk_path)
-    if not temp0_path.exists():
+    if use_temp0 and not temp0_path.exists():
         raise FileNotFoundError(temp0_path)
 
     by_idx: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
@@ -170,17 +176,18 @@ def load_checkpoint_inputs(
         by_idx[idx].append(row)
         gold_by_idx.setdefault(idx, row.get("gold_sql", ""))
 
-    temp0_by_idx = {int(row["idx"]): row for row in read_jsonl(temp0_path)}
+    temp0_by_idx = {int(row["idx"]): row for row in read_jsonl(temp0_path)} if use_temp0 else {}
 
-    passk_indices = set(by_idx)
-    temp0_indices = set(temp0_by_idx)
-    if passk_indices != temp0_indices:
-        missing_temp0 = sorted(passk_indices - temp0_indices)[:10]
-        missing_passk = sorted(temp0_indices - passk_indices)[:10]
-        raise ValueError(
-            f"checkpoint-{ckpt}: passk/temp0 idx mismatch; "
-            f"missing_temp0={missing_temp0} missing_passk={missing_passk}"
-        )
+    if use_temp0:
+        passk_indices = set(by_idx)
+        temp0_indices = set(temp0_by_idx)
+        if passk_indices != temp0_indices:
+            missing_temp0 = sorted(passk_indices - temp0_indices)[:10]
+            missing_passk = sorted(temp0_indices - passk_indices)[:10]
+            raise ValueError(
+                f"checkpoint-{ckpt}: passk/temp0 idx mismatch; "
+                f"missing_temp0={missing_temp0} missing_passk={missing_passk}"
+            )
 
     for idx, candidates in by_idx.items():
         candidates.sort(key=lambda item: int(item.get("sample_id", 0)))
@@ -188,14 +195,15 @@ def load_checkpoint_inputs(
         expected = list(range(num_generations))
         if sample_ids != expected:
             raise ValueError(f"checkpoint-{ckpt} idx={idx}: expected sample_ids={expected}, got={sample_ids}")
-        temp0 = temp0_by_idx[idx]
-        if candidates[0].get("db_id") != temp0.get("db_id"):
-            raise ValueError(
-                f"checkpoint-{ckpt} idx={idx}: db mismatch passk={candidates[0].get('db_id')} "
-                f"temp0={temp0.get('db_id')}"
-            )
-        if candidates[0].get("gold_sql", "") != temp0.get("gold_sql", ""):
-            raise ValueError(f"checkpoint-{ckpt} idx={idx}: gold_sql mismatch")
+        if use_temp0:
+            temp0 = temp0_by_idx[idx]
+            if candidates[0].get("db_id") != temp0.get("db_id"):
+                raise ValueError(
+                    f"checkpoint-{ckpt} idx={idx}: db mismatch passk={candidates[0].get('db_id')} "
+                    f"temp0={temp0.get('db_id')}"
+                )
+            if candidates[0].get("gold_sql", "") != temp0.get("gold_sql", ""):
+                raise ValueError(f"checkpoint-{ckpt} idx={idx}: gold_sql mismatch")
 
     return by_idx, temp0_by_idx, gold_by_idx
 
@@ -241,6 +249,7 @@ def evaluate_checkpoint(
         passk_dir=passk_dir,
         checkpoint_dir=checkpoint_dir,
         num_generations=args.num_generations,
+        use_temp0=not args.no_temp0,
     )
 
     pred_jobs: List[Tuple[str, str]] = []
@@ -250,7 +259,8 @@ def evaluate_checkpoint(
         gold_jobs.append((db_id, gold_by_idx[idx]))
         for candidate in candidates:
             pred_jobs.append((db_id, candidate.get("pred_sql", "")))
-        pred_jobs.append((db_id, temp0_by_idx[idx].get("pred_sql", "")))
+        if not args.no_temp0:
+            pred_jobs.append((db_id, temp0_by_idx[idx].get("pred_sql", "")))
 
     pred_exec = execute_unique_sqls(
         pred_jobs,
@@ -276,7 +286,7 @@ def evaluate_checkpoint(
 
     for idx in sorted(by_idx):
         candidates = by_idx[idx]
-        temp0 = temp0_by_idx[idx]
+        temp0 = temp0_by_idx.get(idx)
         db_id = candidates[0].get("db_id", "")
         gold_sql = gold_by_idx[idx]
         gold_result = gold_exec[(db_id, gold_sql)]
@@ -286,8 +296,11 @@ def evaluate_checkpoint(
             exec_result = pred_exec[(db_id, candidate.get("pred_sql", ""))]
             groups16[exec_result["cluster_key"]].append(candidate)
 
-        temp0_exec = pred_exec[(db_id, temp0.get("pred_sql", ""))]
-        temp0_key = temp0_exec["cluster_key"]
+        temp0_exec = None
+        temp0_key = ("error", None, "temperature-0 not used")
+        if temp0 is not None:
+            temp0_exec = pred_exec[(db_id, temp0.get("pred_sql", ""))]
+            temp0_key = temp0_exec["cluster_key"]
         winners16 = valid_sorted_winning_groups(groups16)
         max16 = len(winners16[0][1]) if winners16 else 0
         tied16 = [(key, group) for key, group in winners16 if len(group) == max16]
@@ -302,7 +315,7 @@ def evaluate_checkpoint(
             }
         elif len(tied16) > 1:
             option1_ties += 1
-            if is_valid_cluster_key(temp0_key):
+            if temp0 is not None and temp0_exec is not None and is_valid_cluster_key(temp0_key):
                 selected1 = {
                     "source": "temp0_tie_break",
                     "sample_id": None,
@@ -316,7 +329,7 @@ def evaluate_checkpoint(
                 key, group = tied16[0]
                 candidate = group[0]
                 selected1 = {
-                    "source": "passk16_tie_fallback_temp0_invalid",
+                    "source": "passk16_tie_fallback_no_temp0" if args.no_temp0 else "passk16_tie_fallback_temp0_invalid",
                     "sample_id": int(candidate.get("sample_id", -1)),
                     "pred_sql": candidate.get("pred_sql", ""),
                     "exec": pred_exec[(db_id, candidate.get("pred_sql", ""))],
@@ -342,30 +355,41 @@ def evaluate_checkpoint(
         option1_cluster_sizes[max16] += 1
 
         groups17: Dict[RowsKey, List[Dict[str, Any]]] = defaultdict(list)
-        for candidate in candidates:
-            exec_result = pred_exec[(db_id, candidate.get("pred_sql", ""))]
-            groups17[exec_result["cluster_key"]].append(candidate)
-        groups17[temp0_key].append({**temp0, "sample_id": "temp0"})
-        winners17 = valid_sorted_winning_groups(groups17)
-        max17 = len(winners17[0][1]) if winners17 else 0
-        tied17 = [(key, group) for key, group in winners17 if len(group) == max17]
-        if len(tied17) > 1:
-            option2_ties += 1
-        if tied17:
-            key17, group17 = tied17[0]
-            chosen17 = group17[0]
-            selected2_exec = pred_exec[(db_id, chosen17.get("pred_sql", ""))]
-            option2_source = "temp0" if chosen17.get("sample_id") == "temp0" else "passk"
-            option2_sample_id = chosen17.get("sample_id")
-        else:
-            selected2_exec = {"executed": False, "rows": None, "error": "no valid non-empty executed cluster"}
-            option2_source = "no_valid_cluster"
+        if args.no_temp0:
+            winners17 = []
+            max17 = 0
+            tied17 = []
+            selected2_exec = {"executed": False, "rows": None, "error": "temperature-0 not used"}
+            option2_source = "not_used"
             option2_sample_id = None
-        option2_res = int(
-            selected2_exec["executed"]
-            and gold_result["executed"]
-            and bird_result_match(selected2_exec["rows"], gold_result["row_set"])
-        )
+        else:
+            for candidate in candidates:
+                exec_result = pred_exec[(db_id, candidate.get("pred_sql", ""))]
+                groups17[exec_result["cluster_key"]].append(candidate)
+            groups17[temp0_key].append({**temp0, "sample_id": "temp0"})
+            winners17 = valid_sorted_winning_groups(groups17)
+            max17 = len(winners17[0][1]) if winners17 else 0
+            tied17 = [(key, group) for key, group in winners17 if len(group) == max17]
+            if len(tied17) > 1:
+                option2_ties += 1
+            if tied17:
+                key17, group17 = tied17[0]
+                chosen17 = group17[0]
+                selected2_exec = pred_exec[(db_id, chosen17.get("pred_sql", ""))]
+                option2_source = "temp0" if chosen17.get("sample_id") == "temp0" else "passk"
+                option2_sample_id = chosen17.get("sample_id")
+            else:
+                selected2_exec = {"executed": False, "rows": None, "error": "no valid non-empty executed cluster"}
+                option2_source = "no_valid_cluster"
+                option2_sample_id = None
+        if args.no_temp0:
+            option2_res = 0
+        else:
+            option2_res = int(
+                selected2_exec["executed"]
+                and gold_result["executed"]
+                and bird_result_match(selected2_exec["rows"], gold_result["row_set"])
+            )
         option2_correct += option2_res
         option2_cluster_sizes[max17] += 1
 
@@ -394,13 +418,14 @@ def evaluate_checkpoint(
                 "option2_correct": option2_res,
                 "option2_pred_executed": selected2_exec["executed"],
                 "option2_pred_error": selected2_exec["error"],
-                "temp0_correct": int(temp0.get("res", 0)),
-                "temp0_pred_executed": bool(temp0.get("pred_executed", False)),
+                "temp0_correct": int(temp0.get("res", 0)) if temp0 is not None else None,
+                "temp0_pred_executed": bool(temp0.get("pred_executed", False)) if temp0 is not None else None,
                 "passk_candidate_correct_count": sum(int(candidate.get("correct", 0)) for candidate in candidates),
             }
         )
 
     total = len(per_example)
+    temp0_correct = sum(int(row.get("res", 0)) for row in temp0_by_idx.values()) if temp0_by_idx else None
     summary = {
         "ckpt": ckpt,
         "examples": total,
@@ -413,8 +438,9 @@ def evaluate_checkpoint(
         "option2_accuracy": 100.0 * option2_correct / max(1, total),
         "option2_ties_after_adding_temp0": option2_ties,
         "option2_largest_group_size_counts": dict(sorted(option2_cluster_sizes.items())),
-        "temp0_correct": sum(int(row.get("res", 0)) for row in temp0_by_idx.values()),
-        "temp0_accuracy": 100.0 * sum(int(row.get("res", 0)) for row in temp0_by_idx.values()) / max(1, total),
+        "temp0_correct": temp0_correct,
+        "temp0_accuracy": (100.0 * temp0_correct / max(1, total)) if temp0_correct is not None else None,
+        "mode": "passk_only" if args.no_temp0 else "passk_plus_temp0",
     }
     return summary, per_example
 
@@ -452,11 +478,13 @@ def write_outputs(output_dir: Path, summaries: List[Dict[str, Any]], per_example
         "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in summaries:
+        temp0_acc = row.get("temp0_accuracy")
+        temp0_acc_text = "n/a" if temp0_acc is None else f"{temp0_acc:.2f}%"
         md_lines.append(
             f"| {row['ckpt']} | `{row['option1_accuracy']:.2f}%` | "
             f"`{row['option1_correct']} / {row['examples']}` | `{row['option1_ties']}` | "
             f"`{row['option2_accuracy']:.2f}%` | `{row['option2_correct']} / {row['examples']}` | "
-            f"`{row['option2_ties_after_adding_temp0']}` | `{row['temp0_accuracy']:.2f}%` |"
+            f"`{row['option2_ties_after_adding_temp0']}` | `{temp0_acc_text}` |"
         )
     (output_dir / "self_consistency_summary.md").write_text("\n".join(md_lines) + "\n", encoding="utf-8")
 
@@ -471,6 +499,7 @@ def main() -> None:
 
     print("[self-consistency] starting")
     print(f"[self-consistency] ckpts={ckpts}")
+    print(f"[self-consistency] mode={'passk_only' if args.no_temp0 else 'passk_plus_temp0'}")
     print(f"[self-consistency] workers={max(16, args.workers)} timeout={args.eval_timeout}")
     started = time.time()
 
@@ -485,7 +514,8 @@ def main() -> None:
         write_outputs(output_dir, summaries, all_per_examples)
         print(
             f"[self-consistency] ckpt-{ckpt} option1={summary['option1_accuracy']:.2f}% "
-            f"option2={summary['option2_accuracy']:.2f}% temp0={summary['temp0_accuracy']:.2f}%"
+            f"option2={summary['option2_accuracy']:.2f}% "
+            f"temp0={'n/a' if summary['temp0_accuracy'] is None else f'{summary['temp0_accuracy']:.2f}%'}"
         )
 
     print(f"[self-consistency] complete in {time.time() - started:.1f}s")
