@@ -987,7 +987,14 @@ async def _generate_predictions_with_vllm_async_impl(
     from nl2sql_gspo.model_utils import load_tokenizer
 
     if args.vllm_data_parallel_size != 1:
-        raise ValueError("vllm_async currently supports VLLM_DATA_PARALLEL_SIZE=1; use tensor parallelism plus async concurrency.")
+        # Invariant, not a user-facing limit: data_parallel_size > 1 is handled
+        # by generate_predictions_with_vllm_async_data_parallel, which spawns one
+        # process per shard and hands each child data_parallel_size=1.
+        raise ValueError(
+            "_generate_predictions_with_vllm_async_impl drives a single engine and "
+            "requires vllm_data_parallel_size=1; shard via "
+            "generate_predictions_with_vllm_async_data_parallel instead."
+        )
 
     tokenizer_source = resolve_vllm_tokenizer_source(args.model_name_or_path)
     tokenizer = load_tokenizer(tokenizer_source)
@@ -1156,7 +1163,136 @@ async def _generate_predictions_with_vllm_async_impl(
     return rows, official_predictions, detailed_predictions, skipped_rows
 
 
+def _vllm_async_generate_worker(
+    queue,
+    shard_id: int,
+    device_group: List[str],
+    rows: List[Dict[str, Any]],
+    worker_args: argparse.Namespace,
+) -> None:
+    """Drive one async engine over a single data-parallel shard.
+
+    Spawned via ``mp.get_context("spawn")``, so this process re-imports the module
+    and inherits nothing from the parent: ``CUDA_VISIBLE_DEVICES`` must be set
+    before vLLM/torch touch CUDA, and the tool executor must be reconfigured
+    (``main`` only does that in the parent).
+    """
+    try:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(device_group)
+        configure_tool_env(worker_args.database_dir)
+        _, _, detailed_predictions, _ = asyncio.run(
+            _generate_predictions_with_vllm_async_impl(rows, worker_args)
+        )
+        queue.put({"status": "ok", "shard_id": shard_id, "results": detailed_predictions})
+    except Exception:
+        queue.put({"status": "error", "shard_id": shard_id, "error": traceback.format_exc()})
+
+
+def generate_predictions_with_vllm_async_data_parallel(
+    rows: List[Dict[str, Any]],
+    args: argparse.Namespace,
+) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Async equivalent of generate_predictions_with_vllm_data_parallel.
+
+    Runs ``data_parallel_size`` worker processes, each owning a
+    ``tensor_parallel_size``-wide async engine on its own GPU group and serving
+    its shard with ``vllm_async_concurrency`` in-flight requests.
+    """
+    from nl2sql_gspo.model_utils import load_tokenizer
+
+    tensor_parallel_size = args.vllm_tensor_parallel_size
+    data_parallel_size = args.vllm_data_parallel_size
+    vllm_max_model_len = args.vllm_max_model_len or (args.max_prompt_length + args.max_new_tokens)
+
+    device_groups = plan_vllm_device_groups(tensor_parallel_size, data_parallel_size)
+
+    # Filter in the parent so filtered_examples.jsonl covers the whole run rather
+    # than whatever a single shard happened to drop. The child's own filter pass
+    # is then a no-op.
+    tokenizer = load_tokenizer(resolve_vllm_tokenizer_source(args.model_name_or_path))
+    rows, skipped_rows = prepare_rows_for_generation(rows, tokenizer, args.max_prompt_length)
+
+    row_shards = shard_rows_for_data_parallel(rows, data_parallel_size)
+    active_shards = [
+        (shard_id, device_group, shard_rows)
+        for shard_id, (device_group, shard_rows) in enumerate(zip(device_groups, row_shards))
+        if shard_rows
+    ]
+
+    worker_args = argparse.Namespace(**vars(args))
+    worker_args.vllm_data_parallel_size = 1
+
+    print(
+        "[inference] loading async vLLM engines in multi-process data-parallel mode "
+        f"tensor_parallel_size={tensor_parallel_size} data_parallel_size={data_parallel_size} "
+        f"concurrency_per_shard={args.vllm_async_concurrency} "
+        f"device_groups={['+'.join(group) for group in device_groups]} max_model_len={vllm_max_model_len}"
+    )
+
+    ctx = mp.get_context("spawn")
+    queue = ctx.Queue()
+    processes = []
+    collect_error: Optional[BaseException] = None
+
+    for shard_id, device_group, shard_rows in active_shards:
+        print(
+            f"[inference] starting async vLLM shard {shard_id + 1}/{len(active_shards)} "
+            f"gpus={','.join(device_group)} prompts={len(shard_rows)}"
+        )
+        process = ctx.Process(
+            target=_vllm_async_generate_worker,
+            args=(queue, shard_id, device_group, shard_rows, worker_args),
+        )
+        process.start()
+        processes.append(process)
+
+    collected_results: Dict[int, Dict[str, Any]] = {}
+    try:
+        for _ in processes:
+            message = queue.get()
+            if message.get("status") != "ok":
+                collect_error = RuntimeError(
+                    "async vLLM data-parallel worker failed"
+                    + (f" (shard {message.get('shard_id')})" if "shard_id" in message else "")
+                    + ":\n"
+                    + message.get("error", "unknown error")
+                )
+                raise collect_error
+
+            for result in message["results"]:
+                collected_results[result["idx"]] = result
+    finally:
+        for process in processes:
+            process.join(timeout=30)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)
+
+    for process in processes:
+        if collect_error is None and process.exitcode in (0, None, -15):
+            continue
+        if process.exitcode not in (0, None):
+            raise RuntimeError(f"async vLLM data-parallel worker exited with code {process.exitcode}")
+
+    official_predictions: Dict[str, str] = {}
+    detailed_predictions: List[Dict[str, Any]] = []
+    for idx, row in enumerate(rows):
+        source_idx = row.get("source_idx", idx)
+        generated = collected_results.get(source_idx)
+        if generated is None:
+            raise RuntimeError(f"Missing async vLLM generation result for idx={source_idx}")
+
+        official_predictions[str(source_idx)] = (
+            f"{generated['pred_sql']}{BIRD_SPLIT_MARKER}{generated['db_id']}"
+        )
+        detailed_predictions.append(generated)
+
+    return rows, official_predictions, detailed_predictions, skipped_rows
+
+
 def generate_predictions_with_vllm_async(rows: List[Dict[str, Any]], args: argparse.Namespace) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    if (args.vllm_data_parallel_size or 1) > 1:
+        return generate_predictions_with_vllm_async_data_parallel(rows, args)
     return asyncio.run(_generate_predictions_with_vllm_async_impl(rows, args))
 
 

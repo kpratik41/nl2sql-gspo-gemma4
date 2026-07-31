@@ -85,7 +85,16 @@ def parse_args() -> argparse.Namespace:
         help="Directory for merged pass@k outputs. Defaults to --output_dir.",
     )
     parser.add_argument("--num_generations", type=int, default=16, help="Candidates sampled per example.")
-    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=1.2,
+        help=(
+            "Sampling temperature for pass@k candidates. Defaults to 1.2 to match the "
+            "training rollout temperature, so the correct-candidate distribution is "
+            "comparable to what DAPO dynamic sampling sees during training."
+        ),
+    )
     parser.add_argument("--top_p", type=float, default=1.0)
     parser.add_argument("--max_prompt_length", type=int, default=30000)
     parser.add_argument("--max_new_tokens", type=int, default=8000)
