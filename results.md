@@ -1020,13 +1020,12 @@ Also note that the older `temp=0.8` comparison runs used async concurrency `16`,
 | 5-shot, temp 1.2 | 64.47% | 575 | 1530 | 4 | `finished=12253`, `max_tool_rounds=11`, `context_length_exceeded=8` |
 
 
-# Training-Data Pass@16: Checkpoint-90, Gemma 4 31B, Temperature 1.2
+# Training-Data Pass@16: Base Gemma 4 31B, Async vLLM, Temperature 1.2
 
-Pass@16 over the **full BIRD training file** (not dev) for the 31B beta-schedule
-checkpoint `outputs/checkpoint-90`. The purpose of this run is to measure the
-**group-heterogeneity distribution that DAPO dynamic sampling actually sees**:
-how many training prompts yield all-wrong, mixed, or all-correct groups when
-sampled 16 times at the training rollout temperature.
+Pass@16 over the **full BIRD training file** using the untrained base model
+`google/gemma-4-31B-it`. The purpose is to measure how many training prompts are
+intrinsically *heterogeneous* under 16 samples — i.e. how much learning signal
+the training set can offer DAPO dynamic sampling before any RL has been applied.
 
 Because `outputs/` is gitignored, the full distribution is reproduced inline
 below so it survives independently of the artifact tree.
@@ -1035,122 +1034,133 @@ below so it survives independently of the artifact tree.
 
 | setting | value |
 | --- | --- |
-| model | `outputs/checkpoint-90` (31B beta-schedule run, resumed DAPO-16 phase) |
+| model | `google/gemma-4-31B-it` (base, resolved from the local HF cache) |
 | input file | `outputs/train-6601-schema-bare-tool.jsonl` |
 | database dir | `databases/train_databases` (69 DBs) |
 | difficulty file | none applicable; BIRD train has no difficulty labels, all rows report `unknown` |
 | examples | `6601` |
 | generations per example | `16` |
 | total candidates | `105616` |
-| temperature / top_p | `1.2` / `1.0` (matches the training rollout temperature) |
+| inference backend | `vllm_async` |
+| temperature / top_p | `1.2` / `1.0` |
 | max_prompt_length / max_new_tokens | `30000` / `8000` |
 | max_tool_rounds | `8` |
-| vLLM tensor parallel size | `2` |
-| shards | `4` (one per GPU pair: `0+1`, `2+3`, `4+5`, `6+7`) |
+| vLLM tensor parallel size | `1` |
+| shards | `8` (one per GPU, `0`..`7`) |
 | vLLM max model length | `43000` |
-| vLLM async concurrency | `16` per shard (64 in flight across the node) |
-| launcher | `scripts/run_passk16_train6601_ckpt90_tp2_shards4.sh` (detached in screen `passk16`) |
-| output root | `outputs/passk/train6601_bare_tool_ckpt90_temp1p2_tp2_shards4` |
+| vLLM async concurrency | `16` per shard (128 in flight across the node) |
+| launcher | `scripts/run_passk16_train6601.sh` (detached in screen `passk16base`) |
+| output root | `outputs/passk/train6601_bare_tool_gemma4-31b-it_temp1p2_tp1_shards8` |
 | prompts filtered as over-length | `0` |
 
-Wall clock `18:05:05 -> 21:33:27 UTC` = **3 h 28 min** for 105616 candidates
-(generation ~3 h 13 min, per-shard SQL evaluation ~10 min, merge <1 min). The
-`timing_seconds` field in `passk_summary.json` reports `generation=45450 s`,
-which is the **sum across the four concurrent shards**, not wall clock.
+Wall clock `2026-07-31T23:58:49Z -> 2026-08-01T04:55:13Z` = **4 h 56 min**. The
+`timing_seconds` field in `passk_summary.json` reports `generation=129155 s`,
+which is the **sum across the eight concurrent shards**, not wall clock.
+
+Throughput note: this `tp=1 x 8 shards` layout sustained about `6.4` candidates/s.
+An earlier `tp=2 x 4 shards` layout on the same input sustained about `9.0`
+candidates/s, so tensor-parallel-2 with fewer shards is the better throughput
+configuration for this workload despite having half the in-flight requests.
 
 ## Summary Metrics
 
 | metric | value |
 | --- | ---: |
-| candidate accuracy / pass@1 | `80.40%` |
-| correct candidates | `84911 / 105616` |
-| estimated pass@2 | `81.38%` |
-| estimated pass@4 | `81.97%` |
-| estimated pass@8 | `82.43%` |
-| estimated pass@16 | `82.87%` |
-| examples with at least one correct candidate | `5470 / 6601` |
-| examples with zero correct candidates | `1131 / 6601` |
+| candidate accuracy / pass@1 | `76.78%` |
+| correct candidates | `81095 / 105616` |
+| estimated pass@2 | `78.39%` |
+| estimated pass@4 | `79.61%` |
+| estimated pass@8 | `80.58%` |
+| estimated pass@16 | `81.32%` |
+| examples with at least one correct candidate | `5368 / 6601` |
+| examples with zero correct candidates | `1233 / 6601` |
+| gold SQL executed | `105584 / 105616` (`99.97%`) |
 
-Sampling lift is only `+2.47 pp` from pass@1 to pass@16, far smaller than the
-`+15 pp` the E4B base model showed on dev. This is the same low-diversity
-signature already recorded for 31B: when the model is right it repeats a correct
-family, and when it is wrong extra samples rarely escape the failure mode.
+With `n = k = 16`, `pass@16` is by construction the fraction of examples with at
+least one correct candidate, so `5368 / 6601 = 81.32%`. Sampling lift from
+`pass@1` to `pass@16` is `+4.54 pp`.
 
-## Correct-Candidate Distribution (the requested breakdown)
+## Correct-Candidate Distribution
 
 | correct out of 16 | examples | share | cumulative |
 | ---: | ---: | ---: | ---: |
-| 0 | `1131` | `17.13%` | `17.13%` |
-| 1 | `44` | `0.67%` | `17.80%` |
-| 2 | `20` | `0.30%` | `18.10%` |
-| 3 | `14` | `0.21%` | `18.32%` |
-| 4 | `12` | `0.18%` | `18.50%` |
-| 5 | `17` | `0.26%` | `18.75%` |
-| 6 | `13` | `0.20%` | `18.95%` |
-| 7 | `15` | `0.23%` | `19.18%` |
-| 8 | `15` | `0.23%` | `19.41%` |
-| 9 | `13` | `0.20%` | `19.60%` |
-| 10 | `15` | `0.23%` | `19.83%` |
-| 11 | `18` | `0.27%` | `20.10%` |
-| 12 | `29` | `0.44%` | `20.54%` |
-| 13 | `23` | `0.35%` | `20.89%` |
-| 14 | `61` | `0.92%` | `21.81%` |
-| 15 | `193` | `2.92%` | `24.74%` |
-| 16 | `4968` | `75.26%` | `100.00%` |
+| 0 | `1233` | `18.68%` | `18.68%` |
+| 1 | `65` | `0.98%` | `19.66%` |
+| 2 | `48` | `0.73%` | `20.39%` |
+| 3 | `38` | `0.58%` | `20.97%` |
+| 4 | `26` | `0.39%` | `21.36%` |
+| 5 | `45` | `0.68%` | `22.04%` |
+| 6 | `33` | `0.50%` | `22.54%` |
+| 7 | `24` | `0.36%` | `22.91%` |
+| 8 | `22` | `0.33%` | `23.24%` |
+| 9 | `37` | `0.56%` | `23.80%` |
+| 10 | `31` | `0.47%` | `24.27%` |
+| 11 | `27` | `0.41%` | `24.68%` |
+| 12 | `36` | `0.55%` | `25.22%` |
+| 13 | `46` | `0.70%` | `25.92%` |
+| 14 | `50` | `0.76%` | `26.68%` |
+| 15 | `161` | `2.44%` | `29.12%` |
+| 16 | `4679` | `70.88%` | `100.00%` |
 
 ### DAPO Buckets
 
 | bucket | examples | share |
 | --- | ---: | ---: |
-| all-wrong (`0/16`) | `1131` | `17.13%` |
-| heterogeneous (`1-15/16`) | `502` | `7.60%` |
-| all-correct (`16/16`) | `4968` | `75.26%` |
+| all-wrong (`0/16`) | `1233` | `18.68%` |
+| heterogeneous (`1-15/16`) | `689` | `10.44%` |
+| all-correct (`16/16`) | `4679` | `70.88%` |
 
-The distribution is strongly **U-shaped**: `92.4%` of training prompts land at
-one of the two extremes, and only `7.60%` produce a non-zero intra-group reward
-std. Within the heterogeneous band the mass sits at the top end (`15/16` alone is
-`193` examples, more than all of `1/16` through `11/16` combined), so genuinely
-balanced groups are rarer still.
+The distribution is strongly **U-shaped**: `89.6%` of training prompts sit at one
+of the two extremes and yield zero intra-group reward variance. Only `10.44%` of
+prompts produce a group that DAPO dynamic sampling would keep, so even for the
+untrained base policy roughly **1 in 10 sampled groups carries a gradient**.
+Within the heterogeneous band the mass is skewed toward the top (`15/16` alone is
+`161` examples), so evenly-split groups are rarer still.
 
-This is the direct measurement of the effect visible in the training logs. With
-`dynamic_sampling_reward_name=result_reward` and `dapo_min_std=1e-6`, DAPO keeps
-only the heterogeneous band, so on average **about 1 in 13 sampled groups carries
-a gradient**. It matches the observed `dapo/selection_fill_rate` collapse for
-this run (`0.8333` at checkpoint 0 falling to `0.08333` at checkpoint 80, see
-"Beta schedule: Gemma-4-31b-it") and explains why `K=16` oversampling is needed
-to fill even a handful of slots per optimizer step.
+This is an upper bound on the learning signal available from this training file
+at `num_generations=16`: it is a property of the data and the base policy, before
+any entropy loss from RL. It explains why `--dapo_oversample_factor` has to be
+large to fill even a handful of group slots per optimizer step.
 
-For comparison, the same distribution computed from this checkpoint's dev pass@16
-(`passk16_olddev_schema_tool_unpatched_temp1p2_tp1_shards8_ctx43k`) over 1534
-examples: all-wrong `356` (`23.2%`), heterogeneous `110` (`7.2%`), all-correct
-`1068` (`69.6%`). The heterogeneous share is nearly identical on train and dev
-(`7.60%` vs `7.2%`), so the scarcity of learning signal is a property of the
-policy's low sampling diversity rather than of train/test overlap.
+### Sampling Diversity
+
+| metric | value |
+| --- | ---: |
+| mean distinct SQL strings per 16 candidates | `3.47` |
+| examples where all 16 candidates are byte-identical | `1632` (`24.72%`) |
+
+`3.47` distinct SQL per 16 samples is consistent with the `3.37` measured for
+base `gemma-4-31B-it` on the old-dev tool split (see "Old Dev Tool Pass@K Full
+Runs"), so base-model sampling diversity is stable across the train and dev
+splits.
 
 ### Databases With The Most Heterogeneity
 
-Heterogeneity rate is uneven across the 69 training databases; these have the
-richest learning signal per prompt.
-
 | db_id | examples | heterogeneous | rate |
 | --- | ---: | ---: | ---: |
-| `european_football_1` | `42` | `14` | `33.3%` |
-| `genes` | `11` | `3` | `27.3%` |
-| `craftbeer` | `5` | `1` | `20.0%` |
-| `bike_share_1` | `51` | `9` | `17.6%` |
-| `restaurant` | `69` | `12` | `17.4%` |
+| `music_tracker` | `31` | `15` | `48.4%` |
+| `citeseer` | `14` | `4` | `28.6%` |
+| `superstore` | `82` | `21` | `25.6%` |
+| `legislator` | `128` | `29` | `22.7%` |
+| `sales` | `77` | `16` | `20.8%` |
 
 ## Output Artifacts
 
-Under `outputs/passk/train6601_bare_tool_ckpt90_temp1p2_tp2_shards4`:
+Under `outputs/passk/train6601_bare_tool_gemma4-31b-it_temp1p2_tp1_shards8`:
 
 | file | description |
 | --- | --- |
-| `passk16_distribution.json` | run config, pass@k, full 0-16 distribution, DAPO buckets |
+| `passk16_distribution.json` | run config, pass@k, full 0-16 distribution, DAPO buckets, diversity |
 | `passk16_distribution.csv` | 0-16 distribution with counts, share, cumulative share |
 | `passk16_distribution_by_db.csv` | per-database all-wrong / heterogeneous / all-correct counts |
-| `merged/passk_summary.json` / `.md` | merged pass@k summary across the four shards |
+| `merged/passk_summary.json` / `.md` | merged pass@k summary across the eight shards |
 | `merged/passk_per_example.jsonl` | per-example `num_correct`, `pass_at_k`, `first_correct_sample_id` |
 | `merged/passk_candidates.jsonl` | all 105616 candidates with execution status and correctness |
-| `shard-0000N-of-00004/` | per-shard artifacts before merge |
-| `shard0.log` .. `shard3.log`, `run_passk16_tp2_shards4.log` | run logs |
+| `shard-0000N-of-00008/` | per-shard artifacts before merge |
+| `shard0.log` .. `shard7.log`, `run_passk16.log` | run logs |
+
+Reproduce with:
+
+```bash
+bash scripts/run_passk16_train6601.sh
+```

@@ -44,6 +44,7 @@ Key invariants
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import os
 import random
@@ -1281,6 +1282,35 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 for prompt, image_list in zip(prompts, images, strict=True)
             ]
 
+        # Build the per-rollout tool dicts for this batch. TRL does this inside
+        # its own _generate_and_score_completions, immediately before calling
+        # _generate; because this method replaces that one (to skip policy
+        # logprobs on candidates DAPO will discard), it has to be replicated
+        # here or _tool_call_loop hits an unset self._sync_tool_dicts. The
+        # dicts are per-batch rather than per-init because an example's
+        # environment, and therefore its tools, is data-dependent.
+        if getattr(self, "tools", None):
+            self._sync_tool_dicts = []
+            self._async_tool_dicts = []
+            for i in range(len(inputs)):
+                methods = []
+                if self.environments:
+                    methods = [
+                        member
+                        for member_name, member in inspect.getmembers(
+                            self.environments[i], predicate=inspect.ismethod
+                        )
+                        if member_name not in ("reset", "get_reward") and not member_name.startswith("_")
+                    ]
+                sync_tool_dict, async_tool_dict = {}, {}
+                for tool in self._standalone_tools + methods:
+                    if inspect.iscoroutinefunction(tool):
+                        async_tool_dict[tool.__name__] = tool
+                    else:
+                        sync_tool_dict[tool.__name__] = tool
+                self._sync_tool_dicts.append(sync_tool_dict)
+                self._async_tool_dicts.append(async_tool_dict)
+
         if getattr(self.accelerator, "is_main_process", True):
             print(
                 f"[rollout-stage] mode={mode} step={int(getattr(self.state, 'global_step', 0))} "
@@ -1288,12 +1318,20 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 flush=True,
             )
         generated = self._generate(prompts)
+        # TRL's _generate returns, in order:
+        #   prompt_ids, completion_ids, tool_mask, completions, logprobs,
+        #   extra_fields, images, tool_images
+        # An older signature placed num_items_in_batch at position 5, which made
+        # this unpacking bind extra_fields (a dict) to the sampling-logprobs
+        # slot; padding an empty dict then failed with "zero-size array to
+        # reduction operation maximum". num_items_in_batch is not returned at
+        # all -- TRL derives it from the loss mask, and it is recomputed from the
+        # final completion mask after DAPO filtering regardless.
         (
             prompt_ids_list,
             completion_ids_list,
             tool_mask_list,
             completions,
-            num_items_in_batch,
             sampling_per_token_logps_list,
             extra_fields,
             *_,
@@ -1457,6 +1495,11 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         self._logs["advantages"].extend(all_process_advantages.tolist())
         if images is not None:
             self._logs["images"].extend(gather_object(images))
+
+        # Same definition TRL uses (gathered loss-mask sum). This is a
+        # provisional value: the DAPO paths recompute it from the effective
+        # completion mask once flat groups have been dropped or zero-masked.
+        num_items_in_batch = self.accelerator.gather(completion_mask.sum()).sum()
 
         output = {
             "prompt_ids": prompt_ids,

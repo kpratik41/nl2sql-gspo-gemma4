@@ -13,6 +13,7 @@ import sqlite3
 import sys
 import threading
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -61,6 +62,16 @@ def parse_args() -> argparse.Namespace:
         "--execute-sql",
         action="store_true",
         help="Execute gold/top predicted SQL variants for row-count/shape diagnostics. Slower.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "Thread workers for per-example analysis. Each analysis opens its own "
+            "read-only SQLite connection, so this is safe; useful mainly with "
+            "--execute-sql, where the run is dominated by query execution."
+        ),
     )
     return parser.parse_args()
 
@@ -412,8 +423,8 @@ def main() -> None:
         if idx in all_wrong_set:
             candidates_by_idx[idx].append(candidate)
 
-    analysis_rows = [
-        analyze_one(
+    def _analyze(idx: int) -> Dict[str, Any]:
+        return analyze_one(
             idx=idx,
             candidates=sorted(candidates_by_idx[idx], key=lambda row: int(row.get("sample_id", 0))),
             tool_row=tool_rows[idx],
@@ -421,8 +432,16 @@ def main() -> None:
             max_sql_variants=args.max_sql_variants,
             execute_sql_diagnostics=args.execute_sql,
         )
-        for idx in all_wrong_idxs
-    ]
+
+    workers = max(1, int(args.workers))
+    if workers > 1:
+        # ThreadPoolExecutor.map preserves input order, so analysis_rows stays
+        # aligned with all_wrong_idxs.
+        print(f"analyzing {len(all_wrong_idxs)} examples with {workers} workers")
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            analysis_rows = list(pool.map(_analyze, all_wrong_idxs))
+    else:
+        analysis_rows = [_analyze(idx) for idx in all_wrong_idxs]
     write_jsonl(analysis_jsonl, analysis_rows)
     summary_md.write_text(render_summary(analysis_rows, output_jsonl, source_jsonl), encoding="utf-8")
 
