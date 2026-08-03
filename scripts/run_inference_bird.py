@@ -105,7 +105,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--inference_backend", type=str, choices=["vllm", "vllm_async"], default="vllm")
     parser.add_argument("--model_name_or_path", type=str, default=None)
-    parser.add_argument("--input_file", type=str, default="outputs/dev-20251106-schema.jsonl")
+    parser.add_argument("--input_file", type=str, default="outputs/old-dev-schema-tool-unpatched.jsonl")
     parser.add_argument("--database_dir", type=str, default="databases/dev_databases")
     parser.add_argument("--diff_json_path", type=str, default="data/bird_dev_data/raw/dev_20251106.json")
     parser.add_argument("--output_dir", type=str, default="outputs/bird_dev_inference")

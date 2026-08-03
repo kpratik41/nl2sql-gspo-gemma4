@@ -8,7 +8,7 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
 MODEL_PATH="${MODEL_PATH:-outputs/gemma4_31b_gspo_bird}"
-INPUT_FILE="${INPUT_FILE:-outputs/dev-20251106-schema.jsonl}"
+INPUT_FILE="${INPUT_FILE:-outputs/old-dev-schema-tool-unpatched.jsonl}"
 DATABASE_DIR="${DATABASE_DIR:-databases/dev_databases}"
 DIFF_JSON_PATH="${DIFF_JSON_PATH:-data/bird_dev_data/raw/dev_20251106.json}"
 USER_OUTPUT_DIR="${OUTPUT_DIR:-}"

@@ -44,7 +44,7 @@ from run_inference_bird import (
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compute BIRD pass@k from one multi-sample async vLLM run.")
     parser.add_argument("--model_name_or_path", type=str, default="google/gemma-4-31B-it")
-    parser.add_argument("--input_file", type=str, default="outputs/dev-20251106-schema-bare-tool.jsonl")
+    parser.add_argument("--input_file", type=str, default="outputs/old-dev-schema-tool-unpatched.jsonl")
     parser.add_argument("--database_dir", type=str, default="databases/dev_databases")
     parser.add_argument("--diff_json_path", type=str, default="data/bird_dev_data/raw/dev_20251106.json")
     parser.add_argument("--output_dir", type=str, default="outputs/bird_dev_tool_passk16_vllm_async_temp08")
