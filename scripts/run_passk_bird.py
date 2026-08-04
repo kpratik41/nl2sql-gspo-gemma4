@@ -36,6 +36,7 @@ from run_inference_bird import (
     load_rows,
     prepare_rows_for_generation,
     preview_text,
+    resolve_tool_call_format,
     resolve_vllm_tokenizer_source,
     should_use_agentic_tool_loop,
 )
@@ -90,6 +91,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_prompt_length", type=int, default=30000)
     parser.add_argument("--max_new_tokens", type=int, default=8000)
     parser.add_argument("--max_tool_rounds", type=int, default=8)
+    parser.add_argument(
+        "--tool_call_format",
+        type=str,
+        choices=["auto", "gemma", "qwen"],
+        default="auto",
+        help="Native tool-call syntax to parse. 'auto' picks 'qwen' when the model name/path "
+        "contains 'qwen' (case-insensitive), otherwise 'gemma'.",
+    )
     parser.add_argument("--eval_timeout", type=float, default=60.0)
     parser.add_argument("--eval_workers", type=int, default=16)
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=8)
@@ -102,6 +111,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--num_shards must be >= 1")
     if args.shard_index < 0 or args.shard_index >= args.num_shards:
         parser.error("--shard_index must satisfy 0 <= shard_index < num_shards")
+    if args.tool_call_format == "auto":
+        args.tool_call_format = resolve_tool_call_format(args.model_name_or_path)
     return args
 
 
@@ -140,10 +151,10 @@ def pass_at_k(n: int, c: int, k: int) -> float:
     return 1.0 - math.comb(n - c, k) / math.comb(n, k)
 
 
-def tool_order(prediction_text: str) -> List[str]:
+def tool_order(prediction_text: str, tool_call_format: str = "gemma") -> List[str]:
     return [
         call.get("function", {}).get("name", "")
-        for call in extract_tool_calls(prediction_text)
+        for call in extract_tool_calls(prediction_text, tool_call_format)
         if call.get("function", {}).get("name")
     ]
 
@@ -221,7 +232,7 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
 
     tokenizer_source = resolve_vllm_tokenizer_source(args.model_name_or_path)
     tokenizer = load_tokenizer(tokenizer_source)
-    rows, skipped_rows = prepare_rows_for_generation(rows, tokenizer, args.max_prompt_length)
+    rows, skipped_rows = prepare_rows_for_generation(rows, tokenizer, args.max_prompt_length, args.tool_call_format)
     if skipped_rows:
         write_jsonl(Path(args.output_dir) / "skipped_prompts.jsonl", skipped_rows)
 
@@ -267,6 +278,7 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
                         eval_timeout=args.eval_timeout,
                         temperature=args.temperature,
                         top_p=args.top_p,
+                        tool_call_format=args.tool_call_format,
                     )
                 else:
                     generated_text, completion_tokens = await _async_vllm_generate_text(
@@ -278,11 +290,12 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
                         top_p=args.top_p,
                         request_prefix=f"idx{source_idx}-sample{sample_id}",
                     )
-                    if "call:" in generated_text:
+                    if "call:" in generated_text or "<tool_call>" in generated_text:
                         generated_text = await asyncio.to_thread(
                             extract_and_execute_tools,
                             generated_text,
                             args.eval_timeout,
+                            args.tool_call_format,
                         )
                     generated = build_generation_detail(
                         row=row_for_sample,
@@ -290,7 +303,7 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
                         prompt_token_count=int(row_for_sample["prompt_tokens"]),
                         completion_token_count=completion_tokens,
                         tool_rounds=0,
-                        tool_call_count=len(extract_tool_calls(generated_text)),
+                        tool_call_count=len(extract_tool_calls(generated_text, args.tool_call_format)),
                         stop_reason="finished",
                     )
             except Exception as exc:
@@ -358,7 +371,7 @@ def evaluate_candidates(
             "gold_executed": result["gold_executed"],
             "pred_error": result["pred_error"],
             "gold_error": result["gold_error"],
-            "tool_order": tool_order(candidate.get("prediction_text", "")),
+            "tool_order": tool_order(candidate.get("prediction_text", ""), args.tool_call_format),
         }
 
     evaluated: List[Dict[str, Any]] = []

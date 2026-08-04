@@ -4,6 +4,7 @@ import csv
 import json
 import multiprocessing as mp
 import os
+import re
 import sqlite3
 import time
 import traceback
@@ -24,6 +25,12 @@ from nl2sql_gspo.inference_tool_executor import (
 )
 
 BIRD_SPLIT_MARKER = "\t----- bird -----\t"
+
+
+def resolve_tool_call_format(model_name_or_path: Optional[str]) -> str:
+    """Guess the native tool-call syntax a model expects from its name/path."""
+
+    return "qwen" if "qwen" in (model_name_or_path or "").lower() else "gemma"
 
 
 def should_log_each_example(total_count: int) -> bool:
@@ -58,6 +65,7 @@ def print_run_configuration(args: argparse.Namespace, output_dir: Path) -> None:
     print(f"[run] num_examples={args.num_examples}")
     print(f"[run] eval_timeout={args.eval_timeout}")
     print(f"[run] eval_workers={args.eval_workers}")
+    print(f"[run] tool_call_format={args.tool_call_format}")
     print(f"[run] skip_generation={args.skip_generation}")
     print(f"[run] CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<unset>')}")
     if args.inference_backend in {"vllm", "vllm_async"}:
@@ -122,9 +130,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vllm_max_model_len", type=int, default=43000)
     parser.add_argument("--vllm_async_concurrency", type=int, default=16)
     parser.add_argument("--max_tool_rounds", type=int, default=8)
+    parser.add_argument(
+        "--tool_call_format",
+        type=str,
+        choices=["auto", "gemma", "qwen"],
+        default="auto",
+        help="Native tool-call syntax to parse. 'auto' picks 'qwen' when the model name/path "
+        "contains 'qwen' (case-insensitive), otherwise 'gemma'.",
+    )
     parser.add_argument("--skip_generation", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
+    if args.tool_call_format == "auto":
+        args.tool_call_format = resolve_tool_call_format(args.model_name_or_path)
     if args.inference_backend == "vllm_async":
         if args.vllm_tensor_parallel_size is None:
             args.vllm_tensor_parallel_size = 8
@@ -153,9 +171,10 @@ def load_rows(input_file: str, num_examples: int) -> List[Dict[str, Any]]:
 
     if num_examples >= 0:
         rows = rows[:num_examples]
+        raw_rows = raw_rows[:num_examples]
 
-    for idx, row in enumerate(rows):
-        row["source_idx"] = idx
+    for idx, (row, raw_row) in enumerate(zip(rows, raw_rows)):
+        row["source_idx"] = raw_row.get("source_idx", idx)
 
     missing_examples: List[str] = []
     for row in rows:
@@ -206,13 +225,53 @@ def render_prompt(tokenizer, messages: List[Dict[str, str]], tools: Optional[Lis
     return "\n\n".join(lines)
 
 
-def get_generation_messages(row: Dict[str, Any]) -> List[Dict[str, str]]:
-    prompt_messages = row.get("prompt") or []
-    if prompt_messages:
-        return prompt_messages
+GEMMA_TOOL_CALL_SYNTAX_RE = re.compile(
+    r"Native tool-call syntax is mandatory:.*?whole SQL must be present\.\n*",
+    re.DOTALL,
+)
 
-    messages = row.get("messages") or []
-    return [message for message in messages if message.get("role") != "assistant"]
+QWEN_TOOL_CALL_SYNTAX_REPLACEMENT = (
+    "Native tool-call syntax is mandatory:\n"
+    "- Use exactly one native tool call per turn, emitted in your model's standard native "
+    "tool-calling format (not as prose, JSON-in-text, or markdown).\n"
+    "- A tool call ends the assistant turn. Stop immediately after emitting it and wait for "
+    "the tool response before writing any more scratch-pad text, another tool call, or a final answer.\n"
+    "- Never invent or write tool responses. Only use tool results that appear in the "
+    "conversation after your tool call.\n\n"
+)
+
+
+def adapt_messages_for_tool_call_format(
+    messages: List[Dict[str, str]], tool_call_format: str
+) -> List[Dict[str, str]]:
+    """Rewrite dataset system-prompt text that hardcodes Gemma's native call syntax.
+
+    The bundled system prompt tells the model to emit ``call:tool_name{...}`` verbatim.
+    Non-Gemma tokenizers already inject their own native tool-calling instructions via
+    ``apply_chat_template``, so the hardcoded Gemma syntax instructions conflict with (and
+    tend to override) the template's own guidance. Swap in a syntax-agnostic version.
+    """
+
+    if tool_call_format != "qwen":
+        return messages
+
+    adapted = []
+    for message in messages:
+        if message.get("role") == "system" and isinstance(message.get("content"), str):
+            new_content = GEMMA_TOOL_CALL_SYNTAX_RE.sub(QWEN_TOOL_CALL_SYNTAX_REPLACEMENT, message["content"])
+            if new_content != message["content"]:
+                message = {**message, "content": new_content}
+        adapted.append(message)
+    return adapted
+
+
+def get_generation_messages(row: Dict[str, Any], tool_call_format: str = "gemma") -> List[Dict[str, str]]:
+    prompt_messages = row.get("prompt") or []
+    if not prompt_messages:
+        messages = row.get("messages") or []
+        prompt_messages = [message for message in messages if message.get("role") != "assistant"]
+
+    return adapt_messages_for_tool_call_format(prompt_messages, tool_call_format)
 
 
 def preview_text(text: str, max_chars: int = 160) -> str:
@@ -223,12 +282,14 @@ def preview_text(text: str, max_chars: int = 160) -> str:
     return f"{compact[:max_chars - 3]}..."
 
 
-def filter_rows_by_prompt_length(rows: List[Dict[str, Any]], tokenizer, max_prompt_length: int) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def filter_rows_by_prompt_length(
+    rows: List[Dict[str, Any]], tokenizer, max_prompt_length: int, tool_call_format: str = "gemma"
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     kept_rows: List[Dict[str, Any]] = []
     skipped_rows: List[Dict[str, Any]] = []
 
     for row in rows:
-        prompt_messages = get_generation_messages(row)
+        prompt_messages = get_generation_messages(row, tool_call_format)
         tools = row.get("tools")
         prompt_text = render_prompt(tokenizer, prompt_messages, tools)
         prompt_token_count = len(tokenizer(prompt_text, truncation=False)["input_ids"])
@@ -309,18 +370,29 @@ def shard_rows_for_data_parallel(rows: List[Dict[str, Any]], num_shards: int) ->
     return shards
 
 
-def prepare_rows_for_generation(rows: List[Dict[str, Any]], tokenizer, max_prompt_length: int) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    rows, skipped_rows = filter_rows_by_prompt_length(rows, tokenizer, max_prompt_length)
+def prepare_rows_for_generation(
+    rows: List[Dict[str, Any]], tokenizer, max_prompt_length: int, tool_call_format: str = "gemma"
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    rows, skipped_rows = filter_rows_by_prompt_length(rows, tokenizer, max_prompt_length, tool_call_format)
     print(f"[inference] running generation for {len(rows)} prompts")
 
     return rows, skipped_rows
 
 
-def build_assistant_tool_message(
+def build_assistant_tool_messages(
     generated_text: str,
     tool_calls: List[Dict[str, Any]],
     tool_responses: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    tool_call_format: str = "gemma",
+) -> List[Dict[str, Any]]:
+    """Build the assistant (+ tool) messages to append for the next tool-loop round.
+
+    Gemma's chat template renders tool calls and their responses from a single
+    assistant message (via the ``tool_responses`` key). Qwen's template instead
+    expects a standard assistant message with ``tool_calls`` followed by one
+    ``role: tool`` message per call.
+    """
+
     normalized_calls = []
     for index, call in enumerate(tool_calls):
         function = call.get("function") or {}
@@ -335,19 +407,42 @@ def build_assistant_tool_message(
             }
         )
 
-    return {
-        "role": "assistant",
-        "content": "",
-        "reasoning": text_before_first_tool_call(generated_text),
-        "tool_calls": normalized_calls,
-        "tool_responses": [
+    reasoning = text_before_first_tool_call(generated_text, tool_call_format)
+
+    if tool_call_format == "qwen":
+        messages: List[Dict[str, Any]] = [
             {
-                "name": response.get("name", "unknown"),
-                "response": response.get("response", {"value": response.get("raw_response")}),
+                "role": "assistant",
+                "content": reasoning,
+                "tool_calls": normalized_calls,
             }
-            for response in tool_responses
-        ],
-    }
+        ]
+        for response in tool_responses:
+            response_value = response.get("response", {"value": response.get("raw_response")})
+            messages.append(
+                {
+                    "role": "tool",
+                    "name": response.get("name", "unknown"),
+                    "content": json.dumps(response_value, ensure_ascii=False, default=str),
+                }
+            )
+        return messages
+
+    return [
+        {
+            "role": "assistant",
+            "content": "",
+            "reasoning": reasoning,
+            "tool_calls": normalized_calls,
+            "tool_responses": [
+                {
+                    "name": response.get("name", "unknown"),
+                    "response": response.get("response", {"value": response.get("raw_response")}),
+                }
+                for response in tool_responses
+            ],
+        }
+    ]
 
 
 def build_generation_detail(
@@ -402,6 +497,31 @@ def gemma_tool_loop_stop_token_ids(tokenizer) -> List[int]:
     return token_ids
 
 
+def qwen_tool_loop_stop_token_ids(tokenizer) -> List[int]:
+    """Return Qwen-native stop tokens for one assistant/tool turn."""
+
+    stop_texts = [
+        "</tool_call>",     # complete tool call; let Python execute it
+        "<tool_response>",  # prevent the model from fabricating tool output
+        "<|im_end|>",       # normal assistant turn end
+    ]
+    token_ids: List[int] = []
+    for text in stop_texts:
+        token_id = token_id_for_text(tokenizer, text)
+        if token_id is not None and token_id not in token_ids:
+            token_ids.append(token_id)
+    eos_token_id = getattr(tokenizer, "eos_token_id", None)
+    if eos_token_id is not None and eos_token_id not in token_ids:
+        token_ids.append(int(eos_token_id))
+    return token_ids
+
+
+def tool_loop_stop_token_ids(tokenizer, tool_call_format: str) -> List[int]:
+    if tool_call_format == "qwen":
+        return qwen_tool_loop_stop_token_ids(tokenizer)
+    return gemma_tool_loop_stop_token_ids(tokenizer)
+
+
 def keep_first_tool_call_only(generated_text: str, tool_calls: List[Dict[str, Any]]) -> Tuple[str, List[Dict[str, Any]]]:
     """Keep one tool call per assistant turn and drop speculative text after it."""
 
@@ -422,8 +542,9 @@ def generate_one_with_vllm_tool_loop(
     eval_timeout: float,
     temperature: float,
     top_p: float,
+    tool_call_format: str = "gemma",
 ) -> Dict[str, Any]:
-    messages = [dict(message) for message in get_generation_messages(row)]
+    messages = [dict(message) for message in get_generation_messages(row, tool_call_format)]
     tools = row.get("tools")
     generated_parts: List[str] = []
     prompt_token_count = int(row["prompt_tokens"])
@@ -447,13 +568,13 @@ def generate_one_with_vllm_tool_loop(
             temperature=temperature,
             top_p=top_p,
             max_tokens=remaining_tokens,
-            stop_token_ids=gemma_tool_loop_stop_token_ids(tokenizer),
+            stop_token_ids=tool_loop_stop_token_ids(tokenizer, tool_call_format),
         )
         request_output = llm.generate([prompt_text], sampling_params=sampling_params, use_tqdm=False)[0]
         first_output = request_output.outputs[0] if request_output.outputs else None
         generated_text = (first_output.text or "").strip() if first_output else ""
         round_tokens = len(first_output.token_ids) if first_output else 0
-        tool_calls = extract_tool_calls(generated_text)
+        tool_calls = extract_tool_calls(generated_text, tool_call_format)
         if not tool_calls:
             completion_token_count += round_tokens
             if generated_text:
@@ -472,10 +593,10 @@ def generate_one_with_vllm_tool_loop(
         if generated_text:
             generated_parts.append(generated_text)
 
-        tool_responses = execute_tool_calls(tool_calls, timeout_s=eval_timeout)
+        tool_responses = execute_tool_calls(tool_calls, timeout_s=eval_timeout, tool_call_format=tool_call_format)
         for response in tool_responses:
             generated_parts.append(response["rendered"])
-        messages.append(build_assistant_tool_message(generated_text, tool_calls, tool_responses))
+        messages.extend(build_assistant_tool_messages(generated_text, tool_calls, tool_responses, tool_call_format))
         tool_rounds += 1
         tool_call_count += len(tool_calls)
 
@@ -529,8 +650,9 @@ async def generate_one_with_vllm_async_tool_loop(
     eval_timeout: float,
     temperature: float,
     top_p: float,
+    tool_call_format: str = "gemma",
 ) -> Dict[str, Any]:
-    messages = [dict(message) for message in get_generation_messages(row)]
+    messages = [dict(message) for message in get_generation_messages(row, tool_call_format)]
     tools = row.get("tools")
     generated_parts: List[str] = []
     prompt_token_count = int(row["prompt_tokens"])
@@ -591,9 +713,9 @@ async def generate_one_with_vllm_async_tool_loop(
             temperature=temperature,
             top_p=top_p,
             request_prefix=request_prefix,
-            stop_token_ids=gemma_tool_loop_stop_token_ids(tokenizer),
+            stop_token_ids=tool_loop_stop_token_ids(tokenizer, tool_call_format),
         )
-        tool_calls = extract_tool_calls(generated_text)
+        tool_calls = extract_tool_calls(generated_text, tool_call_format)
         if not tool_calls:
             completion_token_count += round_tokens
             if generated_text:
@@ -617,10 +739,12 @@ async def generate_one_with_vllm_async_tool_loop(
         if generated_text:
             generated_parts.append(generated_text)
 
-        tool_responses = await asyncio.to_thread(execute_tool_calls, tool_calls, eval_timeout)
+        tool_responses = await asyncio.to_thread(
+            execute_tool_calls, tool_calls, eval_timeout, tool_call_format
+        )
         for response in tool_responses:
             generated_parts.append(response["rendered"])
-        messages.append(build_assistant_tool_message(generated_text, tool_calls, tool_responses))
+        messages.extend(build_assistant_tool_messages(generated_text, tool_calls, tool_responses, tool_call_format))
         tool_rounds += 1
         tool_call_count += len(tool_calls)
 
@@ -662,6 +786,7 @@ def _vllm_generate_worker(
 
         tokenizer = load_tokenizer(llm_config["tokenizer_name_or_path"])
 
+        tool_call_format = llm_config.get("tool_call_format", "gemma")
         results = []
         for row in rows:
             if should_use_agentic_tool_loop(row, llm_config["max_tool_rounds"]):
@@ -677,6 +802,7 @@ def _vllm_generate_worker(
                         eval_timeout=llm_config.get("eval_timeout", 60.0),
                         temperature=llm_config["temperature"],
                         top_p=llm_config["top_p"],
+                        tool_call_format=tool_call_format,
                     )
                 )
                 continue
@@ -691,9 +817,11 @@ def _vllm_generate_worker(
             prediction_text = (first_output.text or "").strip() if first_output else ""
             completion_token_count = len(first_output.token_ids) if first_output else 0
 
-            if "call:" in prediction_text:
+            if "call:" in prediction_text or "<tool_call>" in prediction_text:
                 configure_tool_env(llm_config.get("database_dir", "databases"))
-                prediction_text = extract_and_execute_tools(prediction_text, timeout_s=llm_config.get("eval_timeout", 60.0))
+                prediction_text = extract_and_execute_tools(
+                    prediction_text, timeout_s=llm_config.get("eval_timeout", 60.0), tool_call_format=tool_call_format
+                )
 
             results.append(
                 build_generation_detail(
@@ -702,7 +830,7 @@ def _vllm_generate_worker(
                     prompt_token_count=int(row["prompt_tokens"]),
                     completion_token_count=completion_token_count,
                     tool_rounds=0,
-                    tool_call_count=len(extract_tool_calls(prediction_text)),
+                    tool_call_count=len(extract_tool_calls(prediction_text, tool_call_format)),
                     stop_reason="finished",
                 )
             )
@@ -745,6 +873,7 @@ def generate_predictions_with_vllm_data_parallel(
         "max_tool_rounds": args.max_tool_rounds,
         "database_dir": args.database_dir,
         "eval_timeout": args.eval_timeout,
+        "tool_call_format": args.tool_call_format,
     }
 
     ctx = mp.get_context("spawn")
@@ -857,7 +986,7 @@ def generate_predictions_with_vllm(rows: List[Dict[str, Any]], args: argparse.Na
     from nl2sql_gspo.model_utils import load_tokenizer
 
     tokenizer = load_tokenizer(args.model_name_or_path)
-    rows, skipped_rows = prepare_rows_for_generation(rows, tokenizer, args.max_prompt_length)
+    rows, skipped_rows = prepare_rows_for_generation(rows, tokenizer, args.max_prompt_length, args.tool_call_format)
 
     tensor_parallel_size = args.vllm_tensor_parallel_size
     data_parallel_size = args.vllm_data_parallel_size
@@ -991,7 +1120,7 @@ async def _generate_predictions_with_vllm_async_impl(
 
     tokenizer_source = resolve_vllm_tokenizer_source(args.model_name_or_path)
     tokenizer = load_tokenizer(tokenizer_source)
-    rows, skipped_rows = prepare_rows_for_generation(rows, tokenizer, args.max_prompt_length)
+    rows, skipped_rows = prepare_rows_for_generation(rows, tokenizer, args.max_prompt_length, args.tool_call_format)
 
     tensor_parallel_size = args.vllm_tensor_parallel_size
     vllm_max_model_len = args.vllm_max_model_len or (args.max_prompt_length + args.max_new_tokens)
@@ -1018,6 +1147,7 @@ async def _generate_predictions_with_vllm_async_impl(
     semaphore = asyncio.Semaphore(concurrency)
     log_each_example = should_log_each_example(len(rows))
     completed = 0
+    tool_call_format = args.tool_call_format
 
     async def generate_row(idx: int, row: Dict[str, Any]) -> Dict[str, Any]:
         nonlocal completed
@@ -1044,6 +1174,7 @@ async def _generate_predictions_with_vllm_async_impl(
                         eval_timeout=args.eval_timeout,
                         temperature=args.temperature,
                         top_p=args.top_p,
+                        tool_call_format=tool_call_format,
                     )
                 else:
                     available_context_tokens = vllm_max_model_len - prompt_token_count
@@ -1073,11 +1204,12 @@ async def _generate_predictions_with_vllm_async_impl(
                             top_p=args.top_p,
                             request_prefix=f"idx{source_idx}",
                         )
-                        if "call:" in generated_text:
+                        if "call:" in generated_text or "<tool_call>" in generated_text:
                             generated_text = await asyncio.to_thread(
                                 extract_and_execute_tools,
                                 generated_text,
                                 args.eval_timeout,
+                                tool_call_format,
                             )
                         generated = build_generation_detail(
                             row=row,
@@ -1085,7 +1217,7 @@ async def _generate_predictions_with_vllm_async_impl(
                             prompt_token_count=prompt_token_count,
                             completion_token_count=completion_tokens,
                             tool_rounds=0,
-                            tool_call_count=len(extract_tool_calls(generated_text)),
+                            tool_call_count=len(extract_tool_calls(generated_text, tool_call_format)),
                             stop_reason=(
                                 "context_window_limited"
                                 if completion_tokens >= request_max_tokens
@@ -1405,6 +1537,7 @@ def build_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
 def build_generation_stats(
     detailed_predictions: List[Dict[str, Any]],
     filtered_rows: List[Dict[str, Any]],
+    tool_call_format: str = "gemma",
 ) -> Dict[str, Any]:
     stop_reason_counts = Counter(
         str(detail.get("stop_reason") or "unknown") for detail in detailed_predictions
@@ -1421,7 +1554,7 @@ def build_generation_stats(
     ]
     tool_name_counts: Counter[str] = Counter()
     for detail in detailed_predictions:
-        for call in extract_tool_calls(detail.get("prediction_text", "")):
+        for call in extract_tool_calls(detail.get("prediction_text", ""), tool_call_format):
             name = call.get("function", {}).get("name", "")
             if name:
                 tool_name_counts[name] += 1
@@ -1524,8 +1657,8 @@ def _markdown_cell(value: Any, max_chars: int = 140) -> str:
     return text
 
 
-def _tool_order_from_detail(detail: Dict[str, Any]) -> str:
-    calls = extract_tool_calls(detail.get("prediction_text", ""))
+def _tool_order_from_detail(detail: Dict[str, Any], tool_call_format: str = "gemma") -> str:
+    calls = extract_tool_calls(detail.get("prediction_text", ""), tool_call_format)
     return " -> ".join(
         call.get("function", {}).get("name", "")
         for call in calls
@@ -1536,6 +1669,7 @@ def _tool_order_from_detail(detail: Dict[str, Any]) -> str:
 def build_per_example_report_rows(
     detailed_predictions: List[Dict[str, Any]],
     per_example_results: List[Dict[str, Any]],
+    tool_call_format: str = "gemma",
 ) -> List[Dict[str, Any]]:
     details_by_idx = {detail.get("idx"): detail for detail in detailed_predictions}
     rows: List[Dict[str, Any]] = []
@@ -1555,7 +1689,7 @@ def build_per_example_report_rows(
                 "completion_tokens": detail.get("completion_token_count", ""),
                 "tool_rounds": detail.get("tool_rounds", ""),
                 "tool_call_count": detail.get("tool_call_count", ""),
-                "tool_order": _tool_order_from_detail(detail) if detail else "",
+                "tool_order": _tool_order_from_detail(detail, tool_call_format) if detail else "",
                 "generation_error": detail.get("error_message", ""),
                 "pred_sql_extracted": result.get("pred_sql_extracted", ""),
                 "pred_executed": result.get("pred_executed", ""),
@@ -1982,7 +2116,7 @@ def main() -> None:
         "evaluation": evaluation_seconds,
         "total": total_seconds,
     }
-    summary["generation_stats"] = build_generation_stats(detailed_predictions, filtered_rows)
+    summary["generation_stats"] = build_generation_stats(detailed_predictions, filtered_rows, args.tool_call_format)
 
     with per_example_eval_path.open("w", encoding="utf-8") as handle:
         for record in per_example_results:
@@ -1991,7 +2125,7 @@ def main() -> None:
     with summary_path.open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, ensure_ascii=False, indent=2)
 
-    report_rows = build_per_example_report_rows(detailed_predictions, per_example_results)
+    report_rows = build_per_example_report_rows(detailed_predictions, per_example_results, args.tool_call_format)
     write_per_example_report_csv(report_rows, per_example_report_csv_path)
     write_summary_markdown(summary, summary_markdown_path, args, len(rows))
     write_run_report_markdown(summary, report_rows, run_report_path, args, len(rows))

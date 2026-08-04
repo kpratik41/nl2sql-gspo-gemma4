@@ -1,4 +1,4 @@
-"""Execute native Gemma tool calls during standalone inference."""
+"""Execute native tool calls (Gemma or Qwen format) during standalone inference."""
 
 from __future__ import annotations
 
@@ -149,6 +149,96 @@ def _split_args(args_text: str) -> Dict[str, Any]:
     return args
 
 
+QWEN_TOOL_CALL_RE = re.compile(
+    r"<tool_call>\s*<function=(?P<name>[A-Za-z_][A-Za-z0-9_]*)>(?P<body>.*?)</function>\s*(?:</tool_call>|\Z)",
+    re.DOTALL,
+)
+
+QWEN_PARAMETER_RE = re.compile(
+    r"<parameter=(?P<key>[A-Za-z_][A-Za-z0-9_]*)>\n?(?P<value>.*?)\n?</parameter>",
+    re.DOTALL,
+)
+
+
+def _parse_qwen_value(raw_value: str) -> Any:
+    value = (raw_value or "").strip()
+    if not value:
+        return ""
+    if value in {"true", "false"}:
+        return value == "true"
+    if value == "null":
+        return None
+    if value[0] in "[{":
+        try:
+            return json.loads(value)
+        except Exception:
+            pass
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    return value
+
+
+def _parse_qwen_parameters(body: str) -> Dict[str, Any]:
+    """Parse Qwen's ``<parameter=key>value</parameter>`` blocks."""
+
+    args: Dict[str, Any] = {}
+    for match in QWEN_PARAMETER_RE.finditer(body or ""):
+        args[match.group("key").strip()] = _parse_qwen_value(match.group("value"))
+    return args
+
+
+def extract_qwen_tool_calls(text: str) -> List[Dict[str, Any]]:
+    """Extract tool calls from Qwen completions.
+
+    Prefers Qwen's native ``<tool_call><function=...>`` syntax, but a worked example
+    embedded in this dataset's system prompt still demonstrates Gemma's compact
+    ``call:name{...}`` syntax, and models sometimes imitate that literal example over the
+    template's own tool-calling instructions. Fall back to the Gemma-style parser so those
+    calls still get executed instead of silently dropped.
+    """
+
+    text = text or ""
+    calls: List[Dict[str, Any]] = []
+    for index, match in enumerate(QWEN_TOOL_CALL_RE.finditer(text)):
+        calls.append(
+            {
+                "id": f"call_{index}",
+                "type": "function",
+                "function": {
+                    "name": match.group("name"),
+                    "arguments": _parse_qwen_parameters(match.group("body")),
+                },
+                "raw": match.group(0),
+                "start": match.start(),
+                "end": match.end(),
+            }
+        )
+    if calls:
+        return calls
+
+    for index, match in enumerate(TOOL_CALL_RE.finditer(text)):
+        calls.append(
+            {
+                "id": f"call_{index}",
+                "type": "function",
+                "function": {
+                    "name": match.group("name"),
+                    "arguments": _split_args(match.group("args")),
+                },
+                "raw": match.group(0),
+                "start": match.start(),
+                "end": match.end(),
+            }
+        )
+    return calls
+
+
 async def _execute_tool(name: str, arguments: Dict[str, Any], timeout_s: float) -> Any:
     import gen_tools
 
@@ -162,8 +252,11 @@ async def _execute_tool(name: str, arguments: Dict[str, Any], timeout_s: float) 
         return {"error": "tool_exception", "message": str(exc)}
 
 
-def extract_tool_calls(text: str) -> List[Dict[str, Any]]:
-    """Extract Gemma-style tool calls from generated text."""
+def extract_tool_calls(text: str, tool_call_format: str = "gemma") -> List[Dict[str, Any]]:
+    """Extract native tool calls from generated text (Gemma or Qwen format)."""
+
+    if tool_call_format == "qwen":
+        return extract_qwen_tool_calls(text)
 
     calls: List[Dict[str, Any]] = []
     for index, match in enumerate(TOOL_CALL_RE.finditer(text or "")):
@@ -185,17 +278,23 @@ def extract_tool_calls(text: str) -> List[Dict[str, Any]]:
     return calls
 
 
-def text_before_first_tool_call(text: str) -> str:
-    """Return model text before the first tool call, useful as Gemma reasoning."""
+def text_before_first_tool_call(text: str, tool_call_format: str = "gemma") -> str:
+    """Return model text before the first tool call, useful as reasoning."""
 
-    match = TOOL_CALL_RE.search(text or "")
+    text = text or ""
+    if tool_call_format == "qwen":
+        match = QWEN_TOOL_CALL_RE.search(text) or TOOL_CALL_RE.search(text)
+    else:
+        match = TOOL_CALL_RE.search(text)
     if not match:
-        return (text or "").strip()
-    return (text or "")[: match.start()].strip()
+        return text.strip()
+    return text[: match.start()].strip()
 
 
-def format_tool_response(name: str, response: Any) -> str:
+def format_tool_response(name: str, response: Any, tool_call_format: str = "gemma") -> str:
     response_json = json.dumps(response, ensure_ascii=False, default=str)
+    if tool_call_format == "qwen":
+        return f"<tool_response>\n{response_json}\n</tool_response>"
     return f"<|tool_response>response:{name}{{value:{response_json}}}<tool_response|>"
 
 
@@ -214,7 +313,9 @@ def _augment_tool_response(name: str, response: Any) -> Any:
     return augmented
 
 
-def execute_tool_calls(tool_calls: List[Dict[str, Any]], timeout_s: float = 60.0) -> List[Dict[str, Any]]:
+def execute_tool_calls(
+    tool_calls: List[Dict[str, Any]], timeout_s: float = 60.0, tool_call_format: str = "gemma"
+) -> List[Dict[str, Any]]:
     """Execute parsed tool calls and return responses in chat-template shape."""
 
     if not tool_calls:
@@ -236,20 +337,20 @@ def execute_tool_calls(tool_calls: List[Dict[str, Any]], timeout_s: float = 60.0
             "name": name,
             "response": {"value": response},
             "raw_response": response,
-            "rendered": format_tool_response(name, response),
+            "rendered": format_tool_response(name, response, tool_call_format),
         }
         for name, response in responses
     ]
 
 
-def extract_and_execute_tools(text: str, timeout_s: float = 60.0) -> str:
+def extract_and_execute_tools(text: str, timeout_s: float = 60.0, tool_call_format: str = "gemma") -> str:
     """Append compact tool responses after any tool calls found in ``text``."""
 
-    tool_calls = extract_tool_calls(text)
+    tool_calls = extract_tool_calls(text, tool_call_format)
     if not tool_calls:
         return text
 
-    responses = execute_tool_calls(tool_calls, timeout_s)
+    responses = execute_tool_calls(tool_calls, timeout_s, tool_call_format)
     rendered = [text.rstrip()]
     for response in responses:
         rendered.append(response["rendered"])
