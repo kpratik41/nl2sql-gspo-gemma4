@@ -8,6 +8,7 @@ Consolidate the latency, throughput, token/tool behavior, and BIRD execution acc
 
 - `outputs/latency_study/gemma4_31b_it_base_vllm024_latency/latency_study.md`
 - `outputs/latency_study/gemma4_31b_tool_rl_latency/latency_study.md`
+- `outputs/latency_study/sglang_gemma4_31b_it_latency/runs/sglang_tp4_c32_radix_on_n200`
 
 The base report contains the completed base, MTP, quantized, NVFP4, and E4B rows. The tool-call RL report currently has no completed runs.
 
@@ -16,6 +17,7 @@ The base report contains the completed base, MTP, quantized, NVFP4, and E4B rows
 - Backend: async vLLM
 - Primary vLLM env: `nl2sql_vllm024` / vLLM `0.24.0`
 - NVFP4 env: `nl2sql312` / vLLM `0.19.1`
+- SGLang env: `nl2sql_sglang` / SGLang `0.5.15`
 - Input data: `outputs/old-dev-schema-tool-unpatched.jsonl`
 - Gold/diff data: `data/bird_dev_data/raw/bird_dev_unpatched.json`
 - Temperature: `0.0`
@@ -44,6 +46,15 @@ Model: `google/gemma-4-31B-it`.
 | tp8_c32_n200 | 8 | 32 | default | 72.50% | 145/200 | 437.53 | 437.53 | 0.457 | 53.415 | 1.710 | 37.033 | 43.133 | 119.363 | 46.587 | 225.65 | 1.275 | 197/200 | `outputs/latency_study/gemma4_31b_it_base_vllm024_latency/runs/tp8_c32_n200` |
 | tp8_c64_n200 | 8 | 64 | default | 72.50% | 145/200 | 551.56 | 551.56 | 0.363 | 134.719 | 13.135 | 87.213 | 114.019 | 292.167 | 105.409 | 180.13 | 1.280 | 198/200 | `outputs/latency_study/gemma4_31b_it_base_vllm024_latency/runs/tp8_c64_n200` |
 | tp8_c128_n400 | 8 | 128 | default | 70.75% | 283/400 | 1052.72 (526.36/200eq) | 1052.72 (526.36/200eq) | 0.380 | 268.078 | 54.094 | 161.690 | 255.810 | 487.733 | 145.214 | 174.28 | 1.225 | 397/400 | `outputs/latency_study/gemma4_31b_it_base_vllm024_latency/runs/tp8_c128_n400` |
+
+## SGLang Backend Comparison
+
+Direct backend comparison against the vLLM TP=4/concurrency=32 base row. SGLang used Radix cache on, `mem_fraction_static=0.85`, and the same first 200 examples.
+
+| backend | run | TP | concurrency | radix | mem fraction | EX acc | correct/total | total gen sec | serving gen sec | serving ex/s | avg e2e sec | TTFT p50 | TTFT p95 | e2e p50 | e2e p95 | avg decode sec | out tok/s serving | avg tool calls | pred executed | path |
+| --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| vLLM | 01_base_gemma4_31b_it_tp4_c32_n200 | 4 | 32 | n/a | n/a | 72.00% | 144/200 | 1123.01 | 568.10 | 0.352 | 84.717 | 2.106 | 44.461 | 66.166 | 186.850 | 75.709 | 169.94 | 1.220 | 200/200 | `outputs/latency_study/gemma4_31b_quant_tp4_c32_latency/runs/01_base_gemma4_31b_it_tp4_c32_n200` |
+| SGLang | sglang_tp4_c32_radix_on_n200 | 4 | 32 | on | 0.85 | 70.50% | 141/200 | 790.15 | 740.75 | 0.270 | 107.040 | 4.861 | 46.407 | 88.006 | 238.250 | 83.409 | 138.22 | 1.280 | 197/200 | `outputs/latency_study/sglang_gemma4_31b_it_latency/runs/sglang_tp4_c32_radix_on_n200` |
 
 ## MTP Comparison
 
@@ -89,3 +100,4 @@ The report at `outputs/latency_study/gemma4_31b_tool_rl_latency/latency_study.md
 - MTP with captured stats improves serving generation time versus the non-MTP batched baseline, but the gain is modest for this tool-call NL2SQL workload.
 - NVIDIA NVFP4 gives the best TP=4/concurrency=32 throughput among the 31B variants tested while preserving similar 200-example accuracy.
 - Gemma 4 E4B IT is much faster than 31B but loses roughly 10 points of 200-example BIRD EX accuracy in this setup.
+- SGLang TP=4/concurrency=32 with Radix cache completed successfully, but it was slower than the comparable vLLM TP=4/concurrency=32 row on serving throughput and user-visible latency for this tool-call workload.
