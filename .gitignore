@@ -21,7 +21,7 @@ htmlcov/
 outputs/
 
 wandb/
-databases/
+databases
 logs/
 runs/
 
@@ -35,6 +35,7 @@ runs/
 *.log
 *.tmp
 *.bak
+temp.jsonl
 
 .DS_Store
 Thumbs.db
