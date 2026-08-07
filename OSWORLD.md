@@ -22,6 +22,47 @@ multi-item state tracking 43, conflict disambiguation 39, multimodal editing 30,
 tutorial following 22, dynamic environment 10, streaming interaction 6,
 human-in-the-loop 6.
 
+## What the 108 tasks actually contain
+
+Downloaded (`osworld-v2-2026.06.24`, 108 task classes) and profiled. Each task is
+a Python class subclassing `BaseTask` with `instruction`, `setup()` (downloads
+assets, launches apps via `SetupController`), and `evaluate()`.
+
+| | |
+|---|---|
+| Instruction length | median **443** chars, max **3,932** — these are briefs, not one-liners |
+| Distinct apps | **43** |
+| Most common | chrome 45, wps 13, vscode 8, mailhub 6, shotcut 6, gimp 5, zotero 5 |
+| `intermediate_eval_safe=False` | **33** tasks |
+| Needs proxy | 8 tasks |
+| References `HOST_SUFFIX` | 6 tasks (the self-hosted site suffix) |
+
+Checkpoints are not inline weight dicts — they are `metric_name` +
+`result_spec`/`expected_spec` blocks, with granular partial credit inside rule
+lists (e.g. one task expects 9 specific renamed PDFs, each worth credit). Leaf
+assertions across the suite total ~3,500, consistent with the paper's ~27.25
+checkpoints/task.
+
+**Two findings that change plans:**
+
+**33 tasks set `intermediate_eval_safe=False`.** `lib_run_single.py` falls back
+to final-only evaluation for those, so `--checkpoint_steps` yields a step-budget
+curve for roughly 3/4 of the suite, not all of it. Still worth enabling; just do
+not expect 108 curves.
+
+**There is no browser-only subset.** 17 tasks list `chrome` as their only
+`related_apps`, which looks like a cheap entry point for our Playwright harness.
+It is not: task_024 is chrome-only yet says "All required documents are on the
+desktop" and its evaluators use `vm_file`/`execute` to inspect VM filesystem
+state; task_073 is chrome-only yet references TeamChat and Mail. `related_apps`
+is unreliable as a capability filter. Every task assumes the desktop VM.
+
+Example of the flavour (task_006, ~680-char instruction): review lab
+applications in Thunderbird, cross-reference a LibreOffice Calc spreadsheet,
+apply multi-clause eligibility rules, then save 9 CVs as PDFs into a Desktop
+folder with a specific renaming convention. Three apps, cross-source reasoning,
+and a filesystem-checked result.
+
 ## Architecture decision: don't port tasks in, plug the policy out
 
 OSWorld owns the VM images, the environment abstraction, the checkpoint
@@ -230,8 +271,8 @@ than self-hosting all 31. GitLab must be self-hosted regardless
 - [x] Checkpoint evaluation re-enabled on the generic runner path
 - [x] Serving config updated for OSWorld's context and image budget
 - [x] ed25519 key pair generated for the AWS provider
-- [ ] Dataset access (needs your HF gate acceptance + token)
+- [x] Dataset access; 108 task classes downloaded and profiled
 - [ ] `aws configure` + import key pair + security group
-- [ ] Inspect task definitions with `manual_examine.py`
+- [ ] Inspect individual tasks interactively with `manual_examine.py` (needs a provider)
 - [ ] AWS provider setup (`docs/PROVIDER_SETUP.md`)
 - [ ] Smoke test on 2–3 tasks
