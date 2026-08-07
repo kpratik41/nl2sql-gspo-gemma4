@@ -49,3 +49,36 @@ generic runner never surfaced the flags that gate it.
 
 See [../OSWORLD.md](../OSWORLD.md) for the full setup, infrastructure notes, and
 cost estimates.
+
+## 7-task smoke subset
+
+`evaluation_examples/test_v2_smoke7.json` — copy it alongside `test_v2.json`, then:
+
+```bash
+.venv/bin/python scripts/python/run_multienv_qwen36.py \
+    --provider_name aws --headless --max_steps 500 \
+    --base_url http://<gpu-host>:8000/v1 \
+    --test_all_meta_path evaluation_examples/test_v2_smoke7.json \
+    --checkpoint_eval_mode inline --checkpoint_steps 50,100,150,250
+```
+
+Selected from the 55 tasks that survive every blocker filter (no `proxy=True`,
+no human-in-the-loop, no streaming/dynamic-environment flakiness, no GitLab —
+which is the one site you must self-host — and no `intermediate_eval_safe=False`,
+so all seven can produce a step-budget curve). Then chosen for diversity:
+7 distinct primary apps, all 7 non-blocked challenge phenomena covered, capped
+at 2 creative/CAD "ceiling probes" and 1 video-tutorial dependency so the batch
+returns usable signal instead of seven zeros.
+
+| Task | Apps | Phenomena | Why it is here |
+|---|---|---|---|
+| 010 | writer, calc, pdfviewer, thunderbird | conflict-disambig, cross-source, implicit-state, tutorial | classic multi-app office+mail workflow |
+| 019 | studio.streamview | multimodal-editing, visual-spatial | the one video-tutorial-following task |
+| 040 | excel | cross-source | shortest brief; pure spreadsheet reasoning |
+| 046 | chrome, mailhub, vaultbank, teamchat, file_manager, gimp | 5 phenomena | exercises the self-hosted web stack end-to-end |
+| 049 | wps | visual-spatial | slide editing against a source PDF |
+| 059 | geogebra | multimodal-editing, visual-spatial | precise geometric construction from an image |
+| 064 | vscode, libero | implicit-state, multimodal-editing | code-repair ceiling probe |
+
+Requires `WEBSITE_HOST_SUFFIX` to be set (e.g. the team-hosted `web.hku.icu`) —
+`desktop_env/controllers/website.py` raises at import if it is missing.
