@@ -1,0 +1,28 @@
+# Virtualenvs
+.venv/
+venv/
+
+# Third-party checkout — clone it yourself, see osworld/README.md.
+# 1.5GB and it has its own git history.
+OSWorld-V2/
+
+# Episode artifacts. One example episode is force-added for EXAMPLE_RUN.md;
+# everything else is regenerable output.
+runs/
+
+# Server + download logs
+logs/
+*.log
+logs_serve.out
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Never commit credentials or keys
+*.pem
+*.key
+id_*
+!id_*.md
+.env

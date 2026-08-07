@@ -1,0 +1,14 @@
+{
+  "task": "Search Wikipedia for 'Hedy Lamarr' and tell me what invention she is credited as a co-inventor of.",
+  "started": "20260807-042105",
+  "config": {
+    "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "max_steps": 12,
+    "keep_images": 3,
+    "coord_space": "norm_1000"
+  },
+  "status": "finished",
+  "result": "Hedy Lamarr is credited as a co-inventor of a radio guidance system (specifically for Allied torpedoes) that used spread spectrum and frequency hopping technology.",
+  "steps": 3,
+  "wall_s": 4.37
+}
