@@ -21,7 +21,7 @@ htmlcov/
 outputs/
 
 wandb/
-databases/
+/databases
 logs/
 runs/
 
