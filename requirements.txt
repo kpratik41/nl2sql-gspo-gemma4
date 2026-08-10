@@ -1,9 +1,21 @@
 torch==2.10.0
-transformers
+# trl is pinned to the version src/nl2sql_gspo/dynamic_sampling_trainer.py was
+# written against. That trainer subclasses GRPOTrainer and reimplements parts of
+# its generation path, so it tracks TRL internals rather than a public API.
+# On trl 1.9.2 it breaks in four places: _sync_tool_dicts is built per batch
+# instead of at init, _generate's return tuple drops num_items_in_batch and
+# reorders the rest, _get_per_token_logps_and_entropies returns a third value,
+# and vllm_importance_sampling_cap is split into clip_min/clip_max.
+trl==1.3.0
+# Pinned too: TRL and transformers move together. trl 1.3.0 only requires
+# transformers>=4.56.2, but "allowed" is not "tested" -- 1.3.0 predates the
+# newest 5.x releases, so this is held closer to what it shipped against.
+# Note transformers 5.x removed TrainingArguments.overwrite_output_dir, which
+# scripts/teacher/train_sft.py accounts for.
+transformers==5.9.0
 datasets
 accelerate
 deepspeed
-trl
 vllm==0.19.1
 wandb
 sentencepiece
