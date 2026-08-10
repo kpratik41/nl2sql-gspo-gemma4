@@ -538,6 +538,8 @@ def main():
             log_completions=args.log_completions,
             num_completions_to_print=args.num_completions_to_print,
             dataloader_num_workers=2,
+            # See the DynamicSampling config below for why 1800s is too short.
+            ddp_timeout=7200,
         )
 
         trainer = AsyncGRPOTrainer(
@@ -632,6 +634,15 @@ def main():
         num_completions_to_print=args.num_completions_to_print,
 
         dataloader_num_workers=2,
+
+        # Collective timeout for the default process group. The rollout path has
+        # long single-rank sections (the main process's vLLM generate call, and
+        # each rank's serial tool execution), so ranks routinely sit in a
+        # collective waiting on a straggler. The HF default of 1800s is not
+        # enough at this step time and killed two runs mid-rollout.
+        # Note: TORCH_NCCL_TIMEOUT_MS in scripts/launch_train.sh is inert --
+        # PyTorch does not read it. This is the knob that actually applies.
+        ddp_timeout=7200,
     )
 
     trainer = DynamicSamplingGRPOTrainer(

@@ -38,6 +38,9 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # on the very first step (cold caches) which would otherwise trigger the default
 # NCCL watchdog (480s) and kill all ranks. Bump the heartbeat & collective timeouts.
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC="${TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC:-3600}"
+# NOTE: TORCH_NCCL_TIMEOUT_MS is NOT read by PyTorch -- the collective timeout
+# comes from TrainingArguments.ddp_timeout (set to 7200s in train_gspo_nl2sql.py).
+# Kept only so an explicit override in the environment is not silently dropped.
 export TORCH_NCCL_TIMEOUT_MS="${TORCH_NCCL_TIMEOUT_MS:-3600000}"
 # Disable async-error tear-downs so that one slow rank doesn't take the whole job.
 export TORCH_NCCL_ASYNC_ERROR_HANDLING="${TORCH_NCCL_ASYNC_ERROR_HANDLING:-0}"
