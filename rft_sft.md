@@ -328,6 +328,244 @@ Nothing in A2–A4 exists yet and none of it is arriving from elsewhere — each
 stage has to be written in this repo before it can run. The file names in the
 stage sections above are the intended targets to create.
 
+## SFT Data generation - Run 2
+
+Run 2 uses the fresh base-model pass@16 run:
+
+```text
+outputs/passk/train6601_bare_tool_gemma4-31b-it_temp1p2_tp2_shards4/merged
+```
+
+This run used `TP=2`, `NUM_SHARDS=4`, `num_generations=16`,
+`temperature=1.2`, and `top_p=1.0` over all `6601` training examples.
+
+### Run 2 pass@16 bands
+
+| band | definition | examples | planned SFT treatment |
+| --- | --- | ---: | --- |
+| all-wrong | `0 / 16` correct | `1228` | privileged teacher traces through A2/A2b |
+| heterogeneous / mixed | `1-15 / 16` correct | `697` | select one correct pass@16 student trace |
+| all-correct | `16 / 16` correct | `4676` | select `2x` the mixed count from correct pass@16 traces |
+
+For the all-correct band, `2 * 697 = 1394`, so Run 2 will use:
+
+| student source | records |
+| --- | ---: |
+| mixed band: one correct trace per example | `697` selected, `691` after strict phrase filter |
+| all-correct band: sampled/capped correct traces | `1394` |
+| **pass@16-derived student traces total** | **`2091` selected, `2085` after strict phrase filter** |
+
+This replaces the need to rerun A3a self-trace generation. The pass@16
+candidate file already contains non-privileged student generations with
+`prediction_text`, tool calls, tool responses, final SQL, and BIRD correctness
+labels. We should convert selected correct candidates into SFT records, masking
+tool responses so the model is not trained to generate tool outputs.
+
+Selection rule:
+
+1. Keep all `697` heterogeneous examples, selecting one correct candidate per
+   `idx`.
+2. Keep `1394` examples from the `4676` all-correct band, selecting one correct
+   candidate per `idx`.
+3. Prefer cleaner candidates when multiple correct candidates are available:
+   fewer tool rounds, successful `stop_reason=finished`, no malformed tool
+   transcript, shorter completion if still tied.
+
+### Run 2 all-wrong teacher data
+
+`scripts/teacher/make_target_idx.py` dropped the gold-SQL execution failures
+from the all-wrong band:
+
+| quantity | count | file |
+| --- | ---: | --- |
+| all-wrong examples | `1228` | pass@16 per-example summary |
+| gold SQL execution failures dropped | `8` | `outputs/teacher/target_idx_summary.json` |
+| teachable all-wrong targets | `1220` | `outputs/teacher/target_idx_all_wrong.txt` |
+
+A2 greedy teacher generation has completed:
+
+```text
+outputs/teacher/a2_greedy_tp2_shards4/merged/teacher_traces.jsonl
+```
+
+| A2 greedy metric | value |
+| --- | ---: |
+| targets | `1220` |
+| generated samples | `1220` |
+| verified samples | `442` |
+| kept samples / unique ids | `430` |
+| hard-leak samples | `20` |
+| target coverage | `35.25%` |
+
+Leakage audit: `0` kept rows have hard leaks and `0` kept rows are unverified.
+
+A2b completed on A2-uncovered all-wrong ids:
+
+```text
+outputs/teacher/target_idx_all_wrong_a2_uncovered.txt
+outputs/teacher/a2b_uncovered_tp2_shards4/
+```
+
+| A2b setting | value |
+| --- | --- |
+| `TP` | `2` |
+| `NUM_SHARDS` | `4` |
+| `NUM_SAMPLES` | `8` |
+| `TEMPERATURE` | `0.7` |
+| `TOP_P` | `1.0` |
+| `HINT` | `full_sql` |
+| targets | `790` |
+| total sampled rollouts | `6320` |
+
+Shard split:
+
+| shard | targets | sampled rollouts |
+| ---: | ---: | ---: |
+| `0` | `205` | `1640` |
+| `1` | `206` | `1648` |
+| `2` | `192` | `1536` |
+| `3` | `187` | `1496` |
+
+A2b result:
+
+| A2b metric | value |
+| --- | ---: |
+| generated samples | `6320` |
+| verified samples | `370` |
+| kept samples | `283` |
+| kept unique ids | `109` |
+| hard-leak samples | `181` |
+| target coverage over A2-uncovered ids | `13.8%` |
+| copy rate over kept | `55.83%` |
+
+Leakage audit: `0` kept rows have hard leaks and `0` kept rows are unverified.
+
+Because A2b targets only A2-uncovered ids, the final teacher unique-id count is:
+
+```text
+teacher_unique = 430 + 109 = 539
+```
+
+After the strict phrase cleanup described below, `458` teacher records remain
+for SFT (`385` from A2 and `73` from A2b).
+
+### Run 2 planned SFT composition
+
+| source | records / unique ids |
+| --- | ---: |
+| pass@16 mixed student traces | `697` selected, `691` after strict phrase filter |
+| pass@16 all-correct student traces | `1394` |
+| A2 greedy all-wrong teacher traces | `430` selected, `385` after strict phrase filter |
+| A2b sampled all-wrong teacher traces | `109` selected, `73` after strict phrase filter |
+| **final Run 2 SFT size** | **`2543` after strict phrase filter** |
+
+This composition intentionally avoids letting the `4676` all-correct examples
+dominate the SFT set while still keeping a strong hint-free student anchor:
+all mixed examples are included, and all-correct contributes exactly twice the
+mixed count.
+
+### Run 2 generated SFT files
+
+Builder:
+
+```text
+scripts/teacher/build_run2_sft_dataset.py
+```
+
+Inputs:
+
+| input | path |
+| --- | --- |
+| train source rows | `outputs/train-6601-schema-bare-tool.jsonl` |
+| pass@16 per-example bands | `outputs/passk/train6601_bare_tool_gemma4-31b-it_temp1p2_tp2_shards4/merged/passk_per_example.jsonl` |
+| pass@16 candidates | `outputs/passk/train6601_bare_tool_gemma4-31b-it_temp1p2_tp2_shards4/merged/passk_candidates.jsonl` |
+| A2 greedy teacher traces | `outputs/teacher/a2_greedy_tp2_shards4/merged/teacher_traces.jsonl` |
+| A2b sampled teacher traces | `outputs/teacher/a2b_uncovered_tp2_shards4/merged/teacher_traces.jsonl` |
+| all-wrong teacher targets | `outputs/teacher/target_idx_all_wrong.txt` |
+| A2-uncovered teacher targets | `outputs/teacher/target_idx_all_wrong_a2_uncovered.txt` |
+| target summary | `outputs/teacher/target_idx_summary.json` |
+
+Outputs, all preserved separately:
+
+| output | records | path |
+| --- | ---: | --- |
+| mixed pass@16 student records | `691` | `outputs/teacher/rft_run2/run2_mixed_pass16_records.jsonl` |
+| all-correct pass@16 student records | `1394` | `outputs/teacher/rft_run2/run2_all_correct_pass16_records.jsonl` |
+| all pass@16 student records | `2085` | `outputs/teacher/rft_run2/run2_student_pass16_records.jsonl` |
+| all-wrong teacher records (A2 + A2b) | `458` | `outputs/teacher/rft_run2/run2_teacher_records.jsonl` |
+| combined, sorted by source group | `2543` | `outputs/teacher/rft_run2/train_rft_31b_run2.sorted.jsonl` |
+| **combined, shuffled for SFT** | **`2543`** | **`outputs/teacher/rft_run2/train_rft_31b_run2.shuffled.jsonl`** |
+| build summary | n/a | `outputs/teacher/rft_run2/run2_build_summary.json` |
+| strict phrase removals | `87` | `outputs/teacher/rft_run2/run2_strict_phrase_removed_records.json` |
+
+
+Strict phrase cleanup removed `87` selected records before writing the final SFT files:
+
+| removed band | records removed |
+| --- | ---: |
+| mixed pass@16 | `6` |
+| A2 teacher | `45` |
+| A2b teacher | `36` |
+| all-correct pass@16 | `0` |
+
+The raw source artifacts are preserved unchanged; only the Run 2 derived JSONLs under
+`outputs/teacher/rft_run2/` were rewritten after filtering.
+
+The final training file should be the shuffled file:
+
+```text
+outputs/teacher/rft_run2/train_rft_31b_run2.shuffled.jsonl
+```
+
+Hugging Face `Trainer` shuffles the training dataloader by default, but Run 2
+also writes a deterministic pre-shuffled JSONL (`shuffle_seed=0`). That keeps
+the file safe for any sequential/streaming reader and avoids source-group
+ordering effects before the trainer-level shuffle.
+
+Final data gate on the shuffled file:
+
+| check | result |
+| --- | ---: |
+| records | `2543` |
+| distinct ids | `2543` |
+| records with `internal_reference` | `0` |
+| privileged teacher records with hard leaks | `0` |
+| strict forbidden-phrase records | `0` |
+| empty-message records | `0` |
+| max tokens after chat-template rendering | `13720` |
+| records over `MAX_SEQ_LEN=20480` | `0` |
+| records with no supervised assistant tokens | `0` |
+| masking boundary failures | `0` |
+| tool-call reasoning fields starting with literal `thought` | `0` |
+| repeated leading `thought` labels in final assistant content | `0` |
+| extracted final SQL exactly matching `teacher_final_sql` | `2543 / 2543` |
+
+Run 2 also normalizes decoded Gemma thought-channel artifacts during SFT
+assembly:
+
+- Structured assistant `reasoning` on tool-call turns strips leading decoded
+  `thought` labels, because the Gemma chat template renders the thought channel
+  itself.
+- The upstream tool-loop transcript helper now applies the same cleanup before
+  storing `reasoning`, so future pass@k/teacher trace generation does not
+  preserve decoded channel labels in structured tool-call turns.
+- Plain final assistant `content` keeps a single leading `thought` label when it
+  appears after tool responses, matching current RL inference `prediction_text`,
+  but repeated labels such as `thought\nthought\n...` are collapsed to one.
+- The loaded `google/gemma-4-31B-it` tokenizer resolves to the cached main
+  snapshot `842da3794eaa0b77d5f08bae87a17459d91ff475` for chat-template
+  rendering.
+
+Use this SFT command shape for Run 2:
+
+```bash
+TRAIN_FILE=outputs/teacher/rft_run2/train_rft_31b_run2.shuffled.jsonl \
+OUT=outputs/sft/gemma4_31b_rft_sft_run2 \
+MODEL=/home/ec2-user/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475 \
+PY=/home/ec2-user/miniconda3/envs/nl2sql312/bin/python \
+bash scripts/teacher/run_a4_sft.sh
+```
+
 ### A1.1 result — the band sizes
 
 From the completed base-model pass@16

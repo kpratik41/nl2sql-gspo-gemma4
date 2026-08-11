@@ -185,13 +185,23 @@ def extract_tool_calls(text: str) -> List[Dict[str, Any]]:
     return calls
 
 
+def strip_decoded_thought_prefix(text: str) -> str:
+    """Remove Gemma thought-channel labels left after special-token decoding."""
+    stripped = (text or "").strip()
+    while stripped == "thought" or stripped.startswith("thought\n"):
+        if stripped == "thought":
+            return ""
+        stripped = stripped[len("thought\n") :].lstrip()
+    return stripped
+
+
 def text_before_first_tool_call(text: str) -> str:
     """Return model text before the first tool call, useful as Gemma reasoning."""
 
     match = TOOL_CALL_RE.search(text or "")
     if not match:
-        return (text or "").strip()
-    return (text or "")[: match.start()].strip()
+        return strip_decoded_thought_prefix(text or "")
+    return strip_decoded_thought_prefix((text or "")[: match.start()])
 
 
 def format_tool_response(name: str, response: Any) -> str:
