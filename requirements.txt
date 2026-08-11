@@ -1,23 +1,20 @@
+# Direct runtime dependencies are pinned for reproducible training and inference.
+# Transitive dependencies are intentionally managed by pip's resolver.
+
+# Core training stack. TRL is pinned because dynamic_sampling_trainer.py relies
+# on GRPOTrainer internals rather than a stable public API.
 torch==2.10.0
-# trl is pinned to the version src/nl2sql_gspo/dynamic_sampling_trainer.py was
-# written against. That trainer subclasses GRPOTrainer and reimplements parts of
-# its generation path, so it tracks TRL internals rather than a public API.
-# On trl 1.9.2 it breaks in four places: _sync_tool_dicts is built per batch
-# instead of at init, _generate's return tuple drops num_items_in_batch and
-# reorders the rest, _get_per_token_logps_and_entropies returns a third value,
-# and vllm_importance_sampling_cap is split into clip_min/clip_max.
-trl==1.3.0
-# Pinned too: TRL and transformers move together. trl 1.3.0 only requires
-# transformers>=4.56.2, but "allowed" is not "tested" -- 1.3.0 predates the
-# newest 5.x releases, so this is held closer to what it shipped against.
-# Note transformers 5.x removed TrainingArguments.overwrite_output_dir, which
-# scripts/teacher/train_sft.py accounts for.
 transformers==5.9.0
-datasets
-accelerate
-deepspeed
+trl==1.3.0
+datasets==5.0.0
+accelerate==1.14.0
+deepspeed==0.19.2
+
+# Inference and experiment tracking.
 vllm==0.19.1
-wandb
-sentencepiece
-protobuf
-rank-bm25
+wandb==0.28.0
+
+# Tokenization, serialization, and data generation.
+sentencepiece==0.2.1
+protobuf==6.33.6
+rank-bm25==0.2.2
