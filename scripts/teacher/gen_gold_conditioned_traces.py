@@ -28,10 +28,9 @@ This is a GPU/vLLM script; run it on a Ray worker node (see ray_teacher_job.sh).
 import argparse
 import asyncio
 import json
-import os
 import sys
 import time
-import uuid
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -81,26 +80,26 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--model_name_or_path",
-        required=True,
+        default=None,
         help="Teacher model / checkpoint (e.g. RUN A ckpt-20).",
     )
     p.add_argument(
         "--input_file",
-        required=True,
+        default=None,
         help="Bare-tool train jsonl (system+user prompt, gold_sql field).",
     )
     p.add_argument(
         "--database_dir",
-        required=True,
+        default=None,
         help="Train databases dir (get_database_path resolves <db_id>).",
     )
-    p.add_argument("--output_dir", required=True)
+    p.add_argument("--output_dir", default=None)
     p.add_argument(
         "--target_idx_file",
         type=str,
         default=None,
         help=(
-            "Optional JSON list of source_idx to target "
+            "Optional JSON list or newline text file of source_idx to target "
             "(e.g. the all-wrong band). Default: all rows."
         ),
     )
@@ -132,6 +131,23 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.90)
     p.add_argument("--vllm_max_model_len", type=int, default=None)
     p.add_argument("--vllm_async_concurrency", type=int, default=16)
+    p.add_argument("--shard_index", type=int, default=0)
+    p.add_argument("--num_shards", type=int, default=1)
+    p.add_argument(
+        "--merge_shard_dirs",
+        nargs="*",
+        default=None,
+        help=(
+            "Merge completed shard directories instead of running generation. "
+            "Each shard dir must contain teacher_traces.jsonl."
+        ),
+    )
+    p.add_argument(
+        "--merge_output_dir",
+        type=str,
+        default=None,
+        help="Directory where merged teacher_traces.jsonl/teacher_summary.json are written.",
+    )
     p.add_argument("--near_copy_threshold", type=float, default=0.95)
     p.add_argument("--overwrite", action="store_true")
     return p.parse_args()
@@ -150,13 +166,31 @@ def load_tool_rows(input_file: str) -> List[Dict[str, Any]]:
     return rows
 
 
+def load_target_ids(path: str) -> List[int]:
+    text = Path(path).read_text(encoding="utf-8").strip()
+    if not text:
+        return []
+    if text[0] == "[":
+        return [int(x) for x in json.loads(text)]
+    ids: List[int] = []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            ids.append(int(line))
+        except ValueError as exc:
+            raise ValueError(f"{path}:{line_no}: expected integer source_idx") from exc
+    return ids
+
+
 def select_targets(
     rows: List[Dict[str, Any]],
     target_idx_file: Optional[str],
     limit: int,
 ) -> List[Dict[str, Any]]:
     if target_idx_file:
-        target_ids = set(int(x) for x in json.load(open(target_idx_file)))
+        target_ids = set(load_target_ids(target_idx_file))
         rows = [
             r
             for r in rows
@@ -173,6 +207,24 @@ def select_targets(
         rows = rows[:limit]
 
     return rows
+
+
+def shard_targets(
+    rows: List[Dict[str, Any]],
+    shard_index: int,
+    num_shards: int,
+) -> List[Dict[str, Any]]:
+    if num_shards < 1:
+        raise ValueError("--num_shards must be >= 1")
+    if shard_index < 0 or shard_index >= num_shards:
+        raise ValueError("--shard_index must be in [0, num_shards)")
+    if num_shards == 1:
+        return rows
+    return [
+        row
+        for position, row in enumerate(rows)
+        if position % num_shards == shard_index
+    ]
 
 
 def build_teacher_row(
@@ -393,9 +445,17 @@ async def run(args: argparse.Namespace) -> Dict[str, Any]:
         args.target_idx_file,
         args.limit,
     )
+    unsharded_target_count = len(targets)
+    targets = shard_targets(
+        targets,
+        args.shard_index,
+        args.num_shards,
+    )
     print(
         f"[teacher] loaded {len(all_rows)} rows | "
         f"targeting {len(targets)}"
+        f" shard={args.shard_index}/{args.num_shards}"
+        f" unsharded_targets={unsharded_target_count}"
     )
 
     teacher_rows = [
@@ -410,13 +470,6 @@ async def run(args: argparse.Namespace) -> Dict[str, Any]:
     )
 
     if skipped:
-        (
-            Path(args.output_dir) / "skipped_prompts.jsonl"
-        ).write_text(
-            "\n".join(json.dumps(s) for s in skipped),
-            encoding="utf-8",
-        )
-                
         (
             Path(args.output_dir) / "skipped_prompts.jsonl"
         ).write_text(
@@ -594,69 +647,83 @@ async def run(args: argparse.Namespace) -> Dict[str, Any]:
     return {
         "results": results,
         "n_targets": len(teacher_rows),
+        "unsharded_target_count": unsharded_target_count,
+        "n_skipped_prompts": len(skipped),
     }
 
 
-def main() -> None:
-    args = parse_args()
-    out_dir = Path(args.output_dir)
-
-    if out_dir.exists() and any(out_dir.iterdir()) and not args.overwrite:
-        raise FileExistsError(
-            f"{out_dir} exists and is non-empty; use --overwrite"
-        )
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    t0 = time.time()
-    bundle = asyncio.run(run(args))
-    results = bundle["results"]
-
-    # write per-sample traces
-    traces_path = out_dir / "teacher_traces.jsonl"
-    with traces_path.open("w", encoding="utf-8") as handle:
-        for r in results:
-            handle.write(json.dumps(r, ensure_ascii=False) + "\n")
-
-    # per-target: was any sample kept?
+def summarize_results(
+    results: List[Dict[str, Any]],
+    *,
+    args: argparse.Namespace,
+    bundle: Dict[str, Any],
+    elapsed_s: float,
+    merged_shards: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     kept_by_idx: Dict[int, bool] = {}
-    for r in results:
-        kept_by_idx[r["idx"]] = (
-            kept_by_idx.get(r["idx"], False) or bool(r["kept"])
+    for row in results:
+        kept_by_idx[int(row["idx"])] = (
+            kept_by_idx.get(int(row["idx"]), False) or bool(row["kept"])
         )
 
     kept_flags = [
-        r["copy_flags"]
-        for r in results
-        if r["kept"]
+        row["copy_flags"]
+        for row in results
+        if row["kept"]
     ]
 
     summary = {
         "model": args.model_name_or_path,
         "input_file": args.input_file,
+        "database_dir": args.database_dir,
+        "target_idx_file": args.target_idx_file,
         "hint_strategy": args.hint_strategy,
         "num_samples": args.num_samples,
+        "temperature": args.temperature,
+        "top_p": args.top_p,
+        "shard_index": args.shard_index,
+        "num_shards": args.num_shards,
+        "unsharded_target_count": bundle.get("unsharded_target_count"),
         "n_targets": bundle["n_targets"],
+        "n_skipped_prompts": bundle.get("n_skipped_prompts", 0),
         "n_samples_total": len(results),
         "n_verified_samples": sum(
-            1 for r in results if r["verified"]
+            1 for row in results if row["verified"]
         ),
         "n_kept_samples": sum(
-            1 for r in results if r["kept"]
+            1 for row in results if row["kept"]
         ),
         "n_leaked_samples": sum(
-            1 for r in results if r["leak_reasons"]
+            1 for row in results if row["leak_reasons"]
         ),
         "targets_with_kept_trace": sum(
-            1 for v in kept_by_idx.values() if v
+            1 for value in kept_by_idx.values() if value
         ),
         "target_coverage_rate": (
-            sum(1 for v in kept_by_idx.values() if v)
+            sum(1 for value in kept_by_idx.values() if value)
             / max(1, bundle["n_targets"])
         ),
         "copy_rate_over_kept": summarize_copy_rate(kept_flags),
-        "elapsed_s": round(time.time() - t0, 1),
+        "stop_reasons": dict(Counter(row.get("stop_reason", "") for row in results)),
+        "elapsed_s": round(elapsed_s, 1),
     }
+    if merged_shards is not None:
+        summary["merged_shards"] = merged_shards
+    return summary
+
+
+def write_run_outputs(
+    out_dir: Path,
+    results: List[Dict[str, Any]],
+    summary: Dict[str, Any],
+) -> None:
+    traces_path = out_dir / "teacher_traces.jsonl"
+    with traces_path.open("w", encoding="utf-8") as handle:
+        for row in sorted(
+            results,
+            key=lambda item: (int(item["idx"]), int(item["sample_id"])),
+        ):
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     (out_dir / "teacher_summary.json").write_text(
         json.dumps(summary, indent=2),
@@ -666,6 +733,134 @@ def main() -> None:
     print("\n=== teacher summary ===")
     print(json.dumps(summary, indent=2))
     print("traces ->", traces_path)
+
+
+def read_jsonl(path: Path) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_no, line in enumerate(handle, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{path}:{line_no}: invalid JSON") from exc
+    return rows
+
+
+def ensure_output_dir(out_dir: Path, overwrite: bool) -> None:
+    if out_dir.exists() and any(out_dir.iterdir()) and not overwrite:
+        raise FileExistsError(
+            f"{out_dir} exists and is non-empty; use --overwrite"
+        )
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+
+def merge_shard_outputs(args: argparse.Namespace) -> None:
+    shard_dirs = [Path(path) for path in args.merge_shard_dirs or []]
+    if not shard_dirs:
+        raise ValueError("--merge_shard_dirs requires at least one shard directory")
+
+    out_dir = Path(args.merge_output_dir or args.output_dir or "merged")
+    ensure_output_dir(out_dir, args.overwrite)
+
+    results: List[Dict[str, Any]] = []
+    summaries: List[Dict[str, Any]] = []
+    seen_keys = set()
+    duplicate_keys: List[Tuple[int, int]] = []
+
+    for shard_dir in shard_dirs:
+        traces_path = shard_dir / "teacher_traces.jsonl"
+        summary_path = shard_dir / "teacher_summary.json"
+        if not traces_path.exists():
+            raise FileNotFoundError(traces_path)
+        shard_rows = read_jsonl(traces_path)
+        print(f"[teacher-merge] reading {len(shard_rows)} traces from {traces_path}")
+        for row in shard_rows:
+            key = (int(row["idx"]), int(row["sample_id"]))
+            if key in seen_keys:
+                duplicate_keys.append(key)
+            seen_keys.add(key)
+            results.append(row)
+        if summary_path.exists():
+            summaries.append(json.loads(summary_path.read_text(encoding="utf-8")))
+
+    if duplicate_keys:
+        preview = ", ".join(f"{idx}:{sample}" for idx, sample in duplicate_keys[:10])
+        raise ValueError(f"Duplicate idx:sample keys across shards: {preview}")
+
+    elapsed_s = sum(float(summary.get("elapsed_s", 0.0)) for summary in summaries)
+    n_targets = sum(int(summary.get("n_targets", 0)) for summary in summaries)
+    unsharded = max(
+        (int(summary.get("unsharded_target_count") or 0) for summary in summaries),
+        default=n_targets,
+    )
+    bundle = {
+        "n_targets": n_targets or len({int(row["idx"]) for row in results}),
+        "unsharded_target_count": unsharded,
+        "n_skipped_prompts": sum(int(summary.get("n_skipped_prompts", 0)) for summary in summaries),
+    }
+
+    first_summary = summaries[0] if summaries else {}
+    summary_to_arg = {
+        "model": "model_name_or_path",
+        "input_file": "input_file",
+        "database_dir": "database_dir",
+        "target_idx_file": "target_idx_file",
+        "hint_strategy": "hint_strategy",
+        "num_samples": "num_samples",
+        "temperature": "temperature",
+        "top_p": "top_p",
+    }
+    for summary_field, arg_field in summary_to_arg.items():
+        if summary_field in first_summary:
+            setattr(args, arg_field, first_summary[summary_field])
+    args.shard_index = 0
+    args.num_shards = len(shard_dirs)
+
+    summary = summarize_results(
+        results,
+        args=args,
+        bundle=bundle,
+        elapsed_s=elapsed_s,
+        merged_shards=[str(path) for path in shard_dirs],
+    )
+    write_run_outputs(out_dir, results, summary)
+
+
+def validate_generation_args(args: argparse.Namespace) -> None:
+    missing = [
+        name
+        for name in ("model_name_or_path", "input_file", "database_dir", "output_dir")
+        if not getattr(args, name)
+    ]
+    if missing:
+        joined = ", ".join(f"--{name}" for name in missing)
+        raise SystemExit(f"Missing required generation args: {joined}")
+
+
+def main() -> None:
+    args = parse_args()
+    if args.merge_shard_dirs is not None:
+        merge_shard_outputs(args)
+        return
+
+    validate_generation_args(args)
+    out_dir = Path(args.output_dir)
+
+    ensure_output_dir(out_dir, args.overwrite)
+
+    t0 = time.time()
+    bundle = asyncio.run(run(args))
+    results = bundle["results"]
+    summary = summarize_results(
+        results,
+        args=args,
+        bundle=bundle,
+        elapsed_s=time.time() - t0,
+    )
+    write_run_outputs(out_dir, results, summary)
 
 
 if __name__ == "__main__":
