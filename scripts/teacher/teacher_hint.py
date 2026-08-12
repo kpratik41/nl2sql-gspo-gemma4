@@ -14,7 +14,9 @@ Two responsibilities:
 2. Leakage + copy detection, applied to the generated trajectory *before* it
    becomes training data:
    - ``detect_text_leakage``: the assistant text (scratchpad / tool calls /
-     final answer) must never reference the reference / gold / provided SQL.
+     final answer) must never reference the hidden reference / gold / provided
+     SQL.  Public prompt hints and normal verification language such as
+     "expected output columns" are not treated as privileged leakage.
    - ``detect_copy``: even without verbalizing, a trajectory that just pastes
      the gold as its first tool call (or final-answers gold with zero tool
      verification) is transcription, not reasoning. These are flagged (and
@@ -135,13 +137,12 @@ def normalize_sql(sql: str) -> str:
 _LEAK_PHRASE_RE = re.compile(
     r"\b("
     r"reference(?:\s+(?:solution|sql|query|answer))?"
-    r"|gold(?:en)?(?:\s+(?:sql|query|answer|solution|standard))?"
+    r"|gold(?:en)?\s+(?:sql|query|answer|solution|standard)"
     r"|ground.?truth"
     r"|provided\s+(?:sql|query|solution|answer)"
     r"|given\s+(?:sql|query|solution|answer)"
-    r"|expected\s+(?:sql|query|answer|output|rows|result)"
-    r"|the\s+hint\s+(?:says|provides|gives|contains)"
-    r"|as\s+(?:shown|provided|given)\s+(?:in\s+)?(?:the\s+)?(?:reference|hint|solution)"
+    r"|expected\s+(?:sql|query)"
+    r"|as\s+(?:shown|provided|given)\s+(?:in\s+)?(?:the\s+)?(?:reference|solution)"
     r"|internal_reference"
     r"|do_not_reveal"
     r")\b",
@@ -155,31 +156,23 @@ def detect_text_leakage(
 ) -> List[str]:
     """Return a list of leakage reasons; empty means clean.
 
-    Flags (a) any reference/gold/provided phrasing in the assistant text, and
-    (b) the literal normalized gold SQL appearing outside a ``<sql_code>`` block
-    (i.e. quoted in scratch_pad / tool-call text).
+    Flags explicit references to the hidden privileged block, gold SQL, or
+    provided/given SQL.  It deliberately does not flag:
+
+    * public ``<hint>`` references from the original prompt;
+    * "expected output/columns" wording used by the normal verifier prompt;
+    * correct SQL appearing in ``CandidateSQL=`` or ``sqlite_query`` tool calls.
+
+    Copy/transcription concerns are handled by ``detect_copy`` instead.
     """
 
     reasons: List[str] = []
-    gold_norm = normalize_sql(gold_sql)
-
     for text in assistant_texts:
         text = text or ""
 
         phrase = _LEAK_PHRASE_RE.search(text)
         if phrase:
             reasons.append(f"phrase:{phrase.group(1).lower()}")
-
-        # gold appearing outside <sql_code>...</sql_code>
-        if gold_norm:
-            outside = re.sub(
-                r"<sql_code>.*?</sql_code>",
-                " ",
-                text,
-                flags=re.IGNORECASE | re.DOTALL,
-            )
-            if gold_norm and gold_norm in normalize_sql(outside):
-                reasons.append("gold_sql_outside_final")
 
     # dedupe, preserve order
     seen: set = set()
