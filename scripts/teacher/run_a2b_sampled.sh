@@ -7,7 +7,7 @@
 #
 #   bash scripts/teacher/run_a2b_sampled.sh
 #   TARGETS=outputs/teacher/target_idx_all_wrong_a2_uncovered.json bash scripts/teacher/run_a2b_sampled.sh
-#   TEMPERATURE=0.8 NUM_SAMPLES=8 TP=2 NUM_SHARDS=4 bash scripts/teacher/run_a2b_sampled.sh
+#   TEMPERATURE=0.8 NUM_SAMPLES=16 TP=2 NUM_SHARDS=4 bash scripts/teacher/run_a2b_sampled.sh
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
@@ -27,7 +27,17 @@ export TOKENIZERS_PARALLELISM=false
 MODEL="${MODEL:-google/gemma-4-31B-it}"
 INPUT_FILE="${INPUT_FILE:-outputs/train-6601-schema-bare-tool.jsonl}"
 DATABASE_DIR="${DATABASE_DIR:-databases/train_databases}"
+A2_TRACES="${A2_TRACES:-outputs/teacher/a2_greedy_tp2_shards4/merged/teacher_traces.jsonl}"
+ALL_WRONG_IDS="${ALL_WRONG_IDS:-outputs/teacher/target_idx_all_wrong.json}"
+UNCOVERED_PREFIX="${UNCOVERED_PREFIX:-outputs/teacher/target_idx_all_wrong_a2_uncovered}"
 if [[ -z "${TARGETS:-}" ]]; then
+  if [[ ! -f "${UNCOVERED_PREFIX}.json" && -f "${A2_TRACES}" && -f "${ALL_WRONG_IDS}" ]]; then
+    "${PY}" scripts/teacher/build_a2_uncovered.py \
+      --all-wrong-ids "${ALL_WRONG_IDS}" \
+      --traces "${A2_TRACES}" \
+      --output-prefix "${UNCOVERED_PREFIX}" \
+      --overwrite
+  fi
   if [[ -f "outputs/teacher/target_idx_all_wrong_a2_uncovered.json" ]]; then
     TARGETS="outputs/teacher/target_idx_all_wrong_a2_uncovered.json"
   elif [[ -f "outputs/teacher/target_idx_all_wrong_a2_uncovered.txt" ]]; then
@@ -38,7 +48,7 @@ if [[ -z "${TARGETS:-}" ]]; then
 fi
 TP="${TP:-2}"
 NUM_SHARDS="${NUM_SHARDS:-4}"
-NUM_SAMPLES="${NUM_SAMPLES:-8}"
+NUM_SAMPLES="${NUM_SAMPLES:-16}"
 TEMPERATURE="${TEMPERATURE:-0.7}"
 OUT="${OUT:-outputs/teacher/a2b_sampled_temp${TEMPERATURE}_samples${NUM_SAMPLES}_tp${TP}_shards${NUM_SHARDS}}"
 LIMIT="${LIMIT:--1}"
