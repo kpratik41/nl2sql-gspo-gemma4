@@ -4,6 +4,37 @@ End-to-end description of how the Gemma-4-31B SFT/RFT warm-start dataset is
 built and how the SFT run is launched, so the process can be reproduced in
 another environment.
 
+## 2026-08-12 SFT checkpoint selection results
+
+Run directory:
+`outputs/sft/gemma4_31b_rft_sft_run2`
+
+Dev data:
+`outputs/old-dev-schema-tool-unpatched.jsonl`
+
+Temp-0 inference used async vLLM with `tp=2`, one shard per checkpoint,
+`max_prompt_length=34000`, `max_new_tokens=8000`, `max_tool_rounds=8`, and
+`vllm_max_model_len=43000`.
+
+Pass@16 used async vLLM with `temperature=1.2`, `top_p=1.0`,
+`num_generations=16`, `tp=2`, `num_shards=4`, `vllm_async_concurrency=32`,
+`max_prompt_length=30000`, `max_new_tokens=8000`, `max_tool_rounds=8`, and
+`vllm_max_model_len=43000`. Note: the merged pass@k summary files record
+merge-script defaults in their `run_config`; the shard logs and queue logs
+contain the true checkpoint, TP, shard, and concurrency settings.
+
+| SFT ckpt | temp-0 EX | temp-0 correct | pass@1 est. | pass@16 | pass@16 candidate correct | pass@16 pred exec failed |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10 | 73.27% | 1124/1534 | 45.11% | 83.44% | 11071/24544 | 9337 |
+| 20 | 73.01% | 1120/1534 | 66.92% | 83.05% | 16424/24544 | 1353 |
+| 50 | 73.08% | 1121/1534 | 68.97% | 84.75% | 16929/24544 | 677 |
+
+Interpretation: checkpoint 50 is the preferred RL warm start from these
+measurements. Its greedy temp-0 EX is tied with checkpoints 10/20, but its
+sampled pass@16 is best and it has the fewest non-executing sampled candidates.
+Checkpoint 10 looks strong at temp 0 but brittle under `temperature=1.2`
+sampling, which is less attractive for RL rollouts.
+
 This is **not** a simple keep/drop filter. It is a four-stage rejection-sampling
 (STaR / RFT) pipeline that:
 
