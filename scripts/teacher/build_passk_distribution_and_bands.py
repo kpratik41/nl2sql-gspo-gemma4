@@ -76,7 +76,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--all-correct-cap-per-db",
         type=int,
-        default=16,
+        default=12,
         help=(
             "Maximum number of 16/K all-correct examples kept per database for "
             "the self-trace anchor. Use -1 to disable the cap."
