@@ -189,11 +189,61 @@ By difficulty:
 | Moderate | 18 | 30 | 60.00% |
 | Challenging | 1 | 5 | 20.00% |
 
-### 35B MoE vs 27B Dense on California Schools
+### Qwen3.8-27B Dense - California Schools Temp 0
+
+Run:
+
+- Model: `Qwen/Qwen3.8-27B`
+- Data: `outputs/old-dev-schema-tool-unpatched-california_schools.jsonl`
+- Output: `outputs/inference/dev/old-dev-schema-tool-unpatched/Qwen3.8-27B/california_schools_tp2_shards4_temp0_openai_tool_qwen3_coder`
+- Inference: async vLLM server, `TP=2`, `SHARDS=4`, `temperature=0.0`
+- Tool calling: Qwen native structured tool calls, `tool_call_parser=qwen3_coder`, `tool_choice_policy=required_first`, `empty_tool_retries=1`
+
+Overall California-schools EX:
+
+- Correct: `57 / 89`
+- Accuracy: `64.04%`
+
+SQL execution:
+
+- Pred SQL extracted: `89 / 89`
+- Pred SQL missing: `0`
+- Pred SQL executed: `89 / 89`
+- Extracted SQL execution failures: `0`
+
+Tool usage:
+
+- Total tool calls: `270`
+- Avg tool calls overall: `3.03`
+- Avg tool calls on EX-correct examples: `2.39`
+- Avg tool calls on EX-incorrect examples: `4.19`
+- Tool counts: `sqlite_query=202`, `bm25_search_sqlite=61`, `sqlite_peek=7`
+- Rejected parsed tool calls: `0`
+- Forced-final examples: `10`
+
+By shard:
+
+| Shard | Rows | Correct | Accuracy | Avg tool calls |
+| --- | ---: | ---: | ---: | ---: |
+| `shard_0` | 22 | 17 | 77.27% | 2.32 |
+| `shard_1` | 22 | 12 | 54.55% | 3.41 |
+| `shard_2` | 22 | 14 | 63.64% | 3.14 |
+| `shard_3` | 23 | 14 | 60.87% | 3.26 |
+
+By difficulty:
+
+| Difficulty | Correct | Rows | Accuracy |
+| --- | ---: | ---: | ---: |
+| Simple | 40 | 54 | 74.07% |
+| Moderate | 15 | 30 | 50.00% |
+| Challenging | 2 | 5 | 40.00% |
+
+### California Schools Model Comparison
 
 | Model | Correct | Rows | Accuracy | Avg tools | Avg tools on correct | Pred SQL executed |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `Qwen3.6-35B-A3B` | 57 | 89 | 64.04% | 3.28 | 2.82 | 89 / 89 |
 | `Qwen3.6-27B` | 56 | 89 | 62.92% | 3.72 | 3.14 | 88 / 89 |
+| `Qwen3.8-27B` | 57 | 89 | 64.04% | 3.03 | 2.39 | 89 / 89 |
 
-Takeaway: on `california_schools`, the 27B dense model is within `1` example of the 35B-A3B MoE result, but uses more tool calls on average and has one missing pred SQL.
+Takeaway: on `california_schools`, `Qwen3.8-27B` matches the `Qwen3.6-35B-A3B` MoE accuracy while using fewer tool calls on average. It is one example ahead of `Qwen3.6-27B` and extracted/executed SQL for every sample.
