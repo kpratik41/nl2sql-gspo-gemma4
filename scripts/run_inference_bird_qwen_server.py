@@ -119,6 +119,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval_workers", type=int, default=8)
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--enable_thinking", action="store_true")
+    parser.add_argument(
+        "--preserve_thinking",
+        action="store_true",
+        help="Preserve historical reasoning_content in rendered Qwen chat history.",
+    )
     parser.add_argument("--no_prompt_rewrite", action="store_true")
     parser.add_argument("--no_force_finalize", action="store_true")
     parser.add_argument("--empty_tool_retries", type=int, default=1)
@@ -339,7 +344,10 @@ def request_payload(
         "top_p": args.top_p,
         "top_k": 20,
         "max_tokens": args.max_new_tokens,
-        "chat_template_kwargs": {"enable_thinking": bool(args.enable_thinking)},
+        "chat_template_kwargs": {
+            "enable_thinking": bool(args.enable_thinking),
+            "preserve_thinking": bool(args.preserve_thinking),
+        },
     }
     if tools and tool_choice != "none":
         payload["tools"] = tools
@@ -532,6 +540,7 @@ def run_one(row: Dict[str, Any], args: argparse.Namespace) -> Tuple[str, Dict[st
         "stop_reason": stop_reason,
         "error_message": "",
         "qwen_enable_thinking": bool(args.enable_thinking),
+        "qwen_preserve_thinking": bool(args.preserve_thinking),
         "prompt_rewritten": not args.no_prompt_rewrite,
         "tool_choice_policy": args.tool_choice_policy,
         "empty_tool_retries": empty_retries,
