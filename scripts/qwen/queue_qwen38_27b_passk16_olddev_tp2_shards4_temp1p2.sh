@@ -109,6 +109,7 @@ for shard in $(seq 0 $((SHARDS - 1))); do
     --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}" \
     --max-model-len "${MAX_MODEL_LEN}" \
     --max-num-seqs "${MAX_NUM_SEQS}" \
+    --enable-prefix-caching \
     --reasoning-parser qwen3 \
     --enable-auto-tool-choice \
     --tool-call-parser "${TOOL_CALL_PARSER}" \
