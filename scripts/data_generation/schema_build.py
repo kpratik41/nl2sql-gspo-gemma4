@@ -335,18 +335,65 @@ def _is_numeric(v) -> bool:
         return False
 
 
-def classify_column(col_type: str, samples: list) -> str:
+def get_storage_class(cur, table: str, col_name: str) -> str | None:
+    """Dominant SQLite storage class for a column, or None if undetermined.
+
+    SQLite is dynamically typed, so the authoritative answer to "what is in
+    this column" is typeof() over the values, not the declared type. Columns
+    are uniform in practice -- a scan of all 4365 columns across the BIRD
+    train and dev databases found zero mixed-storage columns -- so one
+    dominant class per column is well defined.
+    """
+
+    try:
+        cur.execute(
+            f"SELECT typeof(`{col_name}`) AS tc, COUNT(*) FROM `{table}` "
+            f"WHERE `{col_name}` IS NOT NULL GROUP BY tc ORDER BY COUNT(*) DESC LIMIT 1;"
+        )
+        row = cur.fetchone()
+    except Exception:
+        return None
+    return row[0] if row else None
+
+
+def classify_column(col_type: str, samples: list, storage_class: str | None = None) -> str:
+    """Pick the type label rendered into the prompt for one column.
+
+    Order matters, because the three available signals answer different
+    questions and each is authoritative for a different case:
+
+    1. Declared DATE/TIME keyword. SQLite has no date storage class, so dates
+       live as text; typeof() would flatten all 245 date columns in BIRD to
+       TEXT and lose the signal the prompt's strftime/date rules depend on.
+    2. Sampled values that all look like dates. Catches date columns declared
+       TEXT (24 of them across train and dev) which rule 1 misses.
+    3. typeof() storage class. This is the truthful answer for everything
+       else, and is why it outranks value sniffing: 178 BIRD columns are
+       declared TEXT and hold numeric-looking strings ('1.0', '0.25', 'nan').
+       Sniffing labels those NUMERIC, which invites `col > 0.5` -- and under
+       TEXT affinity that comparison ranks all text above all numbers, so it
+       silently matches nearly every row instead of erroring.
+    4. Declared numeric keyword, as a fallback when the column is empty or
+       all-NULL and typeof() has nothing to report (38 such columns).
+    """
+
     ct = col_type.upper()
-    if any(t in ct for t in ("INT", "REAL", "FLOAT", "DOUBLE", "NUMERIC", "DECIMAL", "NUMBER")):
-        return "NUMERIC"
     if any(t in ct for t in ("DATE", "TIME", "DATETIME", "TIMESTAMP")):
         return "DATE"
+
     non_null = [v for v in samples if v is not None]
-    if not non_null:
-        return "TEXT"
-    if all(_looks_like_date(v) for v in non_null[:10]):
+    if non_null and all(_looks_like_date(v) for v in non_null[:10]):
         return "DATE"
-    if all(_is_numeric(v) for v in non_null[:20]):
+
+    if storage_class in ("integer", "real"):
+        return "NUMERIC"
+    if storage_class == "text":
+        return "TEXT"
+    if storage_class == "blob":
+        return "BLOB"
+
+    # Empty / all-NULL column: nothing stored to inspect, so trust the schema.
+    if any(t in ct for t in ("INT", "REAL", "FLOAT", "DOUBLE", "NUMERIC", "DECIMAL", "NUMBER")):
         return "NUMERIC"
     return "TEXT"
 
@@ -399,20 +446,24 @@ def build_mschema_from_db(db_path: str, db_id: str,
         for cid, col_name, col_type, notnull, dflt, pk in cols:
             col_type = col_type or "TEXT"
 
-            # Sample values only when stats/examples are requested. Bare schema
-            # builds should avoid scanning table data entirely.
+            # Sample a few values for DATE sniffing. This is deliberately NOT
+            # gated on include_stats: it is a LIMIT 20 read used to pick the
+            # rendered type label, which bare builds need just as much as full
+            # ones. Gating it previously meant --no-stats silently disabled type
+            # inference too, so every column without a numeric/date keyword in
+            # its declared type came out labelled TEXT by default.
             samples = []
-            if include_stats:
-                try:
-                    cur.execute(
-                        f"SELECT `{col_name}` FROM `{table}` "
-                        f"WHERE `{col_name}` IS NOT NULL LIMIT 20;"
-                    )
-                    samples = [r[0] for r in cur.fetchall()]
-                except Exception:
-                    samples = []
+            try:
+                cur.execute(
+                    f"SELECT `{col_name}` FROM `{table}` "
+                    f"WHERE `{col_name}` IS NOT NULL LIMIT 20;"
+                )
+                samples = [r[0] for r in cur.fetchall()]
+            except Exception:
+                samples = []
 
-            kind = classify_column(col_type, samples)
+            storage_class = get_storage_class(cur, table, col_name)
+            kind = classify_column(col_type, samples, storage_class)
 
             # Compute lightweight descriptive stats directly from SQLite so prompt
             # quality improves without requiring a separate profiling pipeline.
