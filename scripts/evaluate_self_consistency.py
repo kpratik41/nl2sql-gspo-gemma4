@@ -355,6 +355,9 @@ def evaluate_checkpoint(
         option1_cluster_sizes[max16] += 1
 
         groups17: Dict[RowsKey, List[Dict[str, Any]]] = defaultdict(list)
+        # Bound on every path: the --no-temp0 and no-valid-cluster branches
+        # below never assign it, and it is read when the record is built.
+        chosen17: Optional[Dict[str, Any]] = None
         if args.no_temp0:
             winners17 = []
             max17 = 0
@@ -409,6 +412,16 @@ def evaluate_checkpoint(
                 "option1_correct": option1_res,
                 "option1_pred_executed": selected1["exec"]["executed"],
                 "option1_pred_error": selected1["exec"]["error"],
+                # The selected SQL itself, plus the size of the result it
+                # returned. Without these the record says which sample won but
+                # not what it actually ran, so a failure cannot be diagnosed
+                # without re-joining against the candidates file. row_count is
+                # 0 only when no cluster was valid -- voting excludes empty
+                # results, so a winner always returned rows.
+                "option1_pred_sql": selected1["pred_sql"],
+                "option1_row_count": (
+                    len(selected1["exec"]["rows"]) if selected1["exec"].get("rows") is not None else 0
+                ),
                 "num_groups_17": len(groups17),
                 "num_valid_groups_17": len(winners17),
                 "largest_group_17": max17,
@@ -418,6 +431,10 @@ def evaluate_checkpoint(
                 "option2_correct": option2_res,
                 "option2_pred_executed": selected2_exec["executed"],
                 "option2_pred_error": selected2_exec["error"],
+                "option2_pred_sql": chosen17.get("pred_sql", "") if chosen17 is not None else "",
+                "option2_row_count": (
+                    len(selected2_exec["rows"]) if selected2_exec.get("rows") is not None else 0
+                ),
                 "temp0_correct": int(temp0.get("res", 0)) if temp0 is not None else None,
                 "temp0_pred_executed": bool(temp0.get("pred_executed", False)) if temp0 is not None else None,
                 "passk_candidate_correct_count": sum(int(candidate.get("correct", 0)) for candidate in candidates),

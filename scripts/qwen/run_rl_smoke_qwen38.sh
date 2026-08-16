@@ -34,8 +34,13 @@ export VLLM_SERVER_BASE_URL="${VLLM_SERVER_BASE_URL:-http://127.0.0.1:8000}"
 export VLLM_COLOCATE_TP="${VLLM_COLOCATE_TP:-2}"
 export VLLM_COLOCATE_GPU_UTIL="${VLLM_COLOCATE_GPU_UTIL:-0.35}"
 
-export TRAIN_FILE="${TRAIN_FILE:-outputs/train-6601-schema-bare-tool-qwen.jsonl}"
-export EVAL_FILE="${EVAL_FILE:-outputs/old-dev-schema-bare-tool-qwen.jsonl}"
+# Both defaults previously named files that were never built, so the smoke died
+# at dataset load. These are the current artifacts: 6573 = 6601 minus 27 rows
+# whose gold SQL is broken by SQLite TEXT affinity plus one whose "timestamp"
+# column holds hashes, and 3000 is the database-stratified subset of it. Both
+# are bare (--no-stats) and carry the Qwen C system prompt.
+export TRAIN_FILE="${TRAIN_FILE:-outputs/qwen-train-3000-schema-bare-tool.jsonl}"
+export EVAL_FILE="${EVAL_FILE:-outputs/qwen-old-dev-schema-bare-tool.jsonl}"
 export OUTPUT_DIR="${OUTPUT_DIR:-outputs/rl/_smoke_qwen38}"
 export DEEPSPEED_CONFIG="${DEEPSPEED_CONFIG:-configs/ds_zero3_bf16_no_scheduler.json}"
 # Only consulted when DISTRIBUTED_BACKEND=fsdp; wraps Qwen3_5DecoderLayer.
