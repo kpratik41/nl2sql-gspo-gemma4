@@ -186,15 +186,39 @@ def guard_tool_callable(tool: Callable[..., Any]) -> Callable[..., Any]:
     rollout -- neither of which the trainer does today, by design.
     """
 
+    import asyncio
     import functools
+
+    name = getattr(tool, "__name__", "tool")
+
+    # The async branch is not optional. gen_tools' tools are coroutine
+    # functions, and a sync wrapper around one makes
+    # asyncio.iscoroutinefunction() report False while still returning a
+    # coroutine. Callers that dispatch on that check then never await it, and
+    # the *repr* of the coroutine object gets fed back into the rollout as the
+    # tool result -- '"<coroutine object sqlite_query at 0x...>"'. Rollouts keep
+    # running and rewards keep being computed, so it corrupts training silently.
+    if asyncio.iscoroutinefunction(tool):
+
+        @functools.wraps(tool)
+        async def wrapped_async(*args: Any, **kwargs: Any) -> Any:
+            if args:
+                # Positional args would need the tool's signature to fingerprint
+                # reliably. Every caller in this repo passes keywords, so rather
+                # than guess, fall through unguarded.
+                return await tool(*args, **kwargs)
+            notice = check(name, kwargs)
+            if notice is not None:
+                return notice
+            result = await tool(**kwargs)
+            record(name, kwargs, result)
+            return result
+
+        return wrapped_async
 
     @functools.wraps(tool)
     def wrapped(*args: Any, **kwargs: Any) -> Any:
-        name = getattr(tool, "__name__", "tool")
         if args:
-            # Positional args would need the tool's signature to fingerprint
-            # reliably. Every caller in this repo passes keywords, so rather
-            # than guess, fall through unguarded.
             return tool(*args, **kwargs)
         notice = check(name, kwargs)
         if notice is not None:

@@ -117,6 +117,50 @@ _PAD_SPEC: Dict[str, tuple] = {
 }
 
 
+def _ensure_response_schema(processing_class) -> None:
+    """Give TRL a response schema for chat templates it does not recognise.
+
+    ``GRPOTrainer.__init__`` calls ``add_response_schema``, which matches the
+    tokenizer's chat template by *exact string equality* against a hardcoded
+    list. Qwen3.8's template is a newer revision of the Qwen3.5 family -- 8952
+    chars against 7756, ~93% similar -- so it matches nothing and the trainer
+    dies at construction with "Unrecognized chat template".
+
+    qwen3_5_schema is the correct schema regardless: its regexes expect exactly
+    the ``<tool_call><function=name><parameter=k>v`` syntax Qwen3.8 emits, which
+    is the same format tool_dialects.QWEN_DIALECT parses. Verified to round-trip
+    tool-call-only, text-plus-tool-call, and final-answer-only completions.
+
+    Set only when absent, so a caller that has chosen a schema keeps it, and any
+    future TRL release that recognises the template natively takes precedence.
+    """
+
+    if processing_class is None:
+        return
+    tokenizer = getattr(processing_class, "tokenizer", processing_class)
+    if getattr(tokenizer, "response_schema", None) is not None:
+        return
+    try:
+        from trl.chat_template_utils import add_response_schema
+
+        add_response_schema(processing_class)
+        return
+    except Exception:
+        pass
+    try:
+        from trl.chat_template_utils import qwen3_5_schema
+    except ImportError:
+        return
+    template = getattr(processing_class, "chat_template", "") or ""
+    if "<parameter=" in template and "<tool_call>" in template:
+        tokenizer.response_schema = qwen3_5_schema
+        print(
+            "[trainer] chat template unrecognised by TRL; applied qwen3_5_schema "
+            "(template emits <tool_call><function=...><parameter=...>)",
+            flush=True,
+        )
+
+
 class DynamicSamplingGRPOTrainer(GRPOTrainer):
     """GRPOTrainer with DAPO oversample-and-replace dynamic sampling."""
 
@@ -143,6 +187,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         static_beta_fallback: Optional[float] = None,
         **kwargs,
     ) -> None:
+        _ensure_response_schema(kwargs.get("processing_class"))
         super().__init__(*args, **kwargs)
         self.enable_dynamic_sampling = enable_dynamic_sampling
         self.dynamic_sampling_min_std = float(dynamic_sampling_min_std)

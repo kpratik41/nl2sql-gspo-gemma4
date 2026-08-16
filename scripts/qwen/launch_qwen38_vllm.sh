@@ -68,9 +68,10 @@ echo "[launch_qwen38_vllm] log=${VLLM_LOG_FILE}"
 exec > >(tee -a "${VLLM_LOG_FILE}") 2>&1
 
 EXTRA_ARGS=()
-if [[ "${VLLM_ENABLE_PREFIX_CACHING}" == "1" ]]; then
-  EXTRA_ARGS+=(--enable_prefix_caching)
-fi
+# This TRL build declares --enable_prefix_caching as a value-taking option, not
+# a store_true flag, so passing it bare is an argument error and the server
+# exits 2 before loading anything. Always pass an explicit boolean.
+EXTRA_ARGS+=(--enable_prefix_caching "$([[ "${VLLM_ENABLE_PREFIX_CACHING}" == "1" ]] && echo True || echo False)")
 if [[ -n "${VLLM_KV_CACHE_DTYPE:-}" ]]; then
   EXTRA_ARGS+=(--kv_cache_dtype "${VLLM_KV_CACHE_DTYPE}")
 fi

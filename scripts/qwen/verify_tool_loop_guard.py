@@ -128,6 +128,33 @@ def main() -> int:
     wrapped(db_id="d", sql="SELECT 1")
     check("wrapped callable is pass-through with no scope (RL default)", calls["n"] == 2, f"executions={calls['n']}")
 
+    # ---- async tools must stay async (regression guard) ---------------------
+    # gen_tools' tools are coroutine functions. A sync wrapper around one makes
+    # iscoroutinefunction() False while still returning a coroutine, so callers
+    # that dispatch on that check never await it and the coroutine's repr gets
+    # fed back into the rollout as the tool result.
+    acalls = {"n": 0}
+
+    async def fake_async_query(db_id=None, sql=None):
+        acalls["n"] += 1
+        return {"rows": [[acalls["n"]]], "columns": ["c"]}
+
+    awrapped = g.guard_tool_callable(fake_async_query)
+    check("async tool stays a coroutine function after wrapping", asyncio.iscoroutinefunction(awrapped))
+
+    async def drive_async():
+        with g.rollout_scope("r5"):
+            first = await awrapped(db_id="d", sql="SELECT 1")
+            second = await awrapped(db_id="d", sql="SELECT 1")
+            third = await awrapped(db_id="d", sql="SELECT 2")
+        return first, second, third
+
+    first, second, third = asyncio.run(drive_async())
+    check("async wrapper returns real results, not a coroutine repr", first.get("rows") == [[1]], repr(first)[:80])
+    check("async wrapper suppresses the repeat", isinstance(second, dict) and second.get("repeated_call") is True)
+    check("async wrapper did not re-execute on repeat", acalls["n"] == 2, f"executions={acalls['n']}")
+    check("async wrapper still runs a different query", third.get("rows") == [[2]], repr(third)[:80])
+
     # ---- empty-result hint ---------------------------------------------------
     check("empty row set is an empty result", _is_empty_result({"rows": []}))
     check("lone 0 aggregate is an empty result", _is_empty_result({"rows": [[0]]}))
