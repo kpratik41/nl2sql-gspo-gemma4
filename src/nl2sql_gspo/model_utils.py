@@ -1,13 +1,64 @@
 import json
+import os
 from pathlib import Path
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 try:
     from transformers import AutoModelForImageTextToText
 except Exception:
     AutoModelForImageTextToText = None
+
+
+def resolve_attn_implementation(default: str = "sdpa") -> str:
+    """Attention kernel for the full-attention layers.
+
+    ``sdpa`` is the safe default: torch's SDPA dispatches to its own
+    FlashAttention-2 backend, which supports Qwen3.8-27B's head_dim=256 on
+    Hopper, so the flash-attn package is not required to get FA2 kernels.
+    Override with ATTN_IMPLEMENTATION=flash_attention_2 when flash-attn is
+    installed against a matching CUDA toolchain.
+
+    Note this only affects the 16 ``full_attention`` layers of Qwen3.8-27B. The
+    48 ``linear_attention`` layers are driven by causal-conv1d + fla instead;
+    see scripts/setup_qwen38_kernels.sh.
+    """
+
+    return os.environ.get("ATTN_IMPLEMENTATION", default)
+
+
+def resolve_auto_model_class(model_name_or_path: str):
+    """Pick the auto class that matches the checkpoint's own architecture.
+
+    This must not be a try/except chain. Qwen3.8-27B stores its weights under
+    ``model.language_model.*`` as ``Qwen3_5ForConditionalGeneration``, but
+    ``AutoModelForCausalLM`` resolves to the text-only ``Qwen3_5ForCausalLM``
+    which expects ``model.*``. That load SUCCEEDS -- it only warns -- while
+    randomly initializing 850 of 851 parameters, so an exception-based fallback
+    never fires and training silently starts from noise.
+
+    Selecting on ``config.architectures`` instead makes the choice explicit.
+    Returns ``(auto_class, is_multimodal)``.
+    """
+
+    config = AutoConfig.from_pretrained(model_name_or_path, trust_remote_code=True)
+    architectures = list(getattr(config, "architectures", None) or [])
+
+    if AutoModelForImageTextToText is not None:
+        try:
+            mapped = AutoModelForImageTextToText._model_mapping[type(config)]
+        except (KeyError, AttributeError):
+            mapped = None
+        if mapped is not None and (not architectures or mapped.__name__ in architectures):
+            print(
+                f"Selected AutoModelForImageTextToText ({mapped.__name__}) "
+                f"for architectures={architectures}."
+            )
+            return AutoModelForImageTextToText, True
+
+    print(f"Selected AutoModelForCausalLM for architectures={architectures}.")
+    return AutoModelForCausalLM, False
 
 
 def freeze_multimodal_modules(model):
@@ -179,32 +230,20 @@ def load_tokenizer(model_name_or_path: str):
 def load_model_and_tokenizer(model_name_or_path: str):
     tokenizer = load_tokenizer(model_name_or_path)
 
-    try:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name_or_path,
-            torch_dtype=torch.bfloat16,
-            trust_remote_code=True,
-            attn_implementation="sdpa",
-        )
-        print("Loaded model with AutoModelForCausalLM (sdpa).")
+    auto_class, is_multimodal = resolve_auto_model_class(model_name_or_path)
+    attn_implementation = resolve_attn_implementation()
 
-    except Exception as exc:
-        if AutoModelForImageTextToText is None:
-            raise RuntimeError(
-                "AutoModelForCausalLM failed, and AutoModelForImageTextToText "
-                "is not available in this Transformers version."
-            ) from exc
+    model = auto_class.from_pretrained(
+        model_name_or_path,
+        torch_dtype=torch.bfloat16,
+        trust_remote_code=True,
+        attn_implementation=attn_implementation,
+    )
+    print(f"Loaded model with {auto_class.__name__} ({attn_implementation}).")
 
-        print("AutoModelForCausalLM failed. Falling back to AutoModelForImageTextToText.")
-        print(f"Original error: {exc}")
-
-        model = AutoModelForImageTextToText.from_pretrained(
-            model_name_or_path,
-            torch_dtype=torch.bfloat16,
-            trust_remote_code=True,
-            attn_implementation="sdpa",
-        )
-
+    if is_multimodal:
+        # Text-only NL2SQL RL: freeze the vision tower and projectors so they
+        # neither receive gradients nor consume optimizer state.
         model = freeze_multimodal_modules(model)
 
     model.config.use_cache = False
