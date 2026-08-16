@@ -40,7 +40,23 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1}"
 export VLLM_CACHE_ROOT="${VLLM_CACHE_ROOT:-${LOG_DIR}/${RUN_TAG}-vllm-cache}"
 export TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR:-${LOG_DIR}/${RUN_TAG}-inductor-cache}"
 
+# The Qwen-native data files (outputs/qwen-*.jsonl) already carry the Qwen tool
+# syntax, so the runner's runtime rewrite MUST be disabled for them: applying it
+# on top strips the XML examples (15725 -> 13699 chars) and re-inserts
+# "do not print the function call", undoing the whole point of the file.
+NO_PROMPT_REWRITE_ARGS=()
+if [[ "${NO_PROMPT_REWRITE:-auto}" == "auto" ]]; then
+  case "${INPUT_FILE:-}" in
+    *qwen-*) NO_PROMPT_REWRITE="1" ;;
+    *)       NO_PROMPT_REWRITE="0" ;;
+  esac
+fi
+if [[ "${NO_PROMPT_REWRITE}" == "1" ]]; then
+  NO_PROMPT_REWRITE_ARGS=(--no_prompt_rewrite)
+fi
+
 echo "[qwen38-eval] model=${MODEL_PATH}"
+echo "[qwen38-eval] no_prompt_rewrite=${NO_PROMPT_REWRITE}"
 echo "[qwen38-eval] examples=${TOTAL} gpus=${CUDA_VISIBLE_DEVICES} out=${OUTPUT_DIR}"
 
 .venv/bin/python scripts/run_inference_bird_qwen_async.py \
@@ -65,6 +81,7 @@ echo "[qwen38-eval] examples=${TOTAL} gpus=${CUDA_VISIBLE_DEVICES} out=${OUTPUT_
   --eval_workers "${EVAL_WORKERS:-16}" \
   --tool_choice_policy "${TOOL_CHOICE_POLICY:-required_first}" \
   --empty_tool_retries "${EMPTY_TOOL_RETRIES:-1}" \
+  "${NO_PROMPT_REWRITE_ARGS[@]}" \
   --overwrite
 
 echo

@@ -571,7 +571,12 @@ def _to_qwen_template(template, label, gemma_block, qwen_block):
     return result
 
 
-SYSTEM_PROMPT_TEMPLATES_QWEN = _to_qwen_template(
+# Intermediate only: the straight Gemma->Qwen syntax port, carrying all five
+# worked call examples. It is never selectable on its own -- it scored 68.77% EX
+# vs 70.93% for the Gemma+runtime-rewrite prompt, because the extra examples
+# drove avg tool calls/example 1.543 -> 1.889 and more than doubled
+# max_tool_rounds truncations. SYSTEM_PROMPT_TEMPLATES_QWEN below trims it.
+_SYSTEM_PROMPT_TEMPLATES_QWEN_FULL = _to_qwen_template(
     SYSTEM_PROMPT_TEMPLATES,
     "SYSTEM_PROMPT_TEMPLATES",
     GEMMA_NATIVE_TOOL_CALL_BLOCK,
@@ -582,4 +587,88 @@ SYSTEM_PROMPT_TEMPLATES_CONSENSUS_QWEN = _to_qwen_template(
     "SYSTEM_PROMPT_TEMPLATES_CONSENSUS",
     GEMMA_NATIVE_TOOL_CALL_BLOCK_CONSENSUS,
     QWEN_NATIVE_TOOL_CALL_BLOCK_CONSENSUS,
+)
+
+
+# ---------- Qwen "lean" variant ----------
+#
+# C = B's syntax rules with A's example density.
+#
+# A (Gemma prompt + runtime rewrite) scored 70.93% EX; B (SYSTEM_PROMPT_TEMPLATES_QWEN)
+# scored 68.77%. The regression was not a syntax problem -- both emit valid tool
+# calls -- it was tool-eagerness against a fixed round budget: B raised avg tool
+# calls/example 1.543 -> 1.889 and more than doubled max_tool_rounds hits
+# (59 -> 127), and those truncated rollouts return no <final_answer> at all.
+#
+# B carries 5 worked XML call examples (one in the verification loop plus four in
+# OUTPUT FORMAT EXAMPLES) and, unlike A, never states a per-turn budget. This
+# variant keeps B's XML syntax rules verbatim, restores A's explicit
+# "Use at most one tool call per assistant turn", and cuts the worked examples to
+# a single one -- enough to pin the syntax, without demonstrating three extra
+# tools the model would otherwise be nudged to reach for.
+
+_LEAN_BUDGET_ANCHOR = (
+    "- Never invent or write tool responses. Only use tool results that appear in "
+    "the conversation after your tool call."
+)
+_LEAN_BUDGET_LINE = (
+    "- Use at most one tool call per assistant turn, then wait for the tool response."
+)
+
+
+def _to_lean_qwen_template(template, label):
+    result = template
+
+    # 1. Restore A's explicit per-turn tool budget.
+    if _LEAN_BUDGET_ANCHOR not in result:
+        raise AssertionError(f"{label}: budget anchor line not found")
+    result = result.replace(
+        _LEAN_BUDGET_ANCHOR,
+        _LEAN_BUDGET_LINE + "\n" + _LEAN_BUDGET_ANCHOR,
+        1,
+    )
+
+    # 2. Drop the worked call that follows "First check". A shows only a
+    #    scratch_pad there; leading with a tool call is the most eagerness-prone
+    #    placement in the whole prompt.
+    first_check_anchor = (
+        "I will execute the drafted SQL first, then repair only if execution or "
+        "semantic checks fail.\n</scratch_pad>\n"
+    )
+    start = result.find(first_check_anchor)
+    if start < 0:
+        raise AssertionError(f"{label}: First check anchor not found")
+    call_start = start + len(first_check_anchor)
+    call_end = result.find("</tool_call>", call_start)
+    if call_end < 0 or not result[call_start:].lstrip().startswith("<tool_call>"):
+        raise AssertionError(f"{label}: no tool_call block after First check")
+    result = result[:call_start] + result[call_end + len("</tool_call>\n"):]
+
+    # 3. OUTPUT FORMAT EXAMPLES: keep only the first worked call (SQL
+    #    verification) and the final-answer example. Removing the "Value
+    #    verification" and "Type/scale/date verification" sections drops the
+    #    bm25_search_sqlite and sqlite_peek demonstrations.
+    drop_from = result.find("\nValue verification:")
+    drop_to = result.find("\nFinal answer, only after successful execution:")
+    if drop_from < 0 or drop_to < 0 or drop_to <= drop_from:
+        raise AssertionError(f"{label}: could not locate the middle example sections")
+    result = result[:drop_from] + result[drop_to:]
+
+    # 4. Drop the trailing "Healthy tool-call and final-answer pattern" section,
+    #    which carries the last remaining worked call.
+    tail = result.find("\nHealthy tool-call and final-answer pattern:")
+    if tail < 0:
+        raise AssertionError(f"{label}: healthy-pattern section not found")
+    result = result[:tail].rstrip() + "\n"
+
+    blocks = sum(1 for line in result.splitlines() if line.strip() == "<tool_call>")
+    if blocks != 1:
+        raise AssertionError(
+            f"{label}: expected exactly 1 worked tool-call example, found {blocks}"
+        )
+    return result
+
+
+SYSTEM_PROMPT_TEMPLATES_QWEN = _to_lean_qwen_template(
+    _SYSTEM_PROMPT_TEMPLATES_QWEN_FULL, "SYSTEM_PROMPT_TEMPLATES_QWEN"
 )
