@@ -18,6 +18,7 @@ from scripts.run_passk_bird import (
     build_passk_summary,
     evaluate_candidates,
     merge_shard_outputs,
+    read_jsonl,
     write_jsonl,
     write_markdown_summary,
 )
@@ -58,6 +59,16 @@ def parse_args() -> argparse.Namespace:
         "--tool_choice_policy",
         choices=["auto", "required_first", "required_until_tool", "required_always"],
         default="required_first",
+    )
+    parser.add_argument(
+        "--eval_from_generations",
+        default=None,
+        help=(
+            "Path to a passk_candidates_raw.jsonl written by a previous run. Skips "
+            "generation entirely and evaluates those candidates. Use to recover a run "
+            "that generated successfully but died during eval or serialization. Shard "
+            "flags must match the run that produced the file."
+        ),
     )
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
@@ -199,19 +210,33 @@ def main() -> None:
 
     started = time.monotonic()
     gen_started = time.monotonic()
-    candidates = asyncio.run(generate_candidates(args, rows))
-    generation_seconds = time.monotonic() - gen_started
+    if args.eval_from_generations:
+        candidates = read_jsonl(Path(args.eval_from_generations))
+        generation_seconds = 0.0
+        print(
+            f"[qwen-async-passk] loaded {len(candidates)} raw generations from "
+            f"{args.eval_from_generations}; skipping generation"
+        )
+    else:
+        candidates = asyncio.run(generate_candidates(args, rows))
+        generation_seconds = time.monotonic() - gen_started
+        # Persist raw generations before evaluating. Generation is hours of GPU time
+        # and eval is minutes, so a crash in eval or in serialization must not cost
+        # the generations. Recover with --eval_from_generations <this file>.
+        raw_path = output_dir / "passk_candidates_raw.jsonl"
+        write_jsonl(raw_path, candidates)
+        print(f"[qwen-async-passk] wrote {len(candidates)} raw generations to {raw_path}")
 
     eval_started = time.monotonic()
     evaluated = evaluate_candidates(candidates, rows, args)
     evaluation_seconds = time.monotonic() - eval_started
+    write_jsonl(output_dir / "passk_candidates.jsonl", evaluated)
     timing = {
         "generation": generation_seconds,
         "evaluation": evaluation_seconds,
         "total": time.monotonic() - started,
     }
     summary = build_passk_summary(evaluated, rows, args, timing)
-    write_jsonl(output_dir / "passk_candidates.jsonl", evaluated)
     write_jsonl(output_dir / "passk_per_example.jsonl", summary["per_example"])
     with (output_dir / "passk_summary.json").open("w", encoding="utf-8") as handle:
         json.dump({key: value for key, value in summary.items() if key != "per_example"}, handle, indent=2)

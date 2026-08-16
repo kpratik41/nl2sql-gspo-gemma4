@@ -11,9 +11,9 @@
 #   MODEL=outputs/checkpoint-90 TP=2 NUM_SHARDS=4 bash scripts/run_passk16_train6601.sh
 set -euo pipefail
 
-cd /home/ubuntu/nl2sql-gspo-gemma4
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-PYTHON_BIN="${PYTHON_BIN:-/home/ubuntu/nl2sql-gspo-gemma4/.venv/bin/python}"
+PYTHON_BIN="${PYTHON_BIN:-$(pwd)/.venv/bin/python}"
 MODEL="${MODEL:-google/gemma-4-31B-it}"
 INPUT_FILE="${INPUT_FILE:-outputs/train-6601-schema-bare-tool.jsonl}"
 DATABASE_DIR="${DATABASE_DIR:-databases/train_databases}"

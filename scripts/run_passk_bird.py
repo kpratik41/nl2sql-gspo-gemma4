@@ -158,9 +158,14 @@ def tool_order(prediction_text: str) -> List[str]:
 
 
 def write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
+    def json_default(value: Any) -> str:
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return str(value)
+
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+            handle.write(json.dumps(row, ensure_ascii=False, default=json_default) + "\n")
 
 
 def read_jsonl(path: Path) -> List[Dict[str, Any]]:
