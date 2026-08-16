@@ -550,6 +550,38 @@ _QWEN_EXAMPLE_SUBSTITUTIONS = [
 ]
 
 
+# SQLite is dynamically typed, so a column declared TEXT can hold '0.25', '4200',
+# 'nan'. 197 columns across the BIRD train and dev databases do. Under TEXT
+# affinity every text value sorts above every number, so `col > 0.5` there is not
+# a numeric comparison -- it matches nearly every row, returns a plausible answer,
+# and never errors. Nothing in the rollout signals the mistake, which is why this
+# has to be stated rather than left for the model to discover.
+#
+# Deliberately conditional ("only if the values are numeric") rather than a
+# standing order to peek: variant B showed that raising tool-eagerness against a
+# fixed round budget costs more accuracy than it buys. It also names sqlite_peek
+# instead of the rendered example values, because the train file is built
+# --no-stats and carries no example values at all -- guidance keyed to them would
+# be inert for every training prompt while working in dev.
+_AFFINITY_ANCHOR = "- Use sqlite_peek for date columns when the stored format is uncertain."
+_AFFINITY_GUIDANCE = (
+    "- A TEXT column may hold numeric-looking values. Comparisons and ORDER BY on it "
+    "use string ordering, not numeric ordering, and return wrong rows without erroring.\n"
+    "- Check such a column with sqlite_peek, and use CAST(col AS REAL) only if its "
+    "values are numeric."
+)
+
+
+def _insert_affinity_guidance(template, label):
+    if _AFFINITY_ANCHOR not in template:
+        raise AssertionError(f"{label}: text-affinity anchor line not found")
+    return template.replace(
+        _AFFINITY_ANCHOR,
+        _AFFINITY_ANCHOR + "\n" + _AFFINITY_GUIDANCE,
+        1,
+    )
+
+
 def _to_qwen_template(template, label, gemma_block, qwen_block):
     if gemma_block not in template:
         raise AssertionError(
@@ -557,6 +589,10 @@ def _to_qwen_template(template, label, gemma_block, qwen_block):
             "prompt. Update the block constants in prompts.py."
         )
     result = template.replace(gemma_block, qwen_block)
+    # Applied on the Qwen side only. The Gemma templates must stay byte-identical
+    # to what is already baked into outputs/old-dev-schema-tool-*.jsonl, because
+    # build_qwen_eval_data.py asserts on that exact text before converting.
+    result = _insert_affinity_guidance(result, label)
 
     for gemma_example, qwen_example in _QWEN_EXAMPLE_SUBSTITUTIONS:
         if gemma_example in result:
