@@ -1,16 +1,35 @@
-# Direct runtime dependencies are pinned for reproducible training and inference.
-# Transitive dependencies are intentionally managed by pip's resolver.
+# Direct runtime dependencies, pinned to the versions actually installed and
+# verified on this box (8xH200, CUDA 13.2 host driver, python3.12).
+# `pip check` is clean with this set. For a byte-exact rebuild of the whole
+# dependency graph use requirements-lock.txt instead.
+#
+# Rebuild:  bash scripts/setup_qwen38_env.sh       (this file)
+#           bash scripts/setup_qwen38_kernels.sh   (hybrid-attention kernels)
+#
+# Qwen3.8-27B (Qwen3.5 architecture) constraints:
+#   transformers >= 5.8.0  -- config.json was written by 5.8.0.dev0
+#   vllm         >= 0.17.0 -- per recipes.vllm.ai/Qwen/Qwen3.8-27B
+# Qwen3.8 has no dedicated vLLM model file; it resolves to
+# Qwen3_5ForConditionalGeneration and rides qwen3_5.py, which is why a wheel
+# predating the model release serves it correctly.
 
 # Core training stack. TRL is pinned because dynamic_sampling_trainer.py relies
-# on GRPOTrainer internals rather than a stable public API.
+# on GRPOTrainer internals rather than a stable public API. The code targets
+# TRL 1.4.0 (see the AsyncGRPOConfig comments in train_gspo_nl2sql.py); the
+# transformers 5.9.0 / trl 1.3.0 pins this file previously carried were stale.
 torch==2.10.0
-transformers==5.9.0
-trl==1.3.0
+torchvision==0.25.0
+torchaudio==2.10.0
+transformers==5.12.1
+trl==1.4.0
 datasets==5.0.0
 accelerate==1.14.0
 deepspeed==0.19.2
 
 # Inference and experiment tracking.
+# NOTE: TRL 1.4.0 warns it validates vLLM 0.12.0-0.18.0. 0.19.1 is used anyway
+# because it is the version that produced the working Qwen3.8-27B evals.
+# Drop to <=0.18.0 only if a TRL/vLLM API break appears.
 vllm==0.19.1
 wandb==0.28.0
 
@@ -18,3 +37,26 @@ wandb==0.28.0
 sentencepiece==0.2.1
 protobuf==6.33.6
 rank-bm25==0.2.2
+
+# ---------------------------------------------------------------------------
+# Hybrid-attention kernels for Qwen3.8-27B. Installed by
+# scripts/setup_qwen38_kernels.sh because both build from source.
+#
+# Qwen3.8-27B is hybrid: 48 linear_attention + 16 full_attention layers.
+# transformers/models/qwen3_5/modeling_qwen3_5.py gates these behind
+# is_causal_conv1d_available() / is_flash_linear_attention_available() and
+# SILENTLY falls back to slow pure-torch ops when either is missing.
+# flash-linear-attention is held at 0.4.2: 0.5.0 produces "!!!!" gibberish via
+# the gated-delta-rule kernels (fla-org/flash-linear-attention#792).
+causal-conv1d==1.6.2.post1
+flash-linear-attention==0.4.2
+
+# NOTE on flash-attn: intentionally NOT pinned here, and not required.
+#   - vLLM rollouts use vLLM's OWN bundled FA2 kernels (logs show
+#     "Using FLASH_ATTN attention backend" / "FlashAttention version 2"),
+#     independent of this package.
+#   - transformers training uses ATTN_IMPLEMENTATION=sdpa, and torch SDPA
+#     dispatches to its own FlashAttention-2 backend at head_dim=256 on Hopper.
+#   - Building it here FAILS: host CUDA is 13.2 vs torch cu128.
+# See scripts/setup_flash_attn.sh for the full diagnosis and the only route
+# that would work (a real CUDA 12.8 toolkit).
