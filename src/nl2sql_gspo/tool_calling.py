@@ -226,13 +226,27 @@ def configure_tool_db_roots(database_dir: str | None = None, extra_roots: str | 
 
 
 def get_grpo_tool_functions() -> List[Callable[..., Any]]:
-    """Load callable tools used by TRL's GRPO tool-call loop."""
+    """Load callable tools used by TRL's GRPO tool-call loop.
+
+    The loop guard is wired in here so the RL path has the same seam as the
+    inference path, but it stays dormant on both counts: NL2SQL_TOOL_LOOP_GUARD
+    is unset for training, and the trainer opens no rollout_scope. Both are
+    required before a single call is deduplicated.
+
+    Do not enable it for training until the scope is threaded through the
+    trainer's rollout loop. RL generates rollouts in parallel batches, and a
+    guard whose store outlived one rollout would suppress a *different*
+    sample's legitimate query and silently corrupt the advantage estimates.
+    Without a scope the wrapper is pass-through, which is the safe default.
+    """
+
+    from nl2sql_gspo.tool_loop_guard import guard_tool_callable
 
     module = importlib.import_module("gen_tools")
     return [
-        module.bm25_search_sqlite,
-        module.sqlite_peek,
-        module.sqlite_query,
+        guard_tool_callable(module.bm25_search_sqlite),
+        guard_tool_callable(module.sqlite_peek),
+        guard_tool_callable(module.sqlite_query),
     ]
 
 

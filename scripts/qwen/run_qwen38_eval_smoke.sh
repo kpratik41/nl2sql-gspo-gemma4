@@ -28,6 +28,10 @@ export PATH="${REPO_ROOT}/.venv/bin:${PATH}"
 export PYTHONPATH="src:.:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1
 
+# Suppress byte-identical repeat tool calls within a rollout. Eval opts in; RL
+# does not, until this is shown to help. See tool_loop_guard.py for why.
+export NL2SQL_TOOL_LOOP_GUARD="${NL2SQL_TOOL_LOOP_GUARD:-1}"
+
 MODEL_PATH="${MODEL_PATH:-$(ls -d "${HOME}"/.cache/huggingface/hub/models--Qwen--Qwen3.8-27B/snapshots/*/ | head -1)}"
 TOTAL="${TOTAL:-20}"
 RUN_TAG="${RUN_TAG:-smoke${TOTAL}}"

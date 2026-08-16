@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from nl2sql_gspo.data import normalize_record
+from nl2sql_gspo import tool_loop_guard
 from nl2sql_gspo.inference_tool_executor import configure_tool_env, execute_tool_calls
 from nl2sql_gspo.sql_utils import extract_final_answer_sql
 from scripts.run_inference_bird import (
@@ -347,6 +348,15 @@ async def async_generate_text(
 
 
 async def run_one_async(row: Dict[str, Any], args: argparse.Namespace, engine: Any, sampling_params_cls: Any, tokenizer: Any) -> Dict[str, Any]:
+    # One deduplication scope per rollout. Both this runner and the pass@k
+    # runner enter through here, so scoping it once covers both. The scope is
+    # a no-op unless NL2SQL_TOOL_LOOP_GUARD is set, and its store dies with the
+    # scope, so concurrent rollouts never share state.
+    with tool_loop_guard.rollout_scope(f"{row.get('source_idx', -1)}"):
+        return await _run_one_async_inner(row, args, engine, sampling_params_cls, tokenizer)
+
+
+async def _run_one_async_inner(row: Dict[str, Any], args: argparse.Namespace, engine: Any, sampling_params_cls: Any, tokenizer: Any) -> Dict[str, Any]:
     messages = generation_messages(row, rewrite=not args.no_prompt_rewrite)
     tools = row.get("tools") or []
     valid_tool_names = allowed_tool_names(tools)

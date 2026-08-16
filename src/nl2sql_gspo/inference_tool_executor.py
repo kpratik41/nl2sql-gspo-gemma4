@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
+from nl2sql_gspo import tool_loop_guard
 from nl2sql_gspo.tool_dialects import (
     GEMMA_TOOL_CALL_RE,
     KNOWN_TOOL_ARG_KEYS,
@@ -103,12 +104,48 @@ def _augment_tool_response(name: str, response: Any) -> Any:
         return response
 
     augmented = dict(response)
+    if _is_empty_result(response):
+        # The column-coverage reminder is the wrong advice here: when a query
+        # matches nothing, the columns are usually fine and the predicate is
+        # not. Telling the model to re-check its SELECT list gives it nothing
+        # new, so it re-emits the same query -- 41% of the rollouts that
+        # exhausted the tool budget hit an empty or zero first result, against
+        # 2.2% of those that finished normally.
+        augmented["empty_result_hint"] = (
+            "This query matched no data. That usually means a literal does not match the "
+            "stored values, or a column's stored format differs from what the predicate "
+            "assumes -- for example a status stored as '+'/'-' rather than "
+            "'positive'/'negative', or a number stored as text. Do not re-run this query "
+            "unchanged. Inspect the filtered column with sqlite_peek, or find the correct "
+            "literal with bm25_search_sqlite, then revise the predicate."
+        )
+        return augmented
+
     augmented["column_coverage_reminder"] = (
         "Before final_answer, compare these returned columns against your "
         "ExpectedOutputColumns. If any requested attribute is missing, revise "
         "the SELECT list and call sqlite_query again."
     )
     return augmented
+
+
+def _is_empty_result(response: Dict[str, Any]) -> bool:
+    """True when a query returned nothing meaningful.
+
+    Two shapes count. A plain empty row set is the obvious one. The other is a
+    lone aggregate cell of 0 or NULL: ``SELECT COUNT(*) ... WHERE <bad literal>``
+    returns one row containing 0, which is "no matching data" wearing a result's
+    clothing, and it drove the worst observed loops.
+    """
+
+    rows = response.get("rows")
+    if not isinstance(rows, list):
+        return False
+    if not rows:
+        return True
+    if len(rows) == 1 and isinstance(rows[0], list) and len(rows[0]) == 1:
+        return rows[0][0] in (0, 0.0, "0", None)
+    return False
 
 
 def execute_tool_calls(tool_calls: List[Dict[str, Any]], timeout_s: float = 60.0) -> List[Dict[str, Any]]:
@@ -123,7 +160,16 @@ def execute_tool_calls(tool_calls: List[Dict[str, Any]], timeout_s: float = 60.0
             function = call.get("function") or {}
             name = function.get("name", "")
             arguments = function.get("arguments") or {}
+
+            # Inert unless the guard is enabled AND the caller opened a
+            # rollout_scope, so nothing changes for callers that do neither.
+            notice = tool_loop_guard.check(name, arguments)
+            if notice is not None:
+                responses.append((name, notice))
+                continue
+
             response = await _execute_tool(name, arguments, timeout_s)
+            tool_loop_guard.record(name, arguments, response)
             responses.append((name, _augment_tool_response(name, response)))
         return responses
 
