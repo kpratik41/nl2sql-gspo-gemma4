@@ -53,7 +53,7 @@ export TRAIN_CUDA_VISIBLE_DEVICES="${TRAIN_CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5}"
 # small; raise for production. Rows whose templated prompt exceeds
 # MAX_PROMPT_LENGTH are dropped from the dataset, not truncated.
 export MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-20000}"
-export MAX_COMPLETION_LENGTH="${MAX_COMPLETION_LENGTH:-4096}"
+export MAX_COMPLETION_LENGTH="${MAX_COMPLETION_LENGTH:-8000}"
 
 # DAPO Soft Overlong Punishment. L_max MUST track MAX_COMPLETION_LENGTH: the
 # launcher default is 8000, so with a 4096 completion cap the ramp (starting at
@@ -82,13 +82,15 @@ export ASYNC_MAX_TOOL_CALLING_ITERATIONS="${ASYNC_MAX_TOOL_CALLING_ITERATIONS:-8
 # Tiny rollout volumes.
 # TRL requires (num_processes * per_device_train_batch_size *
 # gradient_accumulation_steps) to be divisible by num_generations.
-#   6 procs * bs 4 * ga 1 = 24 -> 12 groups/step, x2 oversample = 48 rollouts/step
-# If this OOMs, drop PER_DEVICE_TRAIN_BATCH_SIZE to 2 (see README: the failure
-# lands in the log-prob/loss step, not the forward, because vocab_size is 248320).
+#   6 procs * bs 2 * ga 2 = 24 -> 12 groups/step, x2 oversample = 48 rollouts/step
+# bs is held at 2: vocab_size is 248320, so completion logits alone are
+# bs * 8000 * 248320 * 2 B (~8 GB at bs=2), roughly doubling on the fp32
+# log-softmax and again for backward. Any OOM lands in the log-prob/loss step,
+# not the forward, so gradient checkpointing will not help -- lower bs instead.
 export NUM_GENERATIONS="${NUM_GENERATIONS:-2}"
-export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-1}"
+export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"
 export DAPO_OVERSAMPLE_FACTOR="${DAPO_OVERSAMPLE_FACTOR:-2}"
-export PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-4}"
+export PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-2}"
 # Safe at 16 only because EVAL_MODE=reward_only skips the eval loss/logprob
 # forward pass; with a real eval forward this would OOM at 24K-token sequences.
 export PER_DEVICE_EVAL_BATCH_SIZE="${PER_DEVICE_EVAL_BATCH_SIZE:-16}"
