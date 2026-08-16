@@ -564,11 +564,14 @@ _QWEN_EXAMPLE_SUBSTITUTIONS = [
 # --no-stats and carries no example values at all -- guidance keyed to them would
 # be inert for every training prompt while working in dev.
 _AFFINITY_ANCHOR = "- Use sqlite_peek for date columns when the stored format is uncertain."
+# One bullet, not two. Split across two bullets the hazard and the remedy read as
+# separate instructions, and the second ("check such a column") loses its
+# antecedent -- which column? Keeping condition, consequence and action in a
+# single sentence makes the rule fire only in the case it describes.
 _AFFINITY_GUIDANCE = (
-    "- A TEXT column may hold numeric-looking values. Comparisons and ORDER BY on it "
-    "use string ordering, not numeric ordering, and return wrong rows without erroring.\n"
-    "- Check such a column with sqlite_peek, and use CAST(col AS REAL) only if its "
-    "values are numeric."
+    "- A TEXT column holding numeric-looking values compares and orders as text, not "
+    "as numbers, and returns wrong rows without erroring; check it with sqlite_peek "
+    "and use CAST(col AS REAL) only if its values are numeric."
 )
 
 
