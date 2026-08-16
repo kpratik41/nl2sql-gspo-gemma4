@@ -67,7 +67,7 @@ if [[ -z "${CUDA_HOME:-}" && -z "${DS_IGNORE_CUDA_DETECTION:-}" ]]; then
   export DS_IGNORE_CUDA_DETECTION=1
 fi
 
-export WANDB_PROJECT=gemma4-31b-bird-gspo
+export WANDB_PROJECT="${WANDB_PROJECT:-gemma4-31b-bird-gspo}"
 REPORT_TO="${REPORT_TO:-wandb}"
 TRAIN_LIMIT="${TRAIN_LIMIT:--1}"
 EVAL_LIMIT="${EVAL_LIMIT:-32}"
@@ -295,6 +295,23 @@ if [[ "${ENABLE_TOOL_ROLLOUTS}" == "1" ]]; then
 fi
 if [[ -n "${TOOL_DB_EXTRA_ROOTS}" ]]; then
   DAPO_ARGS+=(--tool_db_extra_roots "${TOOL_DB_EXTRA_ROOTS}")
+fi
+
+# Qwen3.8 support. TOOL_DIALECT selects the tool-call surface syntax the policy
+# emits ("qwen" for <tool_call><function=...>, "gemma" for call:name{...}); when
+# unset the trainer infers it from MODEL_NAME. VLLM_MODE=colocate runs vLLM
+# in-process on the training GPUs instead of against a separate server.
+if [[ -n "${TOOL_DIALECT:-}" ]]; then
+  DAPO_ARGS+=(--tool_dialect "${TOOL_DIALECT}")
+fi
+if [[ -n "${VLLM_MODE:-}" ]]; then
+  DAPO_ARGS+=(--vllm_mode "${VLLM_MODE}")
+fi
+if [[ -n "${VLLM_COLOCATE_GPU_UTIL:-}" ]]; then
+  DAPO_ARGS+=(--vllm_gpu_memory_utilization "${VLLM_COLOCATE_GPU_UTIL}")
+fi
+if [[ -n "${VLLM_COLOCATE_TP:-}" ]]; then
+  DAPO_ARGS+=(--vllm_tensor_parallel_size "${VLLM_COLOCATE_TP}")
 fi
 
 "${ACCELERATE_BIN}" launch \

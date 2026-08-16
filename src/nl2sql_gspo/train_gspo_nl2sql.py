@@ -108,6 +108,30 @@ def parse_args(argv=None):
         help="Trainer sharding backend. Use fsdp to avoid DeepSpeed.",
     )
 
+    parser.add_argument(
+        "--vllm_mode",
+        type=str,
+        choices=["server", "colocate"],
+        default="server",
+        help=(
+            "'server' sends rollouts to a separate vLLM server process. "
+            "'colocate' runs vLLM in the training process on the same GPUs "
+            "(in-memory rollouts, no server to launch or keep in sync). "
+            "Only used by the grpo backend; async_grpo is always server-based."
+        ),
+    )
+    parser.add_argument(
+        "--vllm_gpu_memory_utilization",
+        type=float,
+        default=0.3,
+        help="Colocate mode only: fraction of each GPU vLLM may use alongside training.",
+    )
+    parser.add_argument(
+        "--vllm_tensor_parallel_size",
+        type=int,
+        default=1,
+        help="Colocate mode only: tensor-parallel width for the in-process vLLM engine.",
+    )
     parser.add_argument("--vllm_server_base_url", type=str, default="http://127.0.0.1:8000")
     parser.add_argument(
         "--vllm_group_port",
@@ -131,6 +155,18 @@ def parse_args(argv=None):
         type=str,
         default=None,
         help="Optional os.pathsep-separated DB roots appended to BIRD_DB_ROOTS for tool execution.",
+    )
+    parser.add_argument(
+        "--tool_dialect",
+        type=str,
+        choices=["auto", "gemma", "qwen"],
+        default="auto",
+        help=(
+            "Tool-call surface syntax emitted by the policy. 'gemma' parses "
+            "call:name{...}; 'qwen' parses <tool_call><function=...>. 'auto' "
+            "infers it from --model_name_or_path. Getting this wrong means zero "
+            "tool calls are parsed and the GRPO tool loop never runs."
+        ),
     )
 
     parser.add_argument("--num_generations", type=int, default=16)
@@ -392,8 +428,20 @@ def main():
         get_grpo_tool_functions,
         get_sync_grpo_tool_functions,
     )
+    from nl2sql_gspo.tool_dialects import detect_dialect_name, set_dialect
 
     args = parse_args()
+
+    # Select the tool-call dialect before anything parses a completion. This is
+    # set process-wide (and in the environment) so DataLoader workers and the
+    # reward functions agree with the trainer.
+    dialect_name = (
+        detect_dialect_name(args.model_name_or_path)
+        if args.tool_dialect == "auto"
+        else args.tool_dialect
+    )
+    set_dialect(dialect_name)
+    print(f"[tools] tool-call dialect: {dialect_name} (--tool_dialect={args.tool_dialect})")
 
     report_to = parse_csv_list(args.report_to)
     if not report_to:
@@ -593,12 +641,17 @@ def main():
         temperature=args.temperature,
         top_p=args.top_p,
 
-        # vLLM server mode
+        # vLLM rollouts: "server" talks to a separate process, "colocate" runs
+        # the engine in-process on the training GPUs (in-memory rollouts).
         use_vllm=True,
-        vllm_mode="server",
-        vllm_server_base_url=args.vllm_server_base_url,
+        vllm_mode=args.vllm_mode,
+        vllm_server_base_url=(
+            args.vllm_server_base_url if args.vllm_mode == "server" else None
+        ),
         vllm_group_port=args.vllm_group_port,
         vllm_server_timeout=600,
+        vllm_gpu_memory_utilization=args.vllm_gpu_memory_utilization,
+        vllm_tensor_parallel_size=args.vllm_tensor_parallel_size,
 
         # Training
         per_device_train_batch_size=args.per_device_train_batch_size,
