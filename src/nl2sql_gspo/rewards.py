@@ -70,6 +70,14 @@ FINAL_SQL_RE = re.compile(
     r"<final_answer>\s*<sql_code>\s*.+?\s*</sql_code>\s*</final_answer>",
     re.IGNORECASE | re.DOTALL,
 )
+RELEVANT_TABLES_CONTENT_RE = re.compile(
+    r"<relevant_tables>\s*(.*?)\s*</relevant_tables>",
+    re.IGNORECASE | re.DOTALL,
+)
+RELEVANT_COLUMNS_CONTENT_RE = re.compile(
+    r"<relevant_columns>\s*(.*?)\s*</relevant_columns>",
+    re.IGNORECASE | re.DOTALL,
+)
 SQL_CODE_CONTENT_RE = re.compile(
     r"<sql_code>\s*(.*?)\s*</sql_code>",
     re.IGNORECASE | re.DOTALL,
@@ -202,6 +210,34 @@ def make_nl2sql_rewards(
         return 1.0 if ok and _has_any_nonnull(rows) else 0.0
 
     def format_reward(completions, **kwargs) -> List[float]:
+        """Graded response-format score in [0, 1].
+
+        Previously all-or-nothing over six conditions, which threw away most of
+        the signal: a rollout that produced a clean, executing final answer but
+        omitted the schema-linking tags scored 0, exactly like one that ran out
+        of tool rounds and produced nothing. Inside a group-relative objective
+        those two are indistinguishable, so the policy learns nothing about
+        which was closer.
+
+        The components are weighted by how much they matter. Producing a
+        well-formed, non-leaking final answer is the bulk of the score; the
+        schema-linking block is worth less, and half of *its* weight is
+        conditional on the tags agreeing with the SQL actually emitted. That
+        last part closes a gap: the tags used to be checked for presence only,
+        so `<relevant_tables>garbage</relevant_tables>` scored full marks, and
+        nothing else in the reward stack ever read them -- the linking rewards
+        parse the final SQL, not the tags. The model was being asked to emit a
+        block that nothing verified.
+        """
+
+        weights = {
+            "scratch_pad": 0.15,
+            "final_answer_block": 0.30,
+            "sql_code_clean": 0.25,
+            "linking_tags_present": 0.15,
+            "linking_tags_match_sql": 0.15,
+        }
+
         rewards = []
         for completion in completions:
             text = extract_completion_text(completion)
@@ -222,18 +258,42 @@ def make_nl2sql_rewards(
                 and "<final_answer" not in sql_code_clean.lower()
                 and not any(marker in sql_code_clean for marker in leak_markers)
             )
-            rewards.append(
-                1.0
-                if (
-                    SCRATCH_PAD_RE.search(text)
-                    and RELEVANT_TABLES_RE.search(text)
-                    and RELEVANT_COLUMNS_RE.search(text)
-                    and final_match
-                    and final_sql
-                    and sql_code_is_clean
-                )
-                else 0.0
+
+            tables_match = RELEVANT_TABLES_CONTENT_RE.search(text)
+            columns_match = RELEVANT_COLUMNS_CONTENT_RE.search(text)
+            tags_present = bool(
+                RELEVANT_TABLES_RE.search(text) and RELEVANT_COLUMNS_RE.search(text)
             )
+
+            tags_agree = 0.0
+            if tags_present and final_sql:
+                declared_tables = {
+                    t.strip().lower() for t in (tables_match.group(1) or "").split(",") if t.strip()
+                }
+                declared_columns = {
+                    c.strip().lower().split(".")[-1]
+                    for c in (columns_match.group(1) or "").split(",")
+                    if c.strip()
+                }
+                sql_tables = {t.lower() for t in extract_tables_from_sql(final_sql)}
+                sql_columns = {c.lower().split(".")[-1] for c in extract_columns_from_sql(final_sql)}
+                # Jaccard on both, averaged: rewards honest declarations without
+                # demanding an exact string match the SQL parser may not produce.
+                parts = []
+                if sql_tables or declared_tables:
+                    parts.append(jaccard(declared_tables, sql_tables))
+                if sql_columns or declared_columns:
+                    parts.append(jaccard(declared_columns, sql_columns))
+                tags_agree = sum(parts) / len(parts) if parts else 0.0
+
+            score = (
+                weights["scratch_pad"] * bool(SCRATCH_PAD_RE.search(text))
+                + weights["final_answer_block"] * bool(final_match and final_sql)
+                + weights["sql_code_clean"] * bool(sql_code_is_clean)
+                + weights["linking_tags_present"] * tags_present
+                + weights["linking_tags_match_sql"] * tags_agree
+            )
+            rewards.append(round(float(score), 6))
         return rewards
 
     def execution_reward(completions, db_id=None, **kwargs) -> List[float]:
@@ -247,6 +307,17 @@ def make_nl2sql_rewards(
         return _parallel_map(_result_reward_one, items)
 
     def table_linking_reward(completions, gold_sql=None, **kwargs) -> List[float]:
+        """Jaccard overlap between the predicted and gold table sets.
+
+        Was an exact set match, which is the harshest possible shape for the
+        most common error we see: 44% of wrong predictions reach the data
+        through a longer join path than gold needs. Under exact match, joining
+        one unnecessary table scores the same as selecting entirely the wrong
+        tables, so the policy gets no gradient toward "almost right". Jaccard
+        also matches column_linking_reward, which already used it -- the two
+        were inconsistent for no stated reason.
+        """
+
         gold_sqls = gold_sql or kwargs.get("query") or kwargs.get("sql") or [""] * len(completions)
         rewards = []
         for completion, current_gold_sql in zip(completions, gold_sqls):
@@ -255,7 +326,7 @@ def make_nl2sql_rewards(
             if not gold_tables:
                 rewards.append(0.0)
                 continue
-            rewards.append(1.0 if pred_tables == gold_tables else 0.0)
+            rewards.append(jaccard(pred_tables, gold_tables))
         return rewards
 
     def column_linking_reward(completions, gold_sql=None, **kwargs) -> List[float]:

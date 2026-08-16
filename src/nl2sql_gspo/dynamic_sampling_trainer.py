@@ -860,6 +860,94 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
 
         return tool_mask, completions, completion_ids, logprobs, tool_call_count, tool_failure_count, tool_images
 
+    def _dump_rollouts(
+        self,
+        *,
+        step: int,
+        inputs,
+        completions,
+        completion_ids_list,
+        rewards_per_func: torch.Tensor,
+        num_generations: int,
+    ) -> None:
+        """Write every rollout of this step to JSONL, verbatim.
+
+        The [rollout-sample] log lines truncate to a few hundred characters and
+        show only a handful of rollouts, which is enough to notice a problem and
+        not enough to diagnose one -- the un-awaited-coroutine bug was visible in
+        a sample line but its scope was not. This writes the full completion
+        text, the tool calls parsed out of it, and every reward component per
+        rollout, so a step can be audited after the fact.
+
+        One file per (step, rank): ranks hold disjoint rollouts and writing to a
+        shared path would interleave.
+        """
+
+        dump_dir = os.environ.get("DAPO_ROLLOUT_DUMP_DIR", "")
+        if not dump_dir:
+            return
+
+        try:
+            rank = int(getattr(self.accelerator, "process_index", 0))
+            path = os.path.join(dump_dir, f"step{step:05d}-rank{rank}.jsonl")
+            os.makedirs(dump_dir, exist_ok=True)
+
+            names = list(self.reward_func_names)
+            rewards = rewards_per_func.detach().float().cpu().tolist()
+
+            # rewards_per_func is GATHERED (see _calculate_rewards) so it holds
+            # every rank's rollouts, while `completions` is this rank's slice.
+            # accelerate gathers rank-major, so this rank's rows start at
+            # process_index * len(completions). Pairing them without the offset
+            # gives every rank rows 0..n-1 -- the completions are still correct
+            # but the rewards attached to them belong to rank 0.
+            offset = 0
+            world = int(getattr(self.accelerator, "num_processes", 1) or 1)
+            if len(rewards) == world * len(completions):
+                offset = rank * len(completions)
+            elif len(rewards) != len(completions):
+                print(
+                    f"[rollout-dump] step {step}: cannot align {len(rewards)} reward rows to "
+                    f"{len(completions)} completions on {world} ranks; omitting rewards",
+                    flush=True,
+                )
+                rewards = []
+            db_ids = [x.get("db_id", "") for x in inputs] if inputs else []
+            gold_sqls = [x.get("gold_sql", "") for x in inputs] if inputs else []
+            questions = [x.get("question", "") for x in inputs] if inputs else []
+
+            with open(path, "w", encoding="utf-8") as handle:
+                for i, completion in enumerate(completions):
+                    text = extract_completion_text(completion)
+                    row = {
+                        "step": step,
+                        "rank": rank,
+                        "rollout_index": i,
+                        "group_index": i // max(1, num_generations),
+                        "db_id": db_ids[i] if i < len(db_ids) else "",
+                        "question": questions[i] if i < len(questions) else "",
+                        "gold_sql": gold_sqls[i] if i < len(gold_sqls) else "",
+                        "completion_text": text,
+                        "final_sql": extract_final_answer_sql(text),
+                        "tool_calls": [
+                            call.get("function", {}).get("name", "")
+                            for call in (extract_tool_calls(text) or [])
+                        ],
+                        "completion_tokens": len(completion_ids_list[i])
+                        if i < len(completion_ids_list)
+                        else None,
+                        "rewards": {
+                            name: rewards[offset + i][j] if offset + i < len(rewards) else None
+                            for j, name in enumerate(names)
+                        },
+                        "reward_total": (
+                            sum(rewards[offset + i]) if offset + i < len(rewards) else None
+                        ),
+                    }
+                    handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except Exception as exc:  # never let auditing kill a training run
+            print(f"[rollout-dump] failed at step {step}: {type(exc).__name__}: {exc}", flush=True)
+
     def _log_rollout_debug(
         self,
         *,
@@ -876,6 +964,15 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         step = int(getattr(self.state, "global_step", 0))
         if step % self.debug_rollout_every != 0:
             return
+
+        self._dump_rollouts(
+            step=step,
+            inputs=inputs,
+            completions=completions,
+            completion_ids_list=completion_ids_list,
+            rewards_per_func=rewards_per_func,
+            num_generations=num_generations,
+        )
 
         eos_and_pad = [self._tokenizer.eos_token_id, self._tokenizer.pad_token_id]
         lengths = [len(ids) for ids in completion_ids_list]
