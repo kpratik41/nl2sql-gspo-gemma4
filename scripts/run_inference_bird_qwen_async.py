@@ -448,7 +448,49 @@ async def run_one_async(row: Dict[str, Any], args: argparse.Namespace, engine: A
 
         rounds.append(round_record)
         if round_index >= args.max_tool_rounds:
-            stop_reason = "max_tool_rounds"
+            # The round budget is spent but the model is still asking for tools.
+            # Without this branch the rollout was simply cut off mid-loop and
+            # returned no SQL at all -- an automatic zero. It never saw
+            # FINALIZE_PROMPT, because the forced-final path above only fires
+            # when the model stops calling tools of its own accord, so
+            # `forced_final` never appeared in any run's stop_reason_counts.
+            #
+            # These rollouts are not lost causes: every truncated rollout in the
+            # last full eval had already run a successful query, and 65 of 76 had
+            # written out a CandidateSQL. Give them one non-tool turn to commit
+            # to an answer using what they already have.
+            #
+            # The pending tool call is deliberately NOT executed -- doing so
+            # would spend a round beyond max_tool_rounds -- and the assistant
+            # turn that requested it is dropped, so the transcript never carries
+            # a tool_call with no matching tool response.
+            if tool_names and not args.no_force_finalize:
+                messages.append({"role": "user", "content": FINALIZE_PROMPT})
+                final_text, final_tokens = await async_generate_text(
+                    engine=engine,
+                    sampling_params_cls=sampling_params_cls,
+                    prompt_text=render_qwen_prompt(tokenizer, messages, [], args),
+                    max_tokens=max(1, min(args.max_new_tokens - completion_tokens, args.vllm_max_model_len)),
+                    temperature=args.temperature,
+                    top_p=args.top_p,
+                    top_k=args.top_k,
+                    stop_token_ids=stop_token_ids,
+                    request_prefix=f"idx{row.get('source_idx', -1)}-capfinal",
+                )
+                completion_tokens += final_tokens
+                rounds.append(
+                    {
+                        "round_index": len(rounds),
+                        "assistant_text": final_text,
+                        "tool_calls": [],
+                        "rejected_tool_calls": [],
+                        "tool_responses": [],
+                        "forced_final": True,
+                    }
+                )
+                stop_reason = "forced_final_at_cap"
+            else:
+                stop_reason = "max_tool_rounds"
             break
 
         messages.append(assistant_message_for_history(text, tool_calls[:1]))
