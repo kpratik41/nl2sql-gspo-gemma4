@@ -12,6 +12,7 @@ from nl2sql_gspo.sql_utils import (
     bird_get_gold_rows,
     bird_result_match,
 )
+from nl2sql_gspo.tool_dialects import get_dialect
 
 
 # Hard wall-clock buffer added on top of the SQLite-internal interrupt
@@ -211,12 +212,15 @@ def make_nl2sql_rewards(
                 sql_code_match = SQL_CODE_CONTENT_RE.search(final_match.group(0))
             sql_code_text = sql_code_match.group(1) if sql_code_match else ""
             sql_code_clean = sql_code_text.strip()
+            # Tool-call syntax leaking into <sql_code> is model-specific, so the
+            # markers come from the active dialect (Gemma "call:name{",
+            # Qwen "<tool_call>/<function=").
+            leak_markers = get_dialect().sql_leak_markers
             sql_code_is_clean = (
                 bool(sql_code_clean)
                 and "<scratch_pad" not in sql_code_clean.lower()
                 and "<final_answer" not in sql_code_clean.lower()
-                and "call:" not in sql_code_clean
-                and "```" not in sql_code_clean
+                and not any(marker in sql_code_clean for marker in leak_markers)
             )
             rewards.append(
                 1.0

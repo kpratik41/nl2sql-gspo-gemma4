@@ -10,9 +10,10 @@ SQL_FENCE_RE = re.compile(r"```\s*(.*?)```", re.IGNORECASE | re.DOTALL)
 SQL_CODE_TAG_RE = re.compile(r"<sql_code>\s*(.*?)\s*</sql_code>", re.IGNORECASE | re.DOTALL)
 FINAL_ANSWER_TAG_RE = re.compile(r"<final_answer>\s*(.*?)\s*</final_answer>", re.IGNORECASE | re.DOTALL)
 SQL_START_RE = re.compile(r"\b(SELECT|WITH)\b", re.IGNORECASE)
-TOOL_CALL_MARKER_RE = re.compile(
-    r"(?:<\|tool_call\>\s*)?call:[A-Za-z_][A-Za-z0-9_]*\{",
-    re.IGNORECASE,
+
+from nl2sql_gspo.tool_dialects import (  # noqa: E402
+    GEMMA_TOOL_CALL_MARKER_RE as TOOL_CALL_MARKER_RE,  # back-compat alias
+    contains_any_tool_call_marker,
 )
 
 BAD_SQL_RE = re.compile(
@@ -141,7 +142,7 @@ def extract_sql(completion: Any, *, prefer_final_answer: bool = True) -> str:
     # If the completion contains tool-call syntax but no final-answer SQL, it
     # is an unfinished agentic rollout. Do not reward a draft CandidateSQL from
     # the scratchpad or a SQL argument inside a tool call as the final answer.
-    if TOOL_CALL_MARKER_RE.search(text):
+    if contains_any_tool_call_marker(text):
         return ""
 
     m = SQL_START_RE.search(text)

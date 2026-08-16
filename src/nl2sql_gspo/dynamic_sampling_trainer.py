@@ -66,13 +66,7 @@ from transformers.training_args import OptimizerNames
 
 from nl2sql_gspo.inference_tool_executor import extract_tool_calls
 from nl2sql_gspo.sql_utils import extract_completion_text, extract_final_answer_sql, extract_sql
-
-
-_TOOL_CALL_NAME_RE = re.compile(
-    r"(?:<\|tool_call\>\s*)?call:(?P<name>[A-Za-z_][A-Za-z0-9_]*)\{",
-    re.IGNORECASE,
-)
-_TOOL_RESPONSE_RE = re.compile(r"<\|tool_response\>|response:[A-Za-z_][A-Za-z0-9_]*\{", re.IGNORECASE)
+from nl2sql_gspo.tool_dialects import get_dialect
 
 
 def _pad_to_width(tensor: torch.Tensor, target_width: int, pad_value, side: str) -> torch.Tensor:
@@ -431,8 +425,9 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         return completion_ids, logprobs
 
     def _completion_debug_flags(self, completion: Any) -> Dict[str, Any]:
+        dialect = get_dialect()
         text = extract_completion_text(completion)
-        call_names = [m.group("name") for m in _TOOL_CALL_NAME_RE.finditer(text)]
+        call_names = [m.group("name") for m in dialect.raw_call_name_re.finditer(text)]
         final_sql = extract_final_answer_sql(text)
         extracted_sql = extract_sql(text)
         roles = []
@@ -442,20 +437,22 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             "text": text,
             "call_names": call_names,
             "has_tool_call": bool(call_names),
-            "has_tool_response": bool(_TOOL_RESPONSE_RE.search(text)) or "tool" in roles,
+            "has_tool_response": bool(dialect.tool_response_re.search(text)) or "tool" in roles,
             "has_final_answer_tag": "<final_answer" in text.lower(),
             "has_final_sql": bool(final_sql),
             "has_extracted_sql": bool(extracted_sql),
             "sql": final_sql or extracted_sql,
         }
 
-    def _attach_gemma_tool_calls(self, completions) -> int:
-        """Populate TRL's expected ``tool_calls`` field from Gemma tool text.
+    def _attach_native_tool_calls(self, completions) -> int:
+        """Populate TRL's expected ``tool_calls`` field from native tool text.
 
         TRL only runs tools when the decoded assistant message contains a
-        structured ``tool_calls`` list. Gemma-4 emits compact native calls like
-        ``call:sqlite_query{db_id:<|"|>...,sql:<|"|>...}``; without this bridge
-        those calls remain plain text and no tool response is ever appended.
+        structured ``tool_calls`` list. Models emit their own surface syntax
+        instead -- Gemma-4 ``call:sqlite_query{db_id:<|"|>...}``, Qwen3.8
+        ``<tool_call><function=sqlite_query>...</function></tool_call>`` --
+        so without this bridge those calls stay plain text and no tool response
+        is ever appended. Parsing is delegated to the active dialect.
         """
 
         attached = 0
@@ -487,7 +484,8 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
 
         return attached
 
-    def _gemma_tool_parse_stats(self, completions) -> Dict[str, Any]:
+    def _native_tool_parse_stats(self, completions) -> Dict[str, Any]:
+        dialect = get_dialect()
         raw_seq = 0
         parsed_seq = 0
         parsed_calls = 0
@@ -500,7 +498,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             if not isinstance(message, dict):
                 continue
             content = str(message.get("content", ""))
-            raw_matches = re.findall(r"call:([A-Za-z_][A-Za-z0-9_]*)\{", content)
+            raw_matches = dialect.raw_call_name_re.findall(content)
             if raw_matches:
                 raw_seq += 1
                 raw_names.update(raw_matches)
@@ -551,8 +549,8 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
     def _tool_call_loop(self, prompts, prompt_ids, completion_ids, completions, logprobs, images, multimodal_fields):
         # Tool execution loop: execute tools, then regenerate completions with tool results appended to the prompt.
         mode = "train" if self.model.training else "eval"
-        parse_stats = self._gemma_tool_parse_stats(completions)
-        attached_initial = self._attach_gemma_tool_calls(completions)
+        parse_stats = self._native_tool_parse_stats(completions)
+        attached_initial = self._attach_native_tool_calls(completions)
         if getattr(self.accelerator, "is_main_process", True):
             step = int(getattr(self.state, "global_step", 0))
             raw_names = ",".join(f"{k}:{v}" for k, v in parse_stats["raw_names"].most_common(8)) or "none"
@@ -560,7 +558,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             print(
                 f"[tool-parse] mode={mode} step={step} rollouts={len(completions)} "
                 f"raw_tool_seq={parse_stats['raw_seq']} parsed_tool_seq={parse_stats['parsed_seq']} "
-                f"attached_gemma_tool_calls={attached_initial} raw_names={raw_names} parsed_names={names}",
+                f"attached_native_tool_calls={attached_initial} raw_names={raw_names} parsed_names={names}",
                 flush=True,
             )
 
@@ -796,7 +794,7 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 completion_ids[idx_with_tool] = pct[prompt_length:] + post_tool_ids[idx]
 
             post_tool_completions = [parse_response(self._tokenizer, ids) if ids else {} for ids in post_tool_ids]
-            self._attach_gemma_tool_calls([[completion] for completion in post_tool_completions if completion])
+            self._attach_native_tool_calls([[completion] for completion in post_tool_completions if completion])
 
             for idx in range(len(idxs_with_tool)):
                 idx_with_tool = idxs_with_tool[idx]
