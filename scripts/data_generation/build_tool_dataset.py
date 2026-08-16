@@ -20,7 +20,12 @@ if str(SRC_ROOT) not in sys.path:
 
 from nl2sql_gspo.sql_utils import extract_sql  # noqa: E402
 from nl2sql_gspo.tool_calling import get_tool_definitions, tool_catalog_compact  # noqa: E402
-from prompts import SYSTEM_PROMPT_TEMPLATES, SYSTEM_PROMPT_TEMPLATES_CONSENSUS  # noqa: E402
+from prompts import (  # noqa: E402
+    SYSTEM_PROMPT_TEMPLATES,
+    SYSTEM_PROMPT_TEMPLATES_CONSENSUS,
+    SYSTEM_PROMPT_TEMPLATES_CONSENSUS_QWEN,
+    SYSTEM_PROMPT_TEMPLATES_QWEN,
+)
 
 
 DB_ID_TAG_RE = re.compile(r"<db_id>\s*([^<\n]+?)\s*</db_id>", re.IGNORECASE | re.DOTALL)
@@ -52,6 +57,8 @@ def build_tool_system_prompt(prompt_template: str) -> str:
     templates = {
         "default": SYSTEM_PROMPT_TEMPLATES,
         "consensus": SYSTEM_PROMPT_TEMPLATES_CONSENSUS,
+        "default_qwen": SYSTEM_PROMPT_TEMPLATES_QWEN,
+        "consensus_qwen": SYSTEM_PROMPT_TEMPLATES_CONSENSUS_QWEN,
     }
     return templates[prompt_template].replace(
         "{TOOL_CATALOG_COMPACT}",
@@ -114,9 +121,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", required=True, help="Output tool-calling JSONL.")
     parser.add_argument(
         "--prompt-template",
-        choices=["default", "consensus"],
+        choices=["default", "consensus", "default_qwen", "consensus_qwen"],
         default="default",
-        help="System prompt template to embed in generated records.",
+        help=(
+            "System prompt template to embed in generated records. The _qwen "
+            "variants teach Qwen3.8's <tool_call><function=...> syntax instead "
+            "of Gemma's call:name{...}; using the wrong one trains the policy "
+            "toward a format its tool-call parser will reject."
+        ),
     )
     parser.add_argument("--limit", type=int, default=-1, help="Rows to process (-1 = all).")
     parser.add_argument("--log-every", type=int, default=500, help="Progress interval.")
@@ -130,7 +142,9 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     system_prompt = build_tool_system_prompt(args.prompt_template)
-    tools = get_tool_definitions(include_consensus=args.prompt_template == "consensus")
+    tools = get_tool_definitions(
+        include_consensus=args.prompt_template.startswith("consensus")
+    )
 
     written = 0
     missing: List[str] = []

@@ -1,5 +1,53 @@
 import os as _os
 
+# ---------- Native tool-call syntax blocks ----------
+#
+# Gemma-4 and Qwen3.8 use incompatible tool-call surface syntax, and the system
+# prompt must agree with the model's chat template or the model is given
+# contradictory instructions. These blocks are swapped into the shared system
+# prompt below so only the format-specific lines differ between models.
+
+GEMMA_NATIVE_TOOL_CALL_BLOCK = """Native tool-call syntax is mandatory:
+- Emit tool calls exactly as `call:tool_name{arg1:value1,arg2:value2}`.
+- A tool call ends the assistant turn. After emitting one `call:...{...}`, stop immediately and wait for the tool response before writing any more scratch-pad text, another tool call, or a final answer.
+- Do not wrap tool calls in <tool_code>, XML tags, markdown fences, or JSON-only blocks.
+- Do not write "Then call ..." followed by raw JSON. The actual assistant output must be the native `call:...{...}` line.
+- Never invent or write tool responses. Only use tool results that appear in the conversation after your tool call.
+- For SQL arguments, pass the SQL directly after `sql:`; quoting the entire SQL string is optional, but the whole SQL must be present."""
+
+# Qwen3.8's chat template already injects the authoritative XML format spec
+# whenever `tools=` is passed to apply_chat_template, so this block deliberately
+# does NOT restate the schema -- it only reinforces the turn discipline the RL
+# tool loop depends on. Restating the format here would risk drifting from the
+# template and teaching the model a syntax the parser rejects.
+QWEN_NATIVE_TOOL_CALL_BLOCK = """Native tool-call syntax is mandatory:
+- Use the exact `<tool_call><function=...><parameter=...>` format defined in the Tools section of this conversation. Do not invent a different format.
+- A tool call ends the assistant turn. After emitting `</tool_call>`, stop immediately and wait for the tool response before writing any more scratch-pad text, another tool call, or a final answer.
+- Put any reasoning for the call BEFORE the `<tool_call>` block, never after it.
+- Do not wrap tool calls in markdown fences, and do not emit tool calls as raw JSON.
+- Do not write "Then call ..." followed by raw JSON. The actual assistant output must be the `<tool_call>` block.
+- Never invent or write tool responses. Only use tool results that appear in the conversation after your tool call.
+- Pass each argument as its own `<parameter=name>` block; put the full SQL text inside `<parameter=sql>` without surrounding quotes or fences."""
+
+# The consensus template carries its own wording, including a line that
+# explicitly forbids <tool_call> wrappers -- the exact syntax Qwen requires.
+GEMMA_NATIVE_TOOL_CALL_BLOCK_CONSENSUS = """Native tool-call syntax is mandatory:
+- Emit tool calls exactly as `call:tool_name{arg1:value1,arg2:value2}`.
+- Do not use <tool_call>...</tool_call>, router_tools, JSON-only blocks, markdown fences, or XML wrappers.
+- A tool call ends the assistant turn. After emitting one `call:...{...}`, stop immediately and wait for the tool response before writing any more scratch-pad text, another tool call, or a final answer.
+- Never invent or write tool responses. Only use tool results that appear in the conversation after your tool call.
+- For SQL arguments, pass the SQL directly after `sql:`; quoting the entire SQL string is optional, but the whole SQL must be present.
+- For consensus_at_1, pass exactly seven candidate SQL strings in `sqls:[...]`."""
+
+QWEN_NATIVE_TOOL_CALL_BLOCK_CONSENSUS = """Native tool-call syntax is mandatory:
+- Use the exact `<tool_call><function=...><parameter=...>` format defined in the Tools section of this conversation. Do not invent a different format.
+- Do not use router_tools, JSON-only blocks, or markdown fences around tool calls.
+- A tool call ends the assistant turn. After emitting `</tool_call>`, stop immediately and wait for the tool response before writing any more scratch-pad text, another tool call, or a final answer.
+- Put any reasoning for the call BEFORE the `<tool_call>` block, never after it.
+- Never invent or write tool responses. Only use tool results that appear in the conversation after your tool call.
+- Pass each argument as its own `<parameter=name>` block; put the full SQL text inside `<parameter=sql>` without surrounding quotes or fences.
+- For consensus_at_1, pass exactly seven candidate SQL strings as a JSON array inside `<parameter=sqls>`."""
+
 # ---------- System prompt ----------
 
 SYSTEM_PROMPT_TEMPLATES = """You are a Text-to-SQL agent specialized in SQLite.
@@ -399,3 +447,139 @@ Final answer, only after successful sqlite_query verification:
 <sql_code><VERIFIED_CONSENSUS_SQL></sql_code>
 </final_answer>
 """
+
+
+# ---------- Qwen3.8 variants ----------
+#
+# Derived from the Gemma templates by swapping only the tool-call syntax block
+# and the few-shot call examples, so every SQL rule, workflow step and schema
+# linking requirement stays in exactly one place. Each substitution asserts it
+# actually fired: if the Gemma text above is edited without updating these
+# pairs, importing this module raises instead of silently shipping a prompt
+# that teaches Qwen the wrong tool syntax.
+
+
+def _qwen_call(name, *params):
+    """Render a few-shot tool call in Qwen's XML format."""
+
+    lines = ["<tool_call>", f"<function={name}>"]
+    for key, value in params:
+        lines.append(f"<parameter={key}>")
+        lines.append(str(value))
+        lines.append("</parameter>")
+    lines.append("</function>")
+    lines.append("</tool_call>")
+    return "\n".join(lines)
+
+
+_QWEN_EXAMPLE_SUBSTITUTIONS = [
+    (
+        "call:sqlite_query{db_id:<DBID>,sql:<YOUR_SQL>,max_return_rows:10}",
+        _qwen_call("sqlite_query", ("db_id", "<DBID>"), ("sql", "<YOUR_SQL>"), ("max_return_rows", 10)),
+    ),
+    (
+        "call:sqlite_query{db_id:<DBID>,sql:SELECT c.customer_id, COUNT(DISTINCT o.order_id) AS order_count FROM customers AS c JOIN orders AS o ON c.customer_id=o.customer_id WHERE o.status='shipped' GROUP BY c.customer_id,max_return_rows:10}",
+        _qwen_call(
+            "sqlite_query",
+            ("db_id", "<DBID>"),
+            ("sql", "SELECT c.customer_id, COUNT(DISTINCT o.order_id) AS order_count FROM customers AS c JOIN orders AS o ON c.customer_id=o.customer_id WHERE o.status='shipped' GROUP BY c.customer_id"),
+            ("max_return_rows", 10),
+        ),
+    ),
+    (
+        "call:bm25_search_sqlite{db_id:<DBID>,table:<TABLE>,column:<COLUMN>,query:<SEARCH_TERM>,top_k:5}",
+        _qwen_call(
+            "bm25_search_sqlite",
+            ("db_id", "<DBID>"),
+            ("table", "<TABLE>"),
+            ("column", "<COLUMN>"),
+            ("query", "<SEARCH_TERM>"),
+            ("top_k", 5),
+        ),
+    ),
+    (
+        "call:sqlite_peek{db_id:<DBID>,table:<TABLE>,columns:[<COL1>],limit:20}",
+        _qwen_call(
+            "sqlite_peek",
+            ("db_id", "<DBID>"),
+            ("table", "<TABLE>"),
+            ("columns", '["<COL1>"]'),
+            ("limit", 20),
+        ),
+    ),
+    (
+        "call:sqlite_query{db_id:<DBID>,sql:SELECT c.customer_id FROM customers AS c JOIN orders AS o ON c.customer_id=o.customer_id ORDER BY o.total_amount DESC LIMIT 1,max_return_rows:10}",
+        _qwen_call(
+            "sqlite_query",
+            ("db_id", "<DBID>"),
+            ("sql", "SELECT c.customer_id FROM customers AS c JOIN orders AS o ON c.customer_id=o.customer_id ORDER BY o.total_amount DESC LIMIT 1"),
+            ("max_return_rows", 10),
+        ),
+    ),
+    (
+        "call:sqlite_peek{db_id:<DBID>,table:<TABLE>,columns:[<COL1>,<COL2>],limit:20}",
+        _qwen_call(
+            "sqlite_peek",
+            ("db_id", "<DBID>"),
+            ("table", "<TABLE>"),
+            ("columns", '["<COL1>", "<COL2>"]'),
+            ("limit", 20),
+        ),
+    ),
+    (
+        'call:consensus_at_1{db_id:<DBID>,sqls:["SELECT ...","SELECT ...","SELECT ...","SELECT ...","SELECT ...","SELECT ...","SELECT ..."],timeout_s:20.0,vm_step_limit:5000000,busy_timeout_ms:3000,max_return_rows:100}',
+        _qwen_call(
+            "consensus_at_1",
+            ("db_id", "<DBID>"),
+            ("sqls", '["SELECT ...", "SELECT ...", "SELECT ...", "SELECT ...", "SELECT ...", "SELECT ...", "SELECT ..."]'),
+            ("timeout_s", 20.0),
+            ("vm_step_limit", 5000000),
+            ("busy_timeout_ms", 3000),
+            ("max_return_rows", 100),
+        ),
+    ),
+    (
+        "call:sqlite_query{db_id:<DBID>,sql:<CONSENSUS_SQL_FROM_RESPONSE>,max_return_rows:100}",
+        _qwen_call(
+            "sqlite_query",
+            ("db_id", "<DBID>"),
+            ("sql", "<CONSENSUS_SQL_FROM_RESPONSE>"),
+            ("max_return_rows", 100),
+        ),
+    ),
+]
+
+
+def _to_qwen_template(template, label, gemma_block, qwen_block):
+    if gemma_block not in template:
+        raise AssertionError(
+            f"{label}: the Gemma tool-call block no longer matches the system "
+            "prompt. Update the block constants in prompts.py."
+        )
+    result = template.replace(gemma_block, qwen_block)
+
+    for gemma_example, qwen_example in _QWEN_EXAMPLE_SUBSTITUTIONS:
+        if gemma_example in result:
+            result = result.replace(gemma_example, qwen_example)
+
+    leftover = [line for line in result.splitlines() if line.lstrip().startswith("call:")]
+    if leftover:
+        raise AssertionError(
+            f"{label}: {len(leftover)} Gemma-style call example(s) were not "
+            f"converted to Qwen XML: {leftover[:2]}"
+        )
+    return result
+
+
+SYSTEM_PROMPT_TEMPLATES_QWEN = _to_qwen_template(
+    SYSTEM_PROMPT_TEMPLATES,
+    "SYSTEM_PROMPT_TEMPLATES",
+    GEMMA_NATIVE_TOOL_CALL_BLOCK,
+    QWEN_NATIVE_TOOL_CALL_BLOCK,
+)
+SYSTEM_PROMPT_TEMPLATES_CONSENSUS_QWEN = _to_qwen_template(
+    SYSTEM_PROMPT_TEMPLATES_CONSENSUS,
+    "SYSTEM_PROMPT_TEMPLATES_CONSENSUS",
+    GEMMA_NATIVE_TOOL_CALL_BLOCK_CONSENSUS,
+    QWEN_NATIVE_TOOL_CALL_BLOCK_CONSENSUS,
+)
