@@ -172,6 +172,27 @@ def parse_args(argv=None):
     parser.add_argument("--num_generations", type=int, default=16)
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top_p", type=float, default=0.95)
+    parser.add_argument(
+        "--top_k",
+        type=int,
+        default=0,
+        help=(
+            "Top-k sampling for rollouts (0 = disabled). Qwen3.8's model card "
+            "recommends 20; the validated pass@16 runs used top_k=20 with top_p=1.0."
+        ),
+    )
+    parser.add_argument(
+        "--chat_template_kwargs",
+        type=str,
+        default=None,
+        help=(
+            "JSON dict forwarded to apply_chat_template for every rollout, e.g. "
+            '\'{"enable_thinking": false, "preserve_thinking": false}\'. Qwen3.8 '
+            "opens a <think> block on every assistant turn unless enable_thinking "
+            "is false; those tokens count against --max_completion_length and the "
+            "length penalty. The validated Qwen3.8 evals ran with thinking off."
+        ),
+    )
     parser.add_argument("--per_device_train_batch_size", type=int, default=1)
     parser.add_argument("--per_device_eval_batch_size", type=int, default=8)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=64)
@@ -443,6 +464,15 @@ def main():
     set_dialect(dialect_name)
     print(f"[tools] tool-call dialect: {dialect_name} (--tool_dialect={args.tool_dialect})")
 
+    chat_template_kwargs = None
+    if args.chat_template_kwargs:
+        import json as _json
+
+        chat_template_kwargs = _json.loads(args.chat_template_kwargs)
+        if not isinstance(chat_template_kwargs, dict):
+            raise ValueError("--chat_template_kwargs must be a JSON object")
+        print(f"[tools] chat_template_kwargs={chat_template_kwargs}")
+
     report_to = parse_csv_list(args.report_to)
     if not report_to:
         report_to = ["none"]
@@ -541,6 +571,10 @@ def main():
             print("[async_grpo] num_iterations/dynamic-sampling controls are not used by AsyncGRPOTrainer.")
         if args.top_p != 1.0:
             print("[async_grpo] AsyncGRPOConfig in TRL 1.4.0 has no top_p parameter; ignoring --top_p.")
+        if args.top_k:
+            print("[async_grpo] AsyncGRPOConfig in TRL 1.4.0 has no top_k parameter; ignoring --top_k.")
+        if chat_template_kwargs:
+            print("[async_grpo] AsyncGRPOConfig in TRL 1.4.0 has no chat_template_kwargs; ignoring it.")
         if args.save_latest_full_checkpoint:
             print("[async_grpo] save_latest_full_checkpoint is only implemented by DynamicSamplingGRPOTrainer; ignoring it.")
         if args.beta_schedule:
@@ -640,6 +674,8 @@ def main():
         ),
         temperature=args.temperature,
         top_p=args.top_p,
+        top_k=args.top_k,
+        chat_template_kwargs=chat_template_kwargs,
 
         # vLLM rollouts: "server" talks to a separate process, "colocate" runs
         # the engine in-process on the training GPUs (in-memory rollouts).

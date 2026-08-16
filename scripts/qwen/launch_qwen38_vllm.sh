@@ -51,8 +51,11 @@ MODEL_NAME="${MODEL_NAME:-Qwen/Qwen3.8-27B}"
 VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-2}"
 VLLM_DATA_PARALLEL_SIZE="${VLLM_DATA_PARALLEL_SIZE:-1}"
 VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.93}"
-# Must cover max_prompt_length + max_completion_length plus tool responses.
-VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-32768}"
+# Must cover the LAST tool round, not just prompt + completion: every round
+# appends a <tool_response> to the context, so with MAX_PROMPT_LENGTH=20000,
+# MAX_COMPLETION_LENGTH=4096 and 8 rounds the final request is far larger than
+# 24K. The validated evals ran 43000 at MAX_PROMPT_LENGTH=34000.
+VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-40960}"
 # Safe for RL: TRL calls reset_prefix_cache() after every weight sync
 # (trl/generation/vllm_generation.py), so rollouts never reuse KV computed
 # under stale policy weights.

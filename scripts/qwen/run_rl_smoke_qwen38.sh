@@ -50,21 +50,49 @@ export ACCELERATE_NUM_PROCESSES="${ACCELERATE_NUM_PROCESSES:-6}"
 export TRAIN_CUDA_VISIBLE_DEVICES="${TRAIN_CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5}"
 
 # Qwen3.8 context is 262K, but rollout cost scales with these. Keep the smoke
-# small; raise for production.
+# small; raise for production. Rows whose templated prompt exceeds
+# MAX_PROMPT_LENGTH are dropped from the dataset, not truncated.
 export MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-20000}"
 export MAX_COMPLETION_LENGTH="${MAX_COMPLETION_LENGTH:-4096}"
 
-# Qwen-recommended sampling (model card / vLLM recipe): temperature 1.0,
-# top_p 0.95. The Gemma runs used 1.2.
-export TEMPERATURE="${TEMPERATURE:-1.0}"
-export TOP_P="${TOP_P:-0.95}"
+# DAPO Soft Overlong Punishment. L_max MUST track MAX_COMPLETION_LENGTH: the
+# launcher default is 8000, so with a 4096 completion cap the ramp (starting at
+# L_max - L_cache) could never be reached and this reward term would silently be
+# a constant 0.
+export LENGTH_PENALTY_MAX="${LENGTH_PENALTY_MAX:-${MAX_COMPLETION_LENGTH}}"
+export LENGTH_PENALTY_BUFFER="${LENGTH_PENALTY_BUFFER:-512}"
+
+# Sampling. temp 1.2 / top_p 1.0 / top_k 20 is the combination the validated
+# Qwen3.8-27B pass@16 runs used; the model card's default is temp 1.0/top_p 0.95.
+export TEMPERATURE="${TEMPERATURE:-1.2}"
+export TOP_P="${TOP_P:-1.0}"
+export TOP_K="${TOP_K:-20}"
+
+# Qwen3.8 opens a <think> block on EVERY assistant turn unless this is set.
+# Thinking tokens count against MAX_COMPLETION_LENGTH and the length penalty,
+# and the validated evals ran with thinking off. Keep RL consistent with them.
+export CHAT_TEMPLATE_KWARGS="${CHAT_TEMPLATE_KWARGS:-{\"enable_thinking\": false, \"preserve_thinking\": false}}"
+
+# DAPO: drop gradient from rollouts truncated at MAX_COMPLETION_LENGTH.
+export MASK_TRUNCATED_COMPLETIONS="${MASK_TRUNCATED_COMPLETIONS:-1}"
+
+# Tool rounds per rollout; 8 matches the eval runs.
+export ASYNC_MAX_TOOL_CALLING_ITERATIONS="${ASYNC_MAX_TOOL_CALLING_ITERATIONS:-8}"
 
 # Tiny rollout volumes.
+# TRL requires (num_processes * per_device_train_batch_size *
+# gradient_accumulation_steps) to be divisible by num_generations.
+#   6 procs * bs 4 * ga 1 = 24 -> 12 groups/step, x2 oversample = 48 rollouts/step
+# If this OOMs, drop PER_DEVICE_TRAIN_BATCH_SIZE to 2 (see README: the failure
+# lands in the log-prob/loss step, not the forward, because vocab_size is 248320).
 export NUM_GENERATIONS="${NUM_GENERATIONS:-2}"
-export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"
+export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-1}"
 export DAPO_OVERSAMPLE_FACTOR="${DAPO_OVERSAMPLE_FACTOR:-2}"
-export PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-2}"
-export PER_DEVICE_EVAL_BATCH_SIZE="${PER_DEVICE_EVAL_BATCH_SIZE:-2}"
+export PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-4}"
+# Safe at 16 only because EVAL_MODE=reward_only skips the eval loss/logprob
+# forward pass; with a real eval forward this would OOM at 24K-token sequences.
+export PER_DEVICE_EVAL_BATCH_SIZE="${PER_DEVICE_EVAL_BATCH_SIZE:-16}"
+export EVAL_MODE="${EVAL_MODE:-reward_only}"
 export TRAIN_LIMIT="${TRAIN_LIMIT:-200}"
 export EVAL_LIMIT="${EVAL_LIMIT:-4}"
 

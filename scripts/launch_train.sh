@@ -304,6 +304,14 @@ fi
 if [[ -n "${TOOL_DIALECT:-}" ]]; then
   DAPO_ARGS+=(--tool_dialect "${TOOL_DIALECT}")
 fi
+if [[ -n "${TOP_K:-}" ]]; then
+  DAPO_ARGS+=(--top_k "${TOP_K}")
+fi
+# JSON forwarded to apply_chat_template, e.g.
+#   CHAT_TEMPLATE_KWARGS='{"enable_thinking": false, "preserve_thinking": false}'
+if [[ -n "${CHAT_TEMPLATE_KWARGS:-}" ]]; then
+  DAPO_ARGS+=(--chat_template_kwargs "${CHAT_TEMPLATE_KWARGS}")
+fi
 if [[ -n "${VLLM_MODE:-}" ]]; then
   DAPO_ARGS+=(--vllm_mode "${VLLM_MODE}")
 fi
