@@ -73,7 +73,8 @@ python scripts/run_inference_bird.py \
 
 - `predict_dev.json`: official BIRD prediction format (`SQL\t----- bird -----\tdb_id`)
 - `prediction_details.jsonl`: decoded completions and extracted SQL
-- `filtered_examples.jsonl`: prompts skipped because they exceeded `max_prompt_length`
+- `filtered_examples.jsonl`: prompts that exceeded `max_prompt_length`
+- `generation_progress.jsonl`: per-example results appended as they finish; used to resume
 - `eval_results.jsonl`: per-example execution results
 - `eval_summary.json`: simple/moderate/challenging/total EX accuracy
 - `eval_summary.md`: summary tables by difficulty and by database
@@ -81,6 +82,46 @@ python scripts/run_inference_bird.py \
 - `eval_summary_by_db.csv`: CSV summary by database
 
 The local EX scorer follows the official BIRD dev evaluation semantics: it executes predicted and gold SQL on SQLite and checks raw row-set equality.
+
+The predictions file always contains one entry per input row. An example whose
+prompt exceeds `max_prompt_length` cannot be generated, so it is recorded in
+`filtered_examples.jsonl`, given `stop_reason=prompt_too_long` in
+`prediction_details.jsonl`, and written to the predictions file with the
+`--fallback_sql` value (default `SELECT 1`). It therefore scores as incorrect
+rather than leaving a hole in the file. Default limits are
+`--max_prompt_length 44000` and `--vllm_max_model_len 53000`; the latter must
+stay above the former, since the tool loop appends each tool response to the
+running context.
+
+## Resuming After A Failure
+
+Generation is checkpointed per example. Every completed example is appended to
+`generation_progress.jsonl` and fsynced before the next one starts, so a crash,
+an OOM kill, or a node restart loses at most the in-flight examples.
+
+Resuming requires the rerun to land in the **same output directory**. The
+launcher appends a timestamp to `OUTPUT_DIR` by default, which would start a
+fresh run every time, so pin the directory for any long job:
+
+```bash
+OUTPUT_DIR=outputs/inference/bird_test_run \
+APPEND_OUTPUT_TIMESTAMP=0 \
+bash scripts/launch_inference.sh
+```
+
+Rerun that identical command after a failure and it resumes. Invoking
+`scripts/run_inference_bird.py` directly needs no extra flags, since
+`--output_dir` is already explicit there.
+
+The run reads `generation_progress.jsonl`, skips everything already generated,
+and continues from the first incomplete example. Only the remaining prompts are
+sent to the model; if every example is already present the engine is not loaded
+at all and the run goes straight to evaluation. A progress file truncated
+mid-write by a hard kill is handled — the torn line is discarded and that one
+example is regenerated.
+
+Pass `--no_resume` (or `NO_RESUME=1`) to discard prior progress and regenerate
+everything from scratch.
 
 ## Tool Calling
 
@@ -175,5 +216,38 @@ python scripts/run_self_consistency_bird.py \
 ```
 
 Self-consistency consumes the sampled candidates written by pass@k, executes them on SQLite, discards empty execution results, and majority-votes over raw result sets. It does not use temperature-0 inference outputs. Ties break by earliest sample index and then shorter SQL.
+
+Pass `--input_file` (the same JSONL pass@k generated from) so the predictions
+file is checked for coverage. Any question id left without a usable candidate is
+filled with `--fallback_sql` and reported, instead of being dropped from the
+submitted file:
+
+```bash
+python scripts/run_self_consistency_bird.py \
+  --passk_candidates_path outputs/passk/checkpoint-80/passk_candidates.jsonl \
+  --input_file outputs/bird_dev-schema-tool.jsonl \
+  --database_dir databases/dev_databases \
+  --output_dir outputs/self_consistency/checkpoint-80 \
+  --overwrite
+```
+
+### Resume And Coverage For Pass@k
+
+Pass@k is checkpointed per candidate, not per example. Each `(example, sample)`
+pair is appended to `generation_progress.jsonl` and fsynced as it completes, so
+a 16-sample run killed partway resumes at the exact candidate it reached rather
+than regenerating finished work. Rerun the identical command into the same
+`--output_dir` to resume, or pass `--no_resume` to start over. If every
+candidate is already present the engine is not loaded at all.
+
+Examples whose prompt exceeds `--max_prompt_length` cannot be generated. Rather
+than dropping out of the candidate pool — which would remove them from the
+self-consistency predictions file entirely — they receive a full set of
+`--num_generations` fallback candidates carrying `--fallback_sql` and
+`stop_reason=prompt_too_long`. Pass@k denominators therefore stay correct and
+those examples score as wrong instead of vanishing.
+
+Pass@k defaults match the temperature-0 path: `--max_prompt_length 44000` and
+`--vllm_max_model_len 53000`.
 
 On unlabeled test inputs, pass@k and self-consistency still run, but accuracy/pass@k fields are reported as `n/a`. Self-consistency writes an official prediction file in its output directory.

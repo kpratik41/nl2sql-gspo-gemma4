@@ -24,7 +24,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from nl2sql_gspo.sql_utils import bird_execute_sql, bird_get_gold_rows, bird_result_match, extract_sql
-from scripts.run_inference_bird import BIRD_SPLIT_MARKER, build_summary, write_summary_csv
+from scripts.run_inference_bird import BIRD_SPLIT_MARKER, build_summary, load_rows, write_summary_csv
 from scripts.run_passk_bird import ensure_output_dir
 
 
@@ -46,6 +46,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval_timeout", type=float, default=60.0)
     parser.add_argument("--eval_workers", type=int, default=8)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--input_file",
+        type=str,
+        default=None,
+        help=(
+            "Inference JSONL the pass@k candidates were generated from. When given, the "
+            "predictions file is checked against it and any question id with no surviving "
+            "candidate is filled with --fallback_sql instead of being omitted."
+        ),
+    )
+    parser.add_argument(
+        "--fallback_sql",
+        type=str,
+        default="SELECT 1",
+        help="SQL written for question ids that have no usable candidate.",
+    )
     return parser.parse_args()
 
 
@@ -333,6 +349,42 @@ def build_official_predictions(selected_results: List[Dict[str, Any]]) -> Dict[s
     }
 
 
+def backfill_missing_predictions(
+    predictions: Dict[str, str],
+    input_file: Optional[str],
+    fallback_sql: str,
+) -> Dict[str, str]:
+    """Guarantee one prediction per input row.
+
+    Self-consistency selects from pass@k candidates, so an example that produced
+    no candidate at all silently disappears here. BIRD scores by question id, so
+    a missing key is a malformed submission rather than a skipped example.
+    """
+    if not input_file:
+        return predictions
+
+    rows = load_rows(input_file, -1)
+    filled = dict(predictions)
+    missing: List[int] = []
+    for position, row in enumerate(rows):
+        source_idx = int(row.get("source_idx", position))
+        key = str(source_idx)
+        if key in filled:
+            continue
+        missing.append(source_idx)
+        filled[key] = f"{fallback_sql}{BIRD_SPLIT_MARKER}{row.get('db_id', '')}"
+
+    if missing:
+        print(
+            f"[predictions] warning: {len(missing)} of {len(rows)} question id(s) had no "
+            f"self-consistency candidate; wrote fallback SQL. first_missing={missing[:10]}"
+        )
+    else:
+        print(f"[predictions] all {len(rows)} question ids covered")
+
+    return {key: filled[key] for key in sorted(filled, key=int)}
+
+
 def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
@@ -377,8 +429,11 @@ def main() -> None:
 
     with summary_path.open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, ensure_ascii=False, indent=2)
+    official_predictions = backfill_missing_predictions(
+        build_official_predictions(selected_results), args.input_file, args.fallback_sql
+    )
     with predictions_path.open("w", encoding="utf-8") as handle:
-        json.dump(build_official_predictions(selected_results), handle, ensure_ascii=False, indent=2)
+        json.dump(official_predictions, handle, ensure_ascii=False, indent=2)
     write_self_consistency_markdown(summary, summary_markdown_path)
     write_summary_csv(summary["by_difficulty"], difficulty_csv_path)
     write_summary_csv(summary["by_db"], db_csv_path)

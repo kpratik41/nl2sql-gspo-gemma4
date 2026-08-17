@@ -1,6 +1,20 @@
+# Inference-only dependency set, pinned to the versions this pipeline was
+# validated on. Pins match the training branch (consensus) so evaluation runs in
+# the same environment the checkpoint was produced under. Transitive
+# dependencies are intentionally left to pip's resolver.
+#
+# CUDA: torch 2.10.0 ships CUDA 12.8 wheels by default. Those run on a CUDA 12.2
+# or 12.3 host through CUDA minor-version compatibility, which needs an NVIDIA
+# driver >= 525.60.13. On an older driver, install the matching cu121 build:
+#   pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cu121
+
 torch==2.10.0
-transformers
+transformers==5.9.0
 vllm==0.19.1
-sentencepiece
-protobuf
-rank-bm25
+
+# Tokenization and serialization.
+sentencepiece==0.2.1
+protobuf==6.33.6
+
+# BM25 retrieval used by the schema search tool.
+rank-bm25==0.2.2

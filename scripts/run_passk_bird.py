@@ -15,7 +15,7 @@ import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
@@ -89,21 +89,46 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num_generations", type=int, default=16, help="Candidates sampled per example.")
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top_p", type=float, default=1.0)
-    parser.add_argument("--max_prompt_length", type=int, default=30000)
+    parser.add_argument("--max_prompt_length", type=int, default=44000)
     parser.add_argument("--max_new_tokens", type=int, default=8000)
     parser.add_argument("--max_tool_rounds", type=int, default=8)
     parser.add_argument("--eval_timeout", type=float, default=60.0)
     parser.add_argument("--eval_workers", type=int, default=16)
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=8)
     parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.93)
-    parser.add_argument("--vllm_max_model_len", type=int, default=None)
+    # Must exceed max_prompt_length; the tool loop appends each tool response to
+    # the running context, so leave headroom above prompt + completion.
+    parser.add_argument("--vllm_max_model_len", type=int, default=53000)
     parser.add_argument("--vllm_async_concurrency", type=int, default=8)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--fallback_sql",
+        type=str,
+        default="SELECT 1",
+        help=(
+            "SQL emitted as every candidate for an example that could not be generated "
+            "(prompt above --max_prompt_length), so each example keeps a full candidate "
+            "set and downstream self-consistency still produces a prediction for it."
+        ),
+    )
+    parser.add_argument(
+        "--no_resume",
+        action="store_true",
+        help=(
+            "Ignore generation_progress.jsonl and regenerate every candidate. By default a "
+            "rerun into the same --output_dir resumes from the last completed candidate."
+        ),
+    )
     args = parser.parse_args()
     if args.num_shards < 1:
         parser.error("--num_shards must be >= 1")
     if args.shard_index < 0 or args.shard_index >= args.num_shards:
         parser.error("--shard_index must satisfy 0 <= shard_index < num_shards")
+    if args.vllm_max_model_len and args.vllm_max_model_len <= args.max_prompt_length:
+        parser.error(
+            f"--vllm_max_model_len ({args.vllm_max_model_len}) must exceed "
+            f"--max_prompt_length ({args.max_prompt_length})"
+        )
     return args
 
 
@@ -212,6 +237,101 @@ def evaluate_gold_rows(
     return gold_by_idx
 
 
+PROGRESS_FILENAME = "generation_progress.jsonl"
+
+
+def load_candidate_progress(progress_path: Path) -> List[Dict[str, Any]]:
+    """Read candidates written by an interrupted run.
+
+    One JSON object is appended per candidate as it finishes, so a killed process
+    leaves a complete prefix plus at most one torn line. The torn line is dropped
+    and that candidate is regenerated.
+    """
+    if not progress_path.exists():
+        return []
+
+    candidates: List[Dict[str, Any]] = []
+    seen: set = set()
+    torn_lines = 0
+    with progress_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                torn_lines += 1
+                continue
+            try:
+                key = (int(record["idx"]), int(record["sample_id"]))
+            except (KeyError, TypeError, ValueError):
+                torn_lines += 1
+                continue
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(record)
+
+    if torn_lines:
+        print(f"[resume] discarded {torn_lines} unusable progress line(s) in {progress_path}")
+    return candidates
+
+
+def build_fallback_candidates(
+    all_rows: List[Dict[str, Any]],
+    skipped_rows: List[Dict[str, Any]],
+    args: argparse.Namespace,
+) -> List[Dict[str, Any]]:
+    """Synthesize a full candidate set for examples that cannot be generated.
+
+    Self-consistency selects from these candidates and writes the submitted
+    predictions file, so an example with no candidates becomes a missing question
+    id in that file. Emitting num_generations identical fallbacks keeps the
+    candidate count uniform, so pass@k denominators stay correct and the example
+    scores as wrong instead of vanishing.
+    """
+    if not skipped_rows:
+        return []
+
+    rows_by_idx = {
+        int(row.get("source_idx", position)): row for position, row in enumerate(all_rows)
+    }
+    fallback_candidates: List[Dict[str, Any]] = []
+    for record in skipped_rows:
+        source_idx = int(record.get("idx", -1))
+        row = rows_by_idx.get(source_idx, {})
+        prompt_tokens = int(record.get("prompt_tokens", 0))
+        for sample_id in range(args.num_generations):
+            generated = build_generation_detail(
+                row=row,
+                prediction_text=args.fallback_sql,
+                prompt_token_count=prompt_tokens,
+                completion_token_count=0,
+                tool_rounds=0,
+                tool_call_count=0,
+                stop_reason="prompt_too_long",
+            )
+            fallback_candidates.append(
+                {
+                    "idx": source_idx,
+                    "sample_id": sample_id,
+                    "difficulty": row.get("difficulty", "unknown"),
+                    "generation_error": (
+                        f"prompt exceeded max_prompt_length={args.max_prompt_length}; "
+                        "wrote fallback SQL"
+                    ),
+                    **generated,
+                }
+            )
+
+    print(
+        f"[passk] wrote fallback candidates for {len(skipped_rows)} over-length example(s) "
+        f"({args.num_generations} each)"
+    )
+    return fallback_candidates
+
+
 async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     try:
         from vllm import AsyncLLMEngine, SamplingParams
@@ -223,9 +343,36 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
 
     tokenizer_source = resolve_vllm_tokenizer_source(args.model_name_or_path)
     tokenizer = load_tokenizer(tokenizer_source)
+    # Keep every loaded row: an example whose prompt is too long still needs a full
+    # candidate set, or it disappears from the self-consistency prediction file.
+    all_rows = list(rows)
     rows, skipped_rows = prepare_rows_for_generation(rows, tokenizer, args.max_prompt_length)
     if skipped_rows:
         write_jsonl(Path(args.output_dir) / "skipped_prompts.jsonl", skipped_rows)
+
+    fallback_candidates = build_fallback_candidates(all_rows, skipped_rows, args)
+
+    progress_path = Path(args.output_dir) / PROGRESS_FILENAME
+    resumed_candidates = [] if args.no_resume else load_candidate_progress(progress_path)
+    done_keys = {(int(c["idx"]), int(c["sample_id"])) for c in resumed_candidates}
+    if args.no_resume and progress_path.exists():
+        progress_path.unlink()
+    if resumed_candidates:
+        print(
+            f"[resume] {len(resumed_candidates)} candidate(s) already generated in "
+            f"{progress_path}"
+        )
+
+    pending: List[Tuple[int, Dict[str, Any], int]] = [
+        (row_index, row, sample_id)
+        for row_index, row in enumerate(rows)
+        for sample_id in range(args.num_generations)
+        if (int(row.get("source_idx", row_index)), sample_id) not in done_keys
+    ]
+
+    if not pending:
+        print("[passk] nothing left to generate; skipping engine load")
+        return resumed_candidates + fallback_candidates
 
     max_model_len = args.vllm_max_model_len or (args.max_prompt_length + args.max_new_tokens)
     print(
@@ -246,8 +393,10 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
     )
     engine = AsyncLLMEngine.from_engine_args(engine_args)
     semaphore = asyncio.Semaphore(max(1, args.vllm_async_concurrency))
-    total = len(rows) * args.num_generations
+    total = len(pending)
     completed = 0
+    progress_lock = asyncio.Lock()
+    progress_handle = progress_path.open("a", encoding="utf-8")
 
     async def generate_one(row_index: int, row: Dict[str, Any], sample_id: int) -> Dict[str, Any]:
         nonlocal completed
@@ -307,14 +456,7 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
                     stop_reason="generation_error",
                 )
 
-            completed += 1
-            if completed == 1 or completed == total or completed % 50 == 0:
-                print(
-                    f"[passk] generated {completed}/{total} candidates "
-                    f"idx={source_idx} sample={sample_id} stop={generated.get('stop_reason')} "
-                    f"sql={preview_text(generated.get('pred_sql', ''), max_chars=100)}"
-                )
-            return {
+            candidate = {
                 "idx": source_idx,
                 "sample_id": sample_id,
                 "difficulty": row_for_sample.get("difficulty", "unknown"),
@@ -322,15 +464,32 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
                 **generated,
             }
 
+            # Persist before releasing the semaphore slot, so a crash never loses a
+            # candidate that has already cost a full generation.
+            async with progress_lock:
+                progress_handle.write(json.dumps(candidate, ensure_ascii=False) + "\n")
+                progress_handle.flush()
+                os.fsync(progress_handle.fileno())
+
+            completed += 1
+            if completed == 1 or completed == total or completed % 50 == 0:
+                print(
+                    f"[passk] generated {completed}/{total} candidates "
+                    f"idx={source_idx} sample={sample_id} stop={generated.get('stop_reason')} "
+                    f"sql={preview_text(generated.get('pred_sql', ''), max_chars=100)}"
+                )
+            return candidate
+
     try:
         tasks = [
-            generate_one(row_index, row, sample_id)
-            for row_index, row in enumerate(rows)
-            for sample_id in range(args.num_generations)
+            generate_one(row_index, row, sample_id) for row_index, row, sample_id in pending
         ]
-        return await asyncio.gather(*tasks)
+        new_candidates = list(await asyncio.gather(*tasks))
     finally:
         engine.shutdown()
+        progress_handle.close()
+
+    return resumed_candidates + new_candidates + fallback_candidates
 
 
 def evaluate_candidates(
@@ -648,7 +807,12 @@ def main() -> None:
 
     output_dir = resolve_output_dir(args)
     args.output_dir = str(output_dir)
-    ensure_output_dir(output_dir, args.overwrite)
+    # A crashed run leaves a populated output_dir. Relaunching with the identical
+    # command line must resume rather than abort on "directory not empty".
+    resuming = not args.no_resume and (output_dir / PROGRESS_FILENAME).exists()
+    if resuming:
+        print(f"[resume] found {output_dir / PROGRESS_FILENAME}; reusing output directory")
+    ensure_output_dir(output_dir, args.overwrite or resuming)
     configure_tool_env(args.database_dir)
 
     print("[passk] starting pass@k run")

@@ -125,7 +125,7 @@ def parse_args() -> argparse.Namespace:
         default="predict_dev.json",
         help="Official BIRD-format predictions filename to read/write.",
     )
-    parser.add_argument("--max_prompt_length", type=int, default=34000)
+    parser.add_argument("--max_prompt_length", type=int, default=44000)
     parser.add_argument("--max_new_tokens", type=int, default=8000)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top_p", type=float, default=1.0)
@@ -134,7 +134,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval_workers", type=int, default=16)
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=None)
     parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.93)
-    parser.add_argument("--vllm_max_model_len", type=int, default=43000)
+    # Must exceed max_prompt_length + max_new_tokens, and the tool loop appends
+    # each tool response to the running context, so leave headroom above the sum.
+    parser.add_argument("--vllm_max_model_len", type=int, default=53000)
     parser.add_argument("--vllm_async_concurrency", type=int, default=8)
     parser.add_argument("--max_tool_rounds", type=int, default=8)
     parser.add_argument(
@@ -174,6 +176,24 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--skip_generation", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--fallback_sql",
+        type=str,
+        default="SELECT 1",
+        help=(
+            "SQL written for examples that could not be generated (prompt above "
+            "--max_prompt_length). Keeps the official predictions file index-complete so "
+            "downstream evaluation never sees a missing question id."
+        ),
+    )
+    parser.add_argument(
+        "--no_resume",
+        action="store_true",
+        help=(
+            "Ignore generation_progress.jsonl and regenerate every example. By default a "
+            "rerun into the same --output_dir resumes from the last completed example."
+        ),
+    )
     args = parser.parse_args()
     if args.num_shards < 1:
         parser.error("--num_shards must be >= 1")
@@ -181,6 +201,12 @@ def parse_args() -> argparse.Namespace:
         parser.error("--shard_index must satisfy 0 <= shard_index < num_shards")
     if args.vllm_tensor_parallel_size is None:
         args.vllm_tensor_parallel_size = 8
+    if args.vllm_max_model_len and args.vllm_max_model_len <= args.max_prompt_length:
+        parser.error(
+            f"--vllm_max_model_len ({args.vllm_max_model_len}) must exceed "
+            f"--max_prompt_length ({args.max_prompt_length}); otherwise every long prompt "
+            "is rejected by the engine at request time."
+        )
     return args
 
 
@@ -407,6 +433,113 @@ def build_generation_detail(
     }
 
 
+PROGRESS_FILENAME = "generation_progress.jsonl"
+
+
+def load_generation_progress(progress_path: Path) -> Dict[int, Dict[str, Any]]:
+    """Read per-example results left behind by an interrupted run.
+
+    One JSON object is appended per example as it finishes, so a process killed
+    mid-run leaves a complete prefix plus at most one torn final line. The torn
+    line is dropped and that example is simply regenerated.
+    """
+    if not progress_path.exists():
+        return {}
+
+    completed: Dict[int, Dict[str, Any]] = {}
+    torn_lines = 0
+    with progress_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                torn_lines += 1
+                continue
+            source_idx = int(record.get("source_idx", -1))
+            if source_idx >= 0:
+                completed[source_idx] = record
+
+    if torn_lines:
+        print(f"[resume] discarded {torn_lines} truncated progress line(s) in {progress_path}")
+    return completed
+
+
+def finalize_async_predictions(
+    all_rows: List[Dict[str, Any]],
+    resumed_details: Dict[int, Dict[str, Any]],
+    new_details: List[Dict[str, Any]],
+    skipped_rows: List[Dict[str, Any]],
+    args: argparse.Namespace,
+) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Assemble one prediction per loaded row, in input order.
+
+    Every question id gets an entry even when generation never ran for it. BIRD
+    scores the predictions file by question id, so a missing key is not a skipped
+    example -- it is a malformed submission.
+    """
+    details_by_idx: Dict[int, Dict[str, Any]] = dict(resumed_details)
+    for detail in new_details:
+        details_by_idx[int(detail["source_idx"])] = detail
+
+    skipped_tokens_by_idx = {
+        int(record.get("idx", -1)): int(record.get("prompt_tokens", 0))
+        for record in skipped_rows
+    }
+
+    official_predictions: Dict[str, str] = {}
+    detailed_predictions: List[Dict[str, Any]] = []
+    fallback_count = 0
+
+    for idx, row in enumerate(all_rows):
+        source_idx = int(row.get("source_idx", idx))
+        generated = details_by_idx.get(source_idx)
+        if generated is None:
+            fallback_count += 1
+            generated = build_generation_detail(
+                row=row,
+                prediction_text=args.fallback_sql,
+                prompt_token_count=skipped_tokens_by_idx.get(source_idx, 0),
+                completion_token_count=0,
+                tool_rounds=0,
+                tool_call_count=0,
+                stop_reason="prompt_too_long",
+                error_message=(
+                    f"prompt exceeded max_prompt_length={args.max_prompt_length}; "
+                    "wrote fallback SQL"
+                ),
+            )
+
+        db_id = generated.get("db_id") or row.get("db_id", "")
+        pred_sql = generated["pred_sql"]
+        official_predictions[str(source_idx)] = f"{pred_sql}{BIRD_SPLIT_MARKER}{db_id}"
+        detailed_predictions.append(
+            {
+                "idx": source_idx,
+                "db_id": db_id,
+                "prediction_text": generated["prediction_text"],
+                "pred_sql": pred_sql,
+                "gold_sql": extract_sql(row.get("gold_sql", "")),
+                "prompt_tokens": generated["prompt_tokens"],
+                "completion_token_count": generated["completion_token_count"],
+                "tool_rounds": generated.get("tool_rounds", 0),
+                "tool_call_count": generated.get("tool_call_count", 0),
+                "stop_reason": generated.get("stop_reason", ""),
+                "error_message": generated.get("error_message", ""),
+            }
+        )
+
+    if fallback_count:
+        print(
+            f"[inference] wrote fallback SQL for {fallback_count} example(s) that could not "
+            f"be generated; predictions file still covers all {len(all_rows)} rows"
+        )
+
+    return all_rows, official_predictions, detailed_predictions, skipped_rows
+
+
 def should_use_agentic_tool_loop(row: Dict[str, Any], max_tool_rounds: int) -> bool:
     return bool(row.get("tools")) and max_tool_rounds > 0
 
@@ -606,11 +739,39 @@ async def _generate_predictions_with_vllm_async_impl(
 
     tokenizer_source = resolve_vllm_tokenizer_source(args.model_name_or_path)
     tokenizer = load_tokenizer(tokenizer_source)
+    # Keep every loaded row: over-length prompts still need a prediction entry so the
+    # official predictions file covers every question id.
+    all_rows = list(rows)
     rows, skipped_rows = prepare_rows_for_generation(rows, tokenizer, args.max_prompt_length)
+
+    progress_path = Path(args.output_dir) / PROGRESS_FILENAME
+    completed_details: Dict[int, Dict[str, Any]] = (
+        {} if args.no_resume else load_generation_progress(progress_path)
+    )
+    if completed_details:
+        pending_rows = [
+            row for row in rows if int(row.get("source_idx", -1)) not in completed_details
+        ]
+        print(
+            f"[resume] {len(completed_details)} example(s) already generated in {progress_path}; "
+            f"{len(pending_rows)} remaining"
+        )
+        rows = pending_rows
+    if args.no_resume and progress_path.exists():
+        progress_path.unlink()
 
     tensor_parallel_size = args.vllm_tensor_parallel_size
     vllm_max_model_len = args.vllm_max_model_len or (args.max_prompt_length + args.max_new_tokens)
     concurrency = max(1, args.vllm_async_concurrency)
+
+    detailed_results: List[Dict[str, Any]] = []
+    if not rows:
+        # Everything was either already generated or filtered out, so there is no
+        # reason to pay for an engine load on a restart.
+        print("[inference] nothing left to generate; skipping engine load")
+        return finalize_async_predictions(
+            all_rows, completed_details, detailed_results, skipped_rows, args
+        )
 
     print(
         "[inference] loading async vLLM engine "
@@ -632,6 +793,8 @@ async def _generate_predictions_with_vllm_async_impl(
     engine = AsyncLLMEngine.from_engine_args(engine_args)
     semaphore = asyncio.Semaphore(concurrency)
     log_each_example = should_log_each_example(len(rows))
+    progress_lock = asyncio.Lock()
+    progress_handle = progress_path.open("a", encoding="utf-8")
     completed = 0
 
     async def generate_row(idx: int, row: Dict[str, Any]) -> Dict[str, Any]:
@@ -725,6 +888,14 @@ async def _generate_predictions_with_vllm_async_impl(
                     error_message=error_message,
                 )
 
+            # Persist before releasing the semaphore slot: a crash or OOM-kill after
+            # this point must not lose the example, because the restart reads this file
+            # to decide what still needs generating.
+            async with progress_lock:
+                progress_handle.write(json.dumps(generated, ensure_ascii=False) + "\n")
+                progress_handle.flush()
+                os.fsync(progress_handle.fileno())
+
             completed += 1
             if log_each_example:
                 print(
@@ -737,38 +908,16 @@ async def _generate_predictions_with_vllm_async_impl(
             return generated
 
     try:
-        detailed_results = await asyncio.gather(
-            *(generate_row(idx, row) for idx, row in enumerate(rows))
+        detailed_results = list(
+            await asyncio.gather(*(generate_row(idx, row) for idx, row in enumerate(rows)))
         )
     finally:
         engine.shutdown()
+        progress_handle.close()
 
-    results_by_idx = {result["source_idx"]: result for result in detailed_results}
-    official_predictions: Dict[str, str] = {}
-    detailed_predictions: List[Dict[str, Any]] = []
-    for idx, row in enumerate(rows):
-        source_idx = row.get("source_idx", idx)
-        generated = results_by_idx[source_idx]
-        db_id = generated["db_id"]
-        pred_sql = generated["pred_sql"]
-        official_predictions[str(source_idx)] = f"{pred_sql}{BIRD_SPLIT_MARKER}{db_id}"
-        detailed_predictions.append(
-            {
-                "idx": source_idx,
-                "db_id": db_id,
-                "prediction_text": generated["prediction_text"],
-                "pred_sql": pred_sql,
-                "gold_sql": extract_sql(row.get("gold_sql", "")),
-                "prompt_tokens": generated["prompt_tokens"],
-                "completion_token_count": generated["completion_token_count"],
-                "tool_rounds": generated.get("tool_rounds", 0),
-                "tool_call_count": generated.get("tool_call_count", 0),
-                "stop_reason": generated.get("stop_reason", ""),
-                "error_message": generated.get("error_message", ""),
-            }
-        )
-
-    return rows, official_predictions, detailed_predictions, skipped_rows
+    return finalize_async_predictions(
+        all_rows, completed_details, detailed_results, skipped_rows, args
+    )
 
 
 def generate_predictions_with_vllm_async(rows: List[Dict[str, Any]], args: argparse.Namespace) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -1849,7 +1998,13 @@ def main() -> None:
 
     output_dir = resolve_output_dir(args)
     args.output_dir = str(output_dir)
-    ensure_output_dir(output_dir, args.overwrite)
+    # A crashed run leaves a populated output_dir. Relaunching with the identical
+    # command line must resume rather than abort on "directory not empty", so treat
+    # the presence of a progress file as permission to reuse the directory.
+    resuming = not args.no_resume and (output_dir / PROGRESS_FILENAME).exists()
+    if resuming:
+        print(f"[resume] found {output_dir / PROGRESS_FILENAME}; reusing output directory")
+    ensure_output_dir(output_dir, args.overwrite or resuming)
     print_run_configuration(args, output_dir)
 
     rows = load_rows(args.input_file, args.num_examples)
