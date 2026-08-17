@@ -107,6 +107,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--enable_thinking", action="store_true")
     parser.add_argument("--preserve_thinking", action="store_true")
     parser.add_argument("--no_prompt_rewrite", action="store_true")
+    parser.add_argument(
+        "--skip_eval",
+        action="store_true",
+        help=(
+            "Write predictions without scoring them. Required for the BIRD test "
+            "split, where every row's SQL field is empty."
+        ),
+    )
     parser.add_argument("--no_force_finalize", action="store_true")
     parser.add_argument("--empty_tool_retries", type=int, default=1)
     parser.add_argument(
@@ -700,12 +708,22 @@ def write_outputs(
     started_at: float,
 ) -> None:
     output_dir = Path(args.output_dir)
-    diff_rows = load_diff_rows(args.diff_json_path)
     with (output_dir / "predict_dev.json").open("w", encoding="utf-8") as handle:
         json.dump(predictions, handle, ensure_ascii=False, indent=2)
     write_jsonl(output_dir / "prediction_details.jsonl", details)
     (output_dir / "filtered_examples.jsonl").write_text("", encoding="utf-8")
 
+    if getattr(args, "skip_eval", False):
+        # BIRD's test.json carries "SQL": "", so there is nothing to score
+        # against. The predictions and per-rollout details are already written
+        # above, which is all the downstream tie-breaker needs.
+        print(
+            f"[qwen-async] --skip_eval: wrote {len(predictions)} predictions to "
+            f"{output_dir / 'predict_dev.json'} (no ground truth available)"
+        )
+        return
+
+    diff_rows = load_diff_rows(args.diff_json_path)
     eval_started = time.monotonic()
     per_example_results, summary = evaluate_predictions(
         rows=rows,

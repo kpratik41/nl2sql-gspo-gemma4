@@ -9,7 +9,8 @@
 #   2. Schema build over test_databases (stats + column comments)
 #   3. Tool-format prompts with the Qwen system prompt
 #   4. pass@16 generation, temperature 1.2, tool calls executed live
-#   5. Self-consistency selection -> predict_test.json
+#   5. temperature-0 pass, used only to break ties (skip with USE_TEMP0=0)
+#   6. Self-consistency selection -> predict_test.json
 #
 # Requires MODEL_PATH to point at the model (a local dir or an HF repo id).
 set -euo pipefail
@@ -68,9 +69,9 @@ echo "[bird-test] pass@${NUM_GENERATIONS} temperature=${TEMPERATURE} max_tool_ro
 
 # ---- 1. few-shot retrieval ------------------------------------------------
 if [[ -s "${FEW_SHOT_JSON}" ]]; then
-  echo "[bird-test] 1/5 few-shot: reusing ${FEW_SHOT_JSON}"
+  echo "[bird-test] 1/6 few-shot: reusing ${FEW_SHOT_JSON}"
 else
-  echo "[bird-test] 1/5 few-shot retrieval"
+  echo "[bird-test] 1/6 few-shot retrieval"
   "${PYTHON_BIN}" scripts/bird_test/build_test_few_shots.py \
     --test-input "${TEST_JSON}" --train-input "${TRAIN_POOL}" \
     --output "${FEW_SHOT_JSON}" --top-n "${TOP_N}" 2>&1 | tee "${LOG_DIR}/1_few_shot.log"
@@ -80,9 +81,9 @@ fi
 # Stats and column comments on, matching the dev configuration this system was
 # tuned against. column_meaning.json is required for the comments.
 if [[ -s "${SCHEMA_JSONL}" ]]; then
-  echo "[bird-test] 2/5 schema: reusing ${SCHEMA_JSONL}"
+  echo "[bird-test] 2/6 schema: reusing ${SCHEMA_JSONL}"
 else
-  echo "[bird-test] 2/5 schema build over ${TEST_DB_DIR}"
+  echo "[bird-test] 2/6 schema build over ${TEST_DB_DIR}"
   "${PYTHON_BIN}" scripts/data_generation/schema_build.py \
     --split test --input-file "${FEW_SHOT_JSON}" \
     --n-examples -1 --output "${SCHEMA_JSONL}" \
@@ -92,9 +93,9 @@ fi
 # ---- 3. tool-format prompts ----------------------------------------------
 # --allow-missing-gold is mandatory here: every test.json row has "SQL": "".
 if [[ -s "${TOOL_JSONL}" ]]; then
-  echo "[bird-test] 3/5 prompts: reusing ${TOOL_JSONL}"
+  echo "[bird-test] 3/6 prompts: reusing ${TOOL_JSONL}"
 else
-  echo "[bird-test] 3/5 tool-format prompts"
+  echo "[bird-test] 3/6 tool-format prompts"
   "${PYTHON_BIN}" scripts/data_generation/build_tool_dataset.py \
     --input "${SCHEMA_JSONL}" --output "${TOOL_JSONL}" \
     --prompt-template default_qwen --allow-missing-gold \
@@ -106,14 +107,18 @@ echo "[bird-test] ${TOTAL} test questions"
 
 # ---- 4. pass@16 generation ------------------------------------------------
 if [[ -s "${PASSK_DIR}/merged/passk_candidates.jsonl" ]]; then
-  echo "[bird-test] 4/5 generation: reusing ${PASSK_DIR}/merged"
+  echo "[bird-test] 4/6 generation: reusing ${PASSK_DIR}/merged"
 else
-  echo "[bird-test] 4/5 pass@${NUM_GENERATIONS} generation"
+  echo "[bird-test] 4/6 pass@${NUM_GENERATIONS} generation"
   pids=()
   for shard in $(seq 0 $((SHARDS - 1))); do
     first=$(( shard * TP ))
     gpus=$(seq -s, "${first}" $(( first + TP - 1 )))
+    # Loop guard off here: it targets a greedy-decoding fixed point that
+    # sampling at temperature 1.2 never forms. Pinned rather than inherited, so
+    # a shell that ran the temp-0 stage cannot leak it in.
     CUDA_VISIBLE_DEVICES="${gpus}" \
+    NL2SQL_TOOL_LOOP_GUARD=0 \
     VLLM_CACHE_ROOT="${PASSK_DIR}/shard-${shard}-vllm-cache" \
     TORCHINDUCTOR_CACHE_DIR="${PASSK_DIR}/shard-${shard}-inductor-cache" \
     "${PYTHON_BIN}" scripts/run_passk_bird_qwen_async.py \
@@ -158,13 +163,75 @@ else
     2>&1 | tee "${LOG_DIR}/4_merge.log"
 fi
 
-# ---- 5. self-consistency selection ---------------------------------------
-echo "[bird-test] 5/5 self-consistency selection"
+# ---- 5. temperature-0 pass, for tie-breaking ------------------------------
+# When two clusters draw on vote count, the one matching the greedy sample wins;
+# without it those ties fall to arbitrary sample order. Measured on dev by
+# scoring both exports directly: 72.10% with against 71.97% without -- 2
+# questions, +0.13 points, from 17 ties broken. Modest, and it costs a full
+# extra inference pass (about a sixteenth of stage 4). Set USE_TEMP0=0 to skip.
+USE_TEMP0="${USE_TEMP0:-1}"
+TEMP0_DIR="${OUT_DIR}/temp0"
+TEMP0_ARGS=()
+if [[ "${USE_TEMP0}" == "1" ]]; then
+  if [[ -s "${TEMP0_DIR}/predict_dev.json" ]]; then
+    echo "[bird-test] 5/6 temperature-0: reusing ${TEMP0_DIR}"
+  else
+    echo "[bird-test] 5/6 temperature-0 pass"
+    pids=()
+    for shard in $(seq 0 $((SHARDS - 1))); do
+      first=$(( shard * TP ))
+      gpus=$(seq -s, "${first}" $(( first + TP - 1 )))
+      # Repeat-tool-call guard, ON for this stage only. The failure it prevents
+      # is a greedy-decoding fixed point: with an identical context the model
+      # re-emits an identical tool call, gets an identical result, and burns the
+      # whole round budget. On dev at temperature 0, 70 of 1534 rollouts pinned
+      # the round cap and 64 of those had re-issued a byte-identical query. The
+      # guard returns "already ran this" instead of re-executing, which cut
+      # capped rollouts to 50 and missing SQL from 5 to 4. Sampling at 1.2 breaks
+      # the fixed point on its own, so stage 4 leaves it off.
+      CUDA_VISIBLE_DEVICES="${gpus}" \
+      NL2SQL_TOOL_LOOP_GUARD=1 \
+      VLLM_CACHE_ROOT="${TEMP0_DIR}/shard-${shard}-vllm-cache" \
+      TORCHINDUCTOR_CACHE_DIR="${TEMP0_DIR}/shard-${shard}-inductor-cache" \
+      "${PYTHON_BIN}" scripts/run_inference_bird_qwen_async.py \
+        --model_name_or_path "${MODEL_PATH}" \
+        --input_file "${TOOL_JSONL}" \
+        --database_dir "${TEST_DB_DIR}" \
+        --output_dir "${TEMP0_DIR}" \
+        --limit "${TOTAL}" --shard_index "${shard}" --num_shards "${SHARDS}" \
+        --temperature 0.0 --top_p 1.0 --top_k "${TOP_K}" \
+        --max_prompt_length "${MAX_PROMPT_LENGTH}" \
+        --max_new_tokens "${MAX_NEW_TOKENS}" \
+        --max_tool_rounds "${MAX_TOOL_ROUNDS}" \
+        --eval_timeout "${EVAL_TIMEOUT}" --eval_workers 8 \
+        --vllm_tensor_parallel_size "${TP}" \
+        --vllm_gpu_memory_utilization "${GPU_MEMORY_UTILIZATION}" \
+        --vllm_max_model_len "${MAX_MODEL_LEN}" \
+        --vllm_async_concurrency "${CONCURRENCY}" \
+        --tool_choice_policy required_first --empty_tool_retries 1 \
+        --no_prompt_rewrite --skip_eval --overwrite \
+        > "${LOG_DIR}/5_temp0_shard${shard}.log" 2>&1 &
+      pids+=("$!")
+    done
+    failed=0
+    for i in "${!pids[@]}"; do
+      wait "${pids[$i]}" || { echo "[bird-test] temp-0 shard ${i} FAILED"; failed=1; }
+    done
+    # A failed tie-breaker must not sink the submission: selection falls back to
+    # majority-only, which is the same result as USE_TEMP0=0.
+    [[ "${failed}" -ne 0 ]] && echo "[bird-test] temperature-0 pass failed; continuing without tie-breaking"
+  fi
+  [[ -s "${TEMP0_DIR}/predict_dev.json" ]] && TEMP0_ARGS=(--temp0-predictions "${TEMP0_DIR}/predict_dev.json")
+fi
+
+# ---- 6. self-consistency selection ---------------------------------------
+echo "[bird-test] 6/6 self-consistency selection"
 "${PYTHON_BIN}" scripts/bird_test/select_and_export.py \
   --candidates "${PASSK_DIR}/merged/passk_candidates.jsonl" \
   --database-dir "${TEST_DB_DIR}" \
   --output "${PREDICT_JSON}" \
   --report "${OUT_DIR}/selection_report.jsonl" \
-  --workers 16 --eval-timeout "${EVAL_TIMEOUT}" 2>&1 | tee "${LOG_DIR}/5_select.log"
+  "${TEMP0_ARGS[@]}" \
+  --workers 16 --eval-timeout "${EVAL_TIMEOUT}" 2>&1 | tee "${LOG_DIR}/6_select.log"
 
 echo "[bird-test] done -> ${PREDICT_JSON}"

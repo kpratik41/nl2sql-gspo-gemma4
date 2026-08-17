@@ -8,7 +8,12 @@ against the database to verify its own SQL before answering. The 16 candidates
 are clustered by the result set their SQL returns, and the largest cluster wins.
 
 On the BIRD **dev** set this scores **72.10%** execution accuracy, against
-71.38% for a single greedy sample.
+71.38% for a single greedy sample. Both numbers come from scoring the exported
+prediction file directly.
+
+A greedy pass is also run and used *only* to break ties between equally-sized
+clusters: 72.10% with it against 71.97% without. That is 2 questions, so the
+stage is optional -- set `USE_TEMP0=0` to skip it and save an inference pass.
 
 ---
 
@@ -82,7 +87,8 @@ stage writes its own log under `logs/bird_test/`.
 | 2. schema build | `outputs/bird_test/test-schema.jsonl` | ~10 min, CPU |
 | 3. tool prompts | `outputs/bird_test/test-schema-tool.jsonl` | ~2 min, CPU |
 | 4. pass@16 generation | `outputs/bird_test/passk16/merged/` | **dominant cost** |
-| 5. selection | `outputs/bird_test/predict_test.json` | ~10 min, CPU |
+| 5. temperature-0 pass | `outputs/bird_test/temp0/predict_dev.json` | ~1/16 of stage 4 |
+| 6. selection | `outputs/bird_test/predict_test.json` | ~10 min, CPU |
 
 Stage 4 is the one that matters for scheduling. On dev (1534 questions × 16
 candidates = 24544 generations) it took ~63 minutes across 8 engines. With 2
@@ -113,6 +119,7 @@ Every value below is an environment variable override.
 | `MAX_PROMPT_LENGTH` | 34000 | conversation cap incl. accumulated tool output |
 | `MAX_NEW_TOKENS` | 8000 | per generation |
 | `EVAL_TIMEOUT` | 60 | seconds per SQL execution |
+| `USE_TEMP0` | 1 | run the greedy tie-breaking pass (stage 5) |
 
 Thinking mode is **off** (`enable_thinking: false`). Qwen3.8 otherwise opens a
 `<think>` block on every turn, which consumes the token budget without
@@ -122,7 +129,7 @@ improving accuracy here.
 
 BIRD asks that a failure not require starting over. Accordingly:
 
-- Each of the five stages is skipped when its output already exists, so re-running
+- Each of the six stages is skipped when its output already exists, so re-running
   the entry point resumes rather than restarts.
 - Generation writes `passk_candidates_raw.jsonl` **before** any post-processing;
   if a later step fails, the generations survive.
@@ -132,6 +139,12 @@ BIRD asks that a failure not require starting over. Accordingly:
   progress-handler interrupt. `sqlite3`'s `connect(timeout=)` bounds only lock
   waits, not query execution, so a runaway query on a large test database would
   otherwise hang indefinitely.
+- The greedy pass enables a repeat-tool-call guard: with an identical context a
+  greedy decoder re-emits an identical tool call and burns its whole round
+  budget. On dev, 70 of 1534 greedy rollouts hit the round cap and 64 of those
+  had re-issued a byte-identical query; the guard returns "already ran this"
+  instead of re-executing, cutting capped rollouts to 50. It is deliberately
+  **off** for stage 4, where sampling breaks the loop on its own.
 - Selection never emits a blank query: if all 16 candidates for a question fail
   or return nothing, the first candidate that produced any SQL is used. On dev
   this kept blank output at **0.00%**, well inside BIRD's 5% abnormal-output
@@ -159,7 +172,7 @@ BIRD asks that a failure not require starting over. Accordingly:
 
 ```
 scripts/bird_test/
-  run_bird_test.sh          entry point, all five stages
+  run_bird_test.sh          entry point, all six stages
   build_test_few_shots.py   BM25 retrieval from the train pool
   select_and_export.py      self-consistency selection -> predict_test.json
 scripts/data_generation/
