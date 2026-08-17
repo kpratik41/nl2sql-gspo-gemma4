@@ -132,6 +132,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--limit", type=int, default=-1, help="Rows to process (-1 = all).")
     parser.add_argument("--log-every", type=int, default=500, help="Progress interval.")
+    parser.add_argument(
+        "--allow-missing-gold",
+        action="store_true",
+        help=(
+            "Do not abort when gold_sql is empty. Required for the BIRD test "
+            "split: every row in test.json carries \"SQL\": \"\", so the default "
+            "check would raise on all of them. db_id and question are still "
+            "required, because inference cannot proceed without either."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -154,11 +164,8 @@ def main() -> None:
                 break
 
             converted = convert_record(record, system_prompt, tools)
-            missing_fields = [
-                name
-                for name in ("db_id", "gold_sql", "question")
-                if not converted.get(name)
-            ]
+            required = ("db_id", "question") if args.allow_missing_gold else ("db_id", "gold_sql", "question")
+            missing_fields = [name for name in required if not converted.get(name)]
             if missing_fields and len(missing) < 10:
                 missing.append(f"line={idx} missing={','.join(missing_fields)}")
 

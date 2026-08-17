@@ -85,6 +85,12 @@ def resolve_default_paths(base_dir: Optional[str], split: str) -> Dict[str, str]
     if split == "train":
         input_name = "train-6601-few-shot.jsonl"
         meanings_name = "train_column_meaning.json"
+    elif split == "test":
+        # BIRD ships test_databases, test_tables.json, column_meaning.json and
+        # test.json (whose "SQL" field is an empty string). The few-shot file is
+        # produced by few_shot_bm25.py, which retrieves from the train pool.
+        input_name = "test-few-shot.json"
+        meanings_name = "column_meaning.json"
     else:
         input_name = "dev_20251106-few-shot.json"
         meanings_name = "column_meaning.json"
@@ -719,7 +725,7 @@ def parse_args():
         help="Repository root or legacy bird_sql directory (defaults to auto-detected repo root).",
     )
     parser.add_argument(
-        "--split", choices=["train", "dev"], default="train",
+        "--split", choices=["train", "dev", "test"], default="train",
         help="Dataset split to use when resolving default input, database, and meanings paths.",
     )
     parser.add_argument(

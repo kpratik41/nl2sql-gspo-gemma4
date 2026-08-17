@@ -71,6 +71,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--skip_eval",
+        action="store_true",
+        help=(
+            "Generate candidates but do not score them. Required for the BIRD "
+            "test split, where every row's SQL field is empty and scoring would "
+            "fail. Selection downstream needs no ground truth."
+        ),
+    )
     args = parser.parse_args()
 
     if args.num_shards < 1:
@@ -226,6 +235,17 @@ def main() -> None:
         raw_path = output_dir / "passk_candidates_raw.jsonl"
         write_jsonl(raw_path, candidates)
         print(f"[qwen-async-passk] wrote {len(candidates)} raw generations to {raw_path}")
+
+    if getattr(args, "skip_eval", False):
+        # BIRD's test.json carries "SQL": "", so there is nothing to score
+        # against. Write the candidates as-is and stop; selection downstream
+        # clusters them by their own execution results and needs no gold.
+        write_jsonl(output_dir / "passk_candidates.jsonl", candidates)
+        print(
+            f"[qwen-async-passk] --skip_eval: wrote {len(candidates)} unscored candidates to "
+            f"{output_dir / 'passk_candidates.jsonl'} (no ground truth available)"
+        )
+        return
 
     eval_started = time.monotonic()
     evaluated = evaluate_candidates(candidates, rows, args)
