@@ -9,11 +9,25 @@
 #
 #   bash scripts/run_passk16_train6601.sh
 #   MODEL=outputs/checkpoint-90 TP=2 NUM_SHARDS=4 bash scripts/run_passk16_train6601.sh
+#
+# Every downstream stage keys examples by source_idx, which is the LINE NUMBER
+# in INPUT_FILE (the tool JSONL carries no source_idx field). So whichever file
+# is used here must also be passed to A2/A2b/A3a and build_rft_from_traces.py --
+# a different row count means the bands address different questions.
 set -euo pipefail
 
-cd /home/ubuntu/nl2sql-gspo-gemma4
+# Resolve the repo from this script's location rather than hardcoding it, so the
+# launcher works from any checkout path.
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+REPO_ROOT="$(pwd)"
 
-PYTHON_BIN="${PYTHON_BIN:-/home/ubuntu/nl2sql-gspo-gemma4/.venv/bin/python}"
+if [[ -z "${PYTHON_BIN:-}" ]]; then
+  if [[ -x "${REPO_ROOT}/.venv/bin/python" ]]; then
+    PYTHON_BIN="${REPO_ROOT}/.venv/bin/python"
+  else
+    PYTHON_BIN="python3"
+  fi
+fi
 MODEL="${MODEL:-google/gemma-4-31B-it}"
 INPUT_FILE="${INPUT_FILE:-outputs/train-6601-schema-bare-tool.jsonl}"
 DATABASE_DIR="${DATABASE_DIR:-databases/train_databases}"
@@ -24,7 +38,10 @@ TEMPERATURE="${TEMPERATURE:-1.2}"
 NUM_GENERATIONS="${NUM_GENERATIONS:-16}"
 LIMIT="${LIMIT:--1}"
 TAG="${TAG:-gemma4-31b-it}"
-BASE_OUT="${BASE_OUT:-outputs/passk/train6601_bare_tool_${TAG}_temp1p2_tp${TP}_shards${NUM_SHARDS}}"
+# Name the run after the actual input file so a 6574-row typefix run is never
+# mistaken for the original 6601-row one.
+INPUT_STEM="$(basename "${INPUT_FILE}" .jsonl)"
+BASE_OUT="${BASE_OUT:-outputs/passk/${INPUT_STEM}_${TAG}_temp1p2_tp${TP}_shards${NUM_SHARDS}}"
 
 TOTAL_GPUS=$(( TP * NUM_SHARDS ))
 VISIBLE=$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l)
