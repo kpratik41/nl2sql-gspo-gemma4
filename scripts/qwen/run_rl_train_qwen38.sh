@@ -77,10 +77,10 @@ export MASK_TRUNCATED_COMPLETIONS="${MASK_TRUNCATED_COMPLETIONS:-1}"
 export ASYNC_MAX_TOOL_CALLING_ITERATIONS="${ASYNC_MAX_TOOL_CALLING_ITERATIONS:-8}"
 
 # 6 procs * bs 2 * ga 32 = 384; /16 generations = 24 groups needed per step.
-# K=4 oversample -> 96 groups attempted -> 1536 rollouts per optimizer step.
+# K=5 oversample -> 120 groups attempted -> 1920 rollouts per optimizer step.
 export NUM_GENERATIONS="${NUM_GENERATIONS:-16}"
 export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-32}"
-export DAPO_OVERSAMPLE_FACTOR="${DAPO_OVERSAMPLE_FACTOR:-4}"
+export DAPO_OVERSAMPLE_FACTOR="${DAPO_OVERSAMPLE_FACTOR:-5}"
 # bs stays at 2. vocab_size is 248320, so the completion logits alone are
 # bs * len * 248320 * 2 B, roughly doubling on the fp32 log-softmax and again
 # for backward. bs=4 was tried and reverted: tool responses accumulate into the
