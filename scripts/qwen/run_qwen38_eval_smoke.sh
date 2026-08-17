@@ -28,9 +28,19 @@ export PATH="${REPO_ROOT}/.venv/bin:${PATH}"
 export PYTHONPATH="src:.:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1
 
-# Suppress byte-identical repeat tool calls within a rollout. Eval opts in; RL
-# does not, until this is shown to help. See tool_loop_guard.py for why.
-export NL2SQL_TOOL_LOOP_GUARD="${NL2SQL_TOOL_LOOP_GUARD:-1}"
+# Suppress byte-identical repeat tool calls within a rollout -- but only at
+# temperature 0, which is the only regime where the failure exists. The loop is
+# a greedy-decoding fixed point: identical context deterministically regenerates
+# the identical call. At temp 0 on BIRD dev, 70/1534 rollouts pinned the round
+# cap and 64 of them re-issued the same query. With sampling the fixed point
+# never forms -- RL rollouts at temp 1.2 reached tool-loop iteration 3 of 7 at
+# their deepest, with nothing near the cap. Enabling it there would add a
+# stateful component that never fires.
+if awk "BEGIN{exit !(${TEMPERATURE:-0.0} == 0)}"; then
+  export NL2SQL_TOOL_LOOP_GUARD="${NL2SQL_TOOL_LOOP_GUARD:-1}"
+else
+  export NL2SQL_TOOL_LOOP_GUARD="${NL2SQL_TOOL_LOOP_GUARD:-0}"
+fi
 
 MODEL_PATH="${MODEL_PATH:-$(ls -d "${HOME}"/.cache/huggingface/hub/models--Qwen--Qwen3.8-27B/snapshots/*/ | head -1)}"
 TOTAL="${TOTAL:-20}"

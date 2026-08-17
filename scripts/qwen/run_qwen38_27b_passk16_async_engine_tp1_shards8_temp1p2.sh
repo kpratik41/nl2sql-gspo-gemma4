@@ -27,9 +27,10 @@ export PATH="${REPO_ROOT}/.venv/bin:${PATH}"
 export PYTHONPATH="src:.:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1
 
-# Suppress byte-identical repeat tool calls within a rollout. Eval opts in; RL
-# does not, until this is shown to help. See tool_loop_guard.py for why.
-export NL2SQL_TOOL_LOOP_GUARD="${NL2SQL_TOOL_LOOP_GUARD:-1}"
+# Off here: pass@k samples at temperature 1.2, and the repeat loop the guard
+# exists for is a greedy-decoding fixed point that sampling breaks before it
+# forms. See run_qwen38_eval_smoke.sh for the measurement.
+export NL2SQL_TOOL_LOOP_GUARD="${NL2SQL_TOOL_LOOP_GUARD:-0}"
 
 PYTHON_BIN="${PYTHON_BIN:-${REPO_ROOT}/.venv/bin/python}"
 MODEL_PATH="${MODEL_PATH:-$(ls -d "${HOME}"/.cache/huggingface/hub/models--Qwen--Qwen3.8-27B/snapshots/*/ | head -1)}"

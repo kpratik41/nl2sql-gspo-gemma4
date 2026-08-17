@@ -46,8 +46,13 @@ export DEEPSPEED_CONFIG="${DEEPSPEED_CONFIG:-configs/ds_zero3_bf16_no_scheduler.
 # Only consulted when DISTRIBUTED_BACKEND=fsdp; wraps Qwen3_5DecoderLayer.
 export FSDP_CONFIG="${FSDP_CONFIG:-configs/fsdp_qwen38_bf16.json}"
 
-# torch SDPA already dispatches to a FlashAttention-2 backend at head_dim=256
-# on Hopper. Set flash_attention_2 only if flash-attn is installed.
+# At Qwen3.8's shape (head_dim=256, bf16, causal) on H200, torch 2.10 SDPA
+# auto-selects cuDNN's fused kernel, NOT FlashAttention -- measured 0.355 ms vs
+# 0.746 ms for forced Flash and 1.464 ms for mem-efficient, with the profiler
+# naming cudnn_generated_fort_native_sdpa_sm90_flash_fprop_wgmma_f16. Flash is
+# usable at this head_dim; torch simply prefers cuDNN because it is ~2x faster.
+# flash_attention_2 is not an option here anyway: flash-attn will not build
+# against host CUDA 13.2 with a cu128 torch (see scripts/setup_flash_attn.sh).
 export ATTN_IMPLEMENTATION="${ATTN_IMPLEMENTATION:-sdpa}"
 
 # GPUs 0-5 train, 6-7 serve rollouts (matches launch_qwen38_vllm.sh's default).
