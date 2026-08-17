@@ -76,16 +76,18 @@ export CHAT_TEMPLATE_KWARGS="${CHAT_TEMPLATE_KWARGS:-{\"enable_thinking\": false
 export MASK_TRUNCATED_COMPLETIONS="${MASK_TRUNCATED_COMPLETIONS:-1}"
 export ASYNC_MAX_TOOL_CALLING_ITERATIONS="${ASYNC_MAX_TOOL_CALLING_ITERATIONS:-8}"
 
-# 6 procs * bs 2 * ga 32 = 384; /16 generations = 24 groups needed per step.
-# K=7 oversample -> 168 groups attempted -> 2688 rollouts per optimizer step.
+# 6 procs * bs 4 * ga 16 = 384; /16 generations = 24 groups needed per step.
+# K=4 oversample -> 96 groups attempted -> 1536 rollouts per optimizer step
+# (down from 2688 at bs=2/ga=32/K=7; the global batch of 384 is unchanged).
 export NUM_GENERATIONS="${NUM_GENERATIONS:-16}"
-export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-32}"
-export DAPO_OVERSAMPLE_FACTOR="${DAPO_OVERSAMPLE_FACTOR:-7}"
-# bs stays at 2: vocab_size is 248320, so completion logits alone are
-# bs * 8000 * 248320 * 2 B (~8 GB at bs=2), roughly doubling on the fp32
-# log-softmax and again for backward. An OOM lands in the log-prob/loss step,
-# not the forward, so gradient checkpointing will not help -- lower bs instead.
-export PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-2}"
+export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-16}"
+export DAPO_OVERSAMPLE_FACTOR="${DAPO_OVERSAMPLE_FACTOR:-4}"
+# OOM WATCH: vocab_size is 248320, so completion logits alone are
+# bs * 8000 * 248320 * 2 B -- 15.9 GB at bs=4 against 7.9 GB at bs=2, roughly
+# doubling again on the fp32 log-softmax and again for backward (~64 GB peak).
+# An OOM lands in the log-prob/loss step, not the forward, so gradient
+# checkpointing will not help; drop back to bs=2 (with ga=32) if it blows.
+export PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-4}"
 # Safe at 16 only because EVAL_MODE=reward_only skips the eval loss forward.
 export PER_DEVICE_EVAL_BATCH_SIZE="${PER_DEVICE_EVAL_BATCH_SIZE:-16}"
 export EVAL_MODE="${EVAL_MODE:-reward_only}"
@@ -110,6 +112,12 @@ export WANDB_PROJECT="${WANDB_PROJECT:-qwen38-27b-bird-gspo}"
 
 export TOOL_LOOP_DEBUG="${TOOL_LOOP_DEBUG:-1}"
 export DAPO_DEBUG_ROLLOUTS="${DAPO_DEBUG_ROLLOUTS:-1}"
+# No [rollout-sample] spam on the console. Those lines dump 500 chars of raw
+# completion text per step and existed to diagnose the un-awaited-coroutine bug,
+# which is fixed. The aggregate [rollout-debug] counters stay on -- they are one
+# line per step and carry the reward and tool statistics -- and every rollout is
+# still written in full to DAPO_ROLLOUT_DUMP_DIR, so nothing is lost for auditing.
+export DAPO_DEBUG_ROLLOUT_SAMPLES="${DAPO_DEBUG_ROLLOUT_SAMPLES:-0}"
 export DAPO_ROLLOUT_DUMP_DIR="${DAPO_ROLLOUT_DUMP_DIR:-${OUTPUT_DIR}/rollouts}"
 mkdir -p "${OUTPUT_DIR}" "${DAPO_ROLLOUT_DUMP_DIR}"
 
