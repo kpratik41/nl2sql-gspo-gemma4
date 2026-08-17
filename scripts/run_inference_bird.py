@@ -133,7 +133,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval_timeout", type=float, default=60.0)
     parser.add_argument("--eval_workers", type=int, default=16)
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=None)
-    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.93)
+    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.96)
     # Must exceed max_prompt_length + max_new_tokens, and the tool loop appends
     # each tool response to the running context, so leave headroom above the sum.
     parser.add_argument("--vllm_max_model_len", type=int, default=53000)
@@ -192,6 +192,16 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Ignore generation_progress.jsonl and regenerate every example. By default a "
             "rerun into the same --output_dir resumes from the last completed example."
+        ),
+    )
+    parser.add_argument(
+        "--no_force_finalize",
+        action="store_true",
+        help=(
+            "Disable the forced final answer. By default a rollout that exhausts "
+            "--max_tool_rounds with a tool call still pending gets one non-tool turn to "
+            "commit to SQL (stop_reason=forced_final_at_cap); without it those rollouts "
+            "return no SQL at all."
         ),
     )
     args = parser.parse_args()
@@ -605,6 +615,13 @@ async def _async_vllm_generate_text(
     return generated_text, completion_tokens
 
 
+FINALIZE_PROMPT = (
+    "Do not call another tool. Using the prior reasoning and any tool responses, "
+    "provide the required final answer now. Return the SQL only inside "
+    "<final_answer><sql_code>...</sql_code></final_answer>."
+)
+
+
 async def generate_one_with_vllm_async_tool_loop(
     engine,
     sampling_params_cls,
@@ -616,6 +633,7 @@ async def generate_one_with_vllm_async_tool_loop(
     eval_timeout: float,
     temperature: float,
     top_p: float,
+    force_finalize: bool = True,
 ) -> Dict[str, Any]:
     messages = [dict(message) for message in get_generation_messages(row)]
     tools = row.get("tools")
@@ -694,7 +712,47 @@ async def generate_one_with_vllm_async_tool_loop(
             break
 
         if round_index >= max_tool_rounds:
-            stop_reason = "max_tool_rounds"
+            # The rollout still wants to call a tool but has no rounds left. Cutting
+            # it off here returns no SQL at all -- an automatic zero -- even though
+            # these rollouts are rarely lost causes: they have usually already run a
+            # successful query and written out a candidate SQL. Give them one
+            # non-tool turn to commit to an answer with what they already have.
+            #
+            # The pending tool call is deliberately NOT executed (that would spend a
+            # round beyond max_tool_rounds) and the assistant turn requesting it is
+            # dropped, so the transcript never carries a tool call with no matching
+            # response.
+            if not force_finalize:
+                stop_reason = "max_tool_rounds"
+                break
+
+            finalize_messages = messages + [{"role": "user", "content": FINALIZE_PROMPT}]
+            finalize_prompt_text = render_prompt(tokenizer, finalize_messages, None)
+            finalize_prompt_tokens = len(
+                tokenizer(finalize_prompt_text, truncation=False)["input_ids"]
+            )
+            finalize_budget = min(
+                max_new_tokens - completion_token_count,
+                max_model_len - finalize_prompt_tokens,
+            )
+            if finalize_budget <= 0:
+                stop_reason = "max_tool_rounds"
+                break
+
+            final_text, final_tokens = await _async_vllm_generate_text(
+                engine=engine,
+                sampling_params_cls=sampling_params_cls,
+                prompt_text=finalize_prompt_text,
+                max_tokens=finalize_budget,
+                temperature=temperature,
+                top_p=top_p,
+                request_prefix=f"{request_prefix}-capfinal",
+                stop_token_ids=gemma_tool_loop_stop_token_ids(tokenizer),
+            )
+            completion_token_count += final_tokens
+            if final_text:
+                generated_parts.append(final_text)
+            stop_reason = "forced_final_at_cap"
             break
 
         generated_text, tool_calls = keep_first_tool_call_only(generated_text, tool_calls)
@@ -822,6 +880,7 @@ async def _generate_predictions_with_vllm_async_impl(
                         eval_timeout=args.eval_timeout,
                         temperature=args.temperature,
                         top_p=args.top_p,
+                        force_finalize=not args.no_force_finalize,
                     )
                 else:
                     available_context_tokens = vllm_max_model_len - prompt_token_count

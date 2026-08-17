@@ -22,13 +22,16 @@ EVAL_WORKERS="${EVAL_WORKERS:-16}"
 SHARD_INDEX="${SHARD_INDEX:-0}"
 NUM_SHARDS="${NUM_SHARDS:-1}"
 NO_APPEND_SHARD_TO_OUTPUT_DIR="${NO_APPEND_SHARD_TO_OUTPUT_DIR:-0}"
-VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.93}"
+VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.96}"
 # Covers MAX_PROMPT_LENGTH + MAX_NEW_TOKENS with headroom for the tool loop,
 # which appends each tool response to the running context.
 VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-53000}"
 VLLM_ASYNC_CONCURRENCY="${VLLM_ASYNC_CONCURRENCY:-8}"
 NO_RESUME="${NO_RESUME:-0}"
 FALLBACK_SQL="${FALLBACK_SQL:-}"
+# 1 = a rollout that exhausts MAX_TOOL_ROUNDS gets one non-tool turn to commit to
+# SQL; 0 = cut it off at the cap and return no SQL.
+FORCE_FINALIZE="${FORCE_FINALIZE:-1}"
 APPEND_OUTPUT_TIMESTAMP="${APPEND_OUTPUT_TIMESTAMP:-1}"
 OUTPUT_TIMESTAMP="${OUTPUT_TIMESTAMP:-}"
 VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-8}"
@@ -127,6 +130,10 @@ fi
 
 if [[ "${NO_RESUME}" == "1" ]]; then
   cmd+=(--no_resume)
+fi
+
+if [[ "${FORCE_FINALIZE}" != "1" ]]; then
+  cmd+=(--no_force_finalize)
 fi
 
 if [[ -n "${FALLBACK_SQL}" ]]; then

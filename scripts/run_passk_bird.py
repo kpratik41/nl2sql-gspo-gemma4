@@ -95,7 +95,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval_timeout", type=float, default=60.0)
     parser.add_argument("--eval_workers", type=int, default=16)
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=8)
-    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.93)
+    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.96)
     # Must exceed max_prompt_length; the tool loop appends each tool response to
     # the running context, so leave headroom above prompt + completion.
     parser.add_argument("--vllm_max_model_len", type=int, default=53000)
@@ -117,6 +117,16 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Ignore generation_progress.jsonl and regenerate every candidate. By default a "
             "rerun into the same --output_dir resumes from the last completed candidate."
+        ),
+    )
+    parser.add_argument(
+        "--no_force_finalize",
+        action="store_true",
+        help=(
+            "Disable the forced final answer. By default a candidate that exhausts "
+            "--max_tool_rounds with a tool call still pending gets one non-tool turn to "
+            "commit to SQL (stop_reason=forced_final_at_cap); without it those candidates "
+            "return no SQL and cannot vote in self-consistency."
         ),
     )
     args = parser.parse_args()
@@ -418,6 +428,7 @@ async def generate_candidates(args: argparse.Namespace, rows: List[Dict[str, Any
                         eval_timeout=args.eval_timeout,
                         temperature=args.temperature,
                         top_p=args.top_p,
+                        force_finalize=not args.no_force_finalize,
                     )
                 else:
                     generated_text, completion_tokens = await _async_vllm_generate_text(
