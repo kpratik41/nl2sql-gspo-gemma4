@@ -18,6 +18,8 @@ Options:
 import argparse
 import json
 import os
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 import re
 import sqlite3
@@ -398,6 +400,30 @@ def classify_column(col_type: str, samples: list, storage_class: str | None = No
     return "TEXT"
 
 
+def _render_schema(
+    db_path: str,
+    db_id: str,
+    meanings: Dict[str, str],
+    example_num: int,
+    include_stats: bool,
+    include_nullability: bool,
+) -> str:
+    """Introspect one database and render it. Module-level so it can be
+    submitted to a ProcessPoolExecutor (closures are not picklable)."""
+
+    ms = build_mschema_from_db(
+        db_path=db_path,
+        db_id=db_id,
+        meanings=meanings,
+        example_num=example_num,
+        include_stats=include_stats,
+    )
+    return ms.to_mschema(
+        example_num=example_num,
+        include_nullability=include_nullability,
+    )
+
+
 def build_mschema_from_db(db_path: str, db_id: str,
                           meanings: Dict[str, str],
                           example_num: int = 3,
@@ -763,6 +789,15 @@ def parse_args():
         help="Disable Nullable / Not Null labels in rendered schema output.",
     )
     parser.add_argument(
+        "--workers", type=int, default=1,
+        help=(
+            "Parallel workers for database introspection (default 1 = serial, "
+            "the original behaviour). Databases are introspected independently "
+            "and the rendered schema is identical either way; this only changes "
+            "how many are built at once."
+        ),
+    )
+    parser.add_argument(
         "--log-every", type=int, default=50,
         help="Print progress every N records (default: 50). Use 0 to disable interval logging.",
     )
@@ -801,6 +836,46 @@ def main():
 
     # -- schema cache ----------------------------------------------------
     schema_cache: Dict[str, str] = {}
+
+    # Introspection is the slow step and it is per-database: typeof() and the
+    # stats aggregates each scan a column, so a 5 GB database costs ~100 s while
+    # the record-formatting loop below is trivial. Databases are independent, so
+    # prebuild the cache in parallel. Rendering is unchanged -- each worker runs
+    # exactly the same build_mschema_from_db/to_mschema pair get_mschema_str
+    # would have run serially, so the output is identical either way.
+    if args.workers > 1:
+        db_ids = list(dict.fromkeys(str(record["db_id"]) for record in records))
+        pending = [
+            db_id
+            for db_id in db_ids
+            if os.path.exists(os.path.join(DB_DIR, db_id, f"{db_id}.sqlite"))
+        ]
+        print(
+            f"Prebuilding {len(pending)} schemas with {args.workers} workers ..."
+        )
+        t_start = time.time()
+        with ProcessPoolExecutor(max_workers=args.workers) as pool:
+            futures = {
+                pool.submit(
+                    _render_schema,
+                    os.path.join(DB_DIR, db_id, f"{db_id}.sqlite"),
+                    db_id,
+                    meanings,
+                    args.example_num,
+                    not args.no_stats,
+                    not args.no_nullability,
+                ): db_id
+                for db_id in pending
+            }
+            for done, future in enumerate(as_completed(futures), start=1):
+                db_id = futures[future]
+                schema_cache[db_id] = future.result()
+                print(
+                    f"  [{done}/{len(pending)}] {db_id} "
+                    f"({time.time() - t_start:.0f}s elapsed)",
+                    flush=True,
+                )
+        print(f"  → schemas ready in {time.time() - t_start:.0f}s")
 
     def get_mschema_str(db_id: str) -> str:
         if db_id in schema_cache:
