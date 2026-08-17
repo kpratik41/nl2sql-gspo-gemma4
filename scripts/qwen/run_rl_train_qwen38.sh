@@ -76,18 +76,19 @@ export CHAT_TEMPLATE_KWARGS="${CHAT_TEMPLATE_KWARGS:-{\"enable_thinking\": false
 export MASK_TRUNCATED_COMPLETIONS="${MASK_TRUNCATED_COMPLETIONS:-1}"
 export ASYNC_MAX_TOOL_CALLING_ITERATIONS="${ASYNC_MAX_TOOL_CALLING_ITERATIONS:-8}"
 
-# 6 procs * bs 4 * ga 16 = 384; /16 generations = 24 groups needed per step.
-# K=4 oversample -> 96 groups attempted -> 1536 rollouts per optimizer step
-# (down from 2688 at bs=2/ga=32/K=7; the global batch of 384 is unchanged).
+# 6 procs * bs 2 * ga 32 = 384; /16 generations = 24 groups needed per step.
+# K=4 oversample -> 96 groups attempted -> 1536 rollouts per optimizer step.
 export NUM_GENERATIONS="${NUM_GENERATIONS:-16}"
-export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-16}"
+export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-32}"
 export DAPO_OVERSAMPLE_FACTOR="${DAPO_OVERSAMPLE_FACTOR:-4}"
-# OOM WATCH: vocab_size is 248320, so completion logits alone are
-# bs * 8000 * 248320 * 2 B -- 15.9 GB at bs=4 against 7.9 GB at bs=2, roughly
-# doubling again on the fp32 log-softmax and again for backward (~64 GB peak).
-# An OOM lands in the log-prob/loss step, not the forward, so gradient
-# checkpointing will not help; drop back to bs=2 (with ga=32) if it blows.
-export PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-4}"
+# bs stays at 2. vocab_size is 248320, so the completion logits alone are
+# bs * len * 248320 * 2 B, roughly doubling on the fp32 log-softmax and again
+# for backward. bs=4 was tried and reverted: tool responses accumulate into the
+# sequence, and the previous run reached 19631 tokens by round 7 against the
+# 20000 prompt cap, so the true sequence length is far above the 8000-token
+# completion budget the estimate was based on. An OOM lands in the
+# log-prob/loss step, where gradient checkpointing does not help.
+export PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-2}"
 # Safe at 16 only because EVAL_MODE=reward_only skips the eval loss forward.
 export PER_DEVICE_EVAL_BATCH_SIZE="${PER_DEVICE_EVAL_BATCH_SIZE:-16}"
 export EVAL_MODE="${EVAL_MODE:-reward_only}"
