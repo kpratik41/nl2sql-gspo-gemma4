@@ -4,6 +4,8 @@
 # so the LLM can call (example):
 # {"name":"finance_data","arguments":{"name":"sqlite_peek","args":{"db_id":"...", "sql":"SELECT ..."}}}
 
+import asyncio
+import functools
 import os
 import re
 import sqlite3
@@ -19,6 +21,40 @@ from typing import Any  # if not already imported
 import re
 
 __all__ = ["sqlite_peek", "sqlite_query", "bm25_search_sqlite", "consensus_at_1"]
+
+
+def _to_async(sync_fn, name: str):
+    """Expose a blocking tool body as a genuine coroutine function.
+
+    The three SQLite tools are pure blocking `sqlite3` code. Declaring them
+    ``async def`` without any ``await`` made them coroutines in name only: they
+    ran start-to-finish on the caller's event loop the moment they were
+    scheduled. That had three consequences in the GRPO tool-rollout loop:
+
+    * ``asyncio.gather`` provided no concurrency at all -- tool calls for a
+      rollout batch executed strictly serially.
+    * A query that blocked inside a single SQLite VM step (where the
+      ``set_progress_handler`` guard cannot fire) froze the whole event-loop
+      thread, stalling every other pending tool call on that rank.
+    * ``asyncio.wait_for`` could not cancel such a call, because a coroutine
+      with no yield point never returns control to the loop.
+
+    Running the body in a worker thread via ``asyncio.to_thread`` restores a
+    real suspension point, so the loop stays responsive, calls run
+    concurrently, and a wall-clock timeout at the call site can actually fire.
+
+    ``name`` is applied to ``__name__`` because TRL keys its tool dispatch
+    dicts on ``tool.__name__``; ``functools.wraps`` alone would leak the
+    private implementation name.
+    """
+
+    @functools.wraps(sync_fn)
+    async def _async_tool(*args, **kwargs):
+        return await asyncio.to_thread(functools.partial(sync_fn, *args, **kwargs))
+
+    _async_tool.__name__ = name
+    _async_tool.__qualname__ = name
+    return _async_tool
 # __all__ = ["sqlite_peek", "sqlite_query", "bm25_search_sqlite"]
 
 
@@ -440,7 +476,7 @@ def _profile_columns_from_sample(rows: List[Tuple[Any, ...]], cols: List[str], *
 
 
 
-async def sqlite_peek(
+def _sqlite_peek_impl(
     db_id: str,
     table: str,
     columns: List[str],
@@ -685,7 +721,7 @@ async def sqlite_peek(
         return {"error": "unexpected_error", "message": str(e)}
 
 
-async def bm25_search_sqlite(
+def _bm25_search_sqlite_impl(
     db_id: str,
     table: str,
     column: str,
@@ -975,7 +1011,7 @@ def _quote_variants(sql: str) -> list:
     return variants
 
 
-async def sqlite_query(
+def _sqlite_query_impl(
     db_id: str,
     sql: str,
     *,
@@ -1383,3 +1419,17 @@ async def consensus_at_1(
     if isinstance(notes, list):
         out["notes"] = notes
     return out
+
+
+# ---------------------------------------------------------------------------
+# Public tool entry points.
+#
+# The bodies above are plain blocking SQLite code (`_*_impl`). These wrappers
+# are the names TRL registers and the model calls; each runs its body in a
+# worker thread so the rollout event loop keeps a real suspension point.
+# See ``_to_async`` for why this matters.
+# ---------------------------------------------------------------------------
+
+sqlite_peek = _to_async(_sqlite_peek_impl, "sqlite_peek")
+bm25_search_sqlite = _to_async(_bm25_search_sqlite_impl, "bm25_search_sqlite")
+sqlite_query = _to_async(_sqlite_query_impl, "sqlite_query")

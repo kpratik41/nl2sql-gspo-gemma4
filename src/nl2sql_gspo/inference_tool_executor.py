@@ -158,6 +158,13 @@ async def _execute_tool(name: str, arguments: Dict[str, Any], timeout_s: float) 
 
     try:
         return await asyncio.wait_for(tool(**arguments), timeout=float(timeout_s))
+    except (asyncio.TimeoutError, TimeoutError):
+        # ``asyncio.TimeoutError`` stringifies to "", so report it explicitly;
+        # the model can act on a stated time limit but not on a blank message.
+        return {
+            "error": "timeout",
+            "message": f"Tool '{name}' exceeded the {float(timeout_s):g}s time limit.",
+        }
     except Exception as exc:
         return {"error": "tool_exception", "message": str(exc)}
 
