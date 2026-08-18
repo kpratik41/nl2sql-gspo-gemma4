@@ -593,6 +593,21 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             tool_images_len_before = [len(tool_images[i]) for i in idxs_with_tool]
             prompts_len_before = [len(prompts[i]) for i in idxs_with_tool]
 
+            # Tool execution runs in three phases so that every async tool call
+            # in the batch is awaited in a single gather.
+            #
+            # Previously each sequence was dispatched and awaited in turn, so a
+            # rollout iteration with N active sequences paid N x the latency of
+            # one tool call even though the calls are independent. With
+            # ``num_generations`` in the tens that dominated the tool loop.
+            #
+            # Phase 1 resolves every call and records a slot for each async
+            # result; phase 2 awaits them all at once; phase 3 replays the
+            # per-sequence bookkeeping in the original order, so the resulting
+            # message sequences are byte-identical to the serial version.
+            pending_async = []  # (seq_pos, slot, tool_call_id, name, coro)
+            per_seq_results = []  # list[list[(tool_call_id, name, result)]]
+
             for idx in range(len(idxs_with_tool)):
                 idx_with_tool = idxs_with_tool[idx]
                 tool_call_list = tool_calls[idx]
@@ -601,7 +616,6 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                 sync_tool_dict = self._sync_tool_dicts[tool_dict_index]
                 async_tool_dict = self._async_tool_dicts[tool_dict_index]
                 prompt_completion_tool.append(completions[idx_with_tool][-1])
-                async_coros = []
                 tool_call_results = []
 
                 for tool_call in tool_call_list:
@@ -616,9 +630,12 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                                     (tool_call_id, name, sync_tool_dict[name](**function["arguments"]))
                                 )
                             elif name in async_tool_dict:
-                                async_coros.append(
-                                    (tool_call_id, name, async_tool_dict[name](**function["arguments"]))
-                                )
+                                # Build the coroutine first: calling it with bad
+                                # arguments raises here, and must be recorded as
+                                # a failure rather than leaving an empty slot.
+                                coro = async_tool_dict[name](**function["arguments"])
+                                pending_async.append((idx, len(tool_call_results), tool_call_id, name, coro))
+                                tool_call_results.append(None)
                             else:
                                 raise ValueError(f"Tool {name} not found.")
                         except Exception as exc:
@@ -631,28 +648,30 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                             (tool_call_id, name, {"error": f"Unsupported tool call type: {tool_call['type']}"})
                         )
 
-                if async_coros:
+                per_seq_results.append(tool_call_results)
 
-                    async def _run_async_tools(coros_with_names):
-                        coros = [coro for _, _, coro in coros_with_names]
-                        results = await asyncio.gather(*coros, return_exceptions=True)
-                        return [
-                            (tool_call_id, name, result)
-                            for (tool_call_id, name, _), result in zip(coros_with_names, results, strict=False)
-                        ]
+            if pending_async:
 
-                    async_results = asyncio.run_coroutine_threadsafe(
-                        _run_async_tools(async_coros), self.async_loop
-                    ).result()
+                async def _run_async_tools(coros):
+                    return await asyncio.gather(*coros, return_exceptions=True)
 
-                    for tool_call_id, name, result in async_results:
-                        if isinstance(result, Exception):
-                            tool_failure_count += 1
-                            tool_call_results.append((tool_call_id, name, {"error": str(result)}))
-                        else:
-                            tool_call_results.append((tool_call_id, name, result))
+                async_results = asyncio.run_coroutine_threadsafe(
+                    _run_async_tools([item[4] for item in pending_async]), self.async_loop
+                ).result()
 
-                for tool_call_id, name, result in tool_call_results:
+                for (seq_pos, slot, tool_call_id, name, _), result in zip(
+                    pending_async, async_results, strict=False
+                ):
+                    if isinstance(result, BaseException):
+                        tool_failure_count += 1
+                        per_seq_results[seq_pos][slot] = (tool_call_id, name, {"error": str(result)})
+                    else:
+                        per_seq_results[seq_pos][slot] = (tool_call_id, name, result)
+
+            for idx in range(len(idxs_with_tool)):
+                idx_with_tool = idxs_with_tool[idx]
+                prompt_completion_tool = prompt_completion_tools[idx]
+                for tool_call_id, name, result in per_seq_results[idx]:
                     content, images_from_tool = self._format_tool_result(result)
                     tool_message = {"role": "tool", "name": name, "content": content}
                     if tool_call_id is not None:
