@@ -55,6 +55,193 @@ here.
 
 ---
 
+## Stage A0 — Corrected schema type labels (2026-08-17)
+
+Everything below consumes a schema-built training file. That file was rebuilt on
+2026-08-17 because the type label rendered into each prompt was wrong for ~5% of
+columns. Read this before regenerating any data or comparing against older runs.
+
+### Why — SQLite is dynamically typed
+
+`schema_build.py::classify_column` picked the label by **sniffing sampled
+values**: any column whose first 20 values all parsed as floats was labelled
+`NUMERIC`. BIRD declares 160 train and 37 dev columns as `TEXT` in the SQLite DDL
+(and in its own `train_tables.json` / `dev_tables.json`) while storing
+numeric-looking strings — `'0.25'`, `'4200'`, `'nan'`, `'01100170109835'`. The
+pipeline overrode a correct schema with a wrong label.
+
+That matters because of TEXT affinity: every text value sorts **above** every
+number, so
+
+```sql
+WHERE Sentiment_Polarity > 0    -- column is TEXT holding '1.0', '-0.5', 'nan'
+```
+
+is not a numeric comparison. It matches nearly every row, returns a plausible
+answer, and never raises. Nothing downstream catches it — not execution, not the
+reward. Telling the model the column is `NUMERIC` invites exactly that query.
+
+A second, independent bug: the `LIMIT 20` sample read was gated behind
+`if include_stats:`, so `--no-stats` silently disabled **date** inference too.
+Bare builds lost `DATE` on 18 train and 6 dev columns declared `TEXT`.
+
+### What — three commits on `consensus-sft`
+
+| commit | change |
+| --- | --- |
+| `7008461` | `classify_column` consults `typeof()`, not sniffed values (cherry-picked from `qwen-3p8` `5f016d8`) |
+| `d52f532` | `--workers` for parallel per-database introspection |
+| `15e1fc9` | pass@16 launcher path fixes; `BASE_OUT` derived from the input filename |
+
+`classify_column` now layers signals by what each is authoritative for:
+
+1. **Declared `DATE`/`TIME` keyword** — first, because SQLite has no date storage
+   class, so `typeof()` would flatten all date columns to `TEXT`.
+2. **Date-looking samples** — catches date columns declared `TEXT`.
+3. **`typeof()` storage class** — the truthful answer for everything else, and
+   why it outranks sniffing.
+4. **Declared numeric keyword** — fallback only for empty / all-NULL columns
+   where `typeof()` has nothing to report (38 columns).
+
+Value sniffing no longer decides `NUMERIC`. Sampling is no longer gated on
+`include_stats`.
+
+Note a second-order effect on stats builds: `kind` also selects which statistics
+are computed, so a column moving `NUMERIC` -> `TEXT` swaps `Min`/`Avg`/`Max` for
+`Top values`. That is the intent — `Avg: 2.9e13` over a zero-padded school ID was
+meaningless — but dev prompts change by more than one token per affected column.
+
+### Measured impact
+
+Verified independently against every column in both database sets; the numbers
+match `qwen-3p8`'s `scripts/data_generation/PIPELINE_CHANGES.md` exactly.
+
+| measurement | value |
+| --- | ---: |
+| columns scanned (train + dev) | `4365` |
+| mixed storage-class columns | `0` |
+| empty / all-NULL (no `typeof()`) | `38` |
+| train: sniffed `NUMERIC` -> truly `TEXT` | `160` |
+| train: `--no-stats` `TEXT` -> should be `DATE` | `18` |
+| dev: sniffed `NUMERIC` -> truly `TEXT` | `37` |
+| dev: `--no-stats` `TEXT` -> should be `DATE` | `6` |
+
+The regenerated train file shows exactly `160` `NUMERIC` -> `TEXT` transitions
+and nothing else across all 69 databases; dev shows exactly `37`. A single
+well-defined transition per file is the sign the change does one thing.
+
+The old `train-6601-schema-bare-tool.jsonl` predates the `include_stats` gate, so
+it already carried correct `DATE` labels and needed only the `NUMERIC` fix. The
+old `old-dev-schema-bare-tool.jsonl` was built after the gate and lost both.
+
+### Defective golds — 27 train rows dropped
+
+`find_text_affinity_defects.py` executes each gold against a
+`CAST(... AS REAL)`-corrected variant and keeps the rows whose answers differ. It
+covers the three unsafe numeric contexts — comparison vs a literal, `MIN`/`MAX`,
+`ORDER BY` — and leaves `AVG`/`SUM`/arithmetic alone because SQLite coerces text
+for those. `'1.0'` is normalized against `1.0` so a formatting change is not read
+as a behaviour change.
+
+`27 / 6601` train rows and `6 / 1534` dev rows fail. The same 27 indices are
+found before and after the type fix, which is the expected control: gold SQL and
+the databases never changed, only the rendered labels.
+
+Worst cases: `college_completion.grad_150` returns `1870` rows as written and `0`
+when corrected; `hockey.ENG` returns `1511` vs `7`; `movielens.rating` `33` vs
+`0`.
+
+**Golds are never rewritten** — that would be inventing ground truth. Defective
+rows are dropped from **train** only. Dev stays at `1534` rows; filtering an
+evaluation set would bias the benchmark.
+
+Full record of what was dropped and why, including each gold and its corrected
+variant: `outputs/train-typefix-affinity-defects.json`.
+
+### Reproduction
+
+```bash
+# train: schema -> tool format -> drop 27 affinity defects -> 6574 rows
+.venv/bin/python scripts/data_generation/schema_build.py --split train --n-examples -1 \
+  --output outputs/train-6601-schema-bare-typefix.jsonl \
+  --messages-only --no-fewshots --no-stats --no-nullability --no-comments --workers 24
+.venv/bin/python scripts/data_generation/build_tool_dataset.py \
+  --input  outputs/train-6601-schema-bare-typefix.jsonl \
+  --output outputs/train-6601-schema-bare-tool-typefix.jsonl --prompt-template default
+.venv/bin/python scripts/data_generation/find_text_affinity_defects.py \
+  --input  outputs/train-6601-schema-bare-tool-typefix.jsonl \
+  --report outputs/train-typefix-affinity-defects.json \
+  --output outputs/train-6574-schema-bare-tool-typefix.jsonl --split train
+
+# dev: WITH stats/examples/comments/nullability, no filtering
+.venv/bin/python scripts/data_generation/schema_build.py --split dev --n-examples -1 \
+  --input-file     data/bird_dev_data/raw/bird_dev-unpatched-few-shot.json \
+  --database-dir   databases/dev_databases \
+  --meanings-file  data/bird_dev_data/raw/column_meaning.json \
+  --output outputs/old-dev-schema-unpatched-typefix.jsonl --messages-only --workers 16
+.venv/bin/python scripts/data_generation/build_tool_dataset.py \
+  --input  outputs/old-dev-schema-unpatched-typefix.jsonl \
+  --output outputs/old-dev-schema-tool-unpatched-typefix.jsonl --prompt-template default
+```
+
+The flag sets are not guesses: each was confirmed by regenerating a few rows and
+diffing against the pre-existing file. Train reproduces
+`train-6601-schema-bare.jsonl` byte-for-byte; dev reproduces
+`old-dev-schema-unpatched.jsonl` byte-for-byte apart from the corrected type
+labels and their dependent stats.
+
+Timings with `--workers`: train `143 s` (was ~35 min serial), dev `29 s`, the
+train defect scan `589 s`. Past ~24 workers there is nothing to gain — the
+critical path is a single database (`bike_share_1`, ~100 s) that cannot be split.
+
+### The files this produced
+
+| file | rows | use |
+| --- | ---: | --- |
+| `outputs/train-6574-schema-bare-tool-typefix.jsonl` | `6574` | **training / pass@16 input** |
+| `outputs/old-dev-schema-tool-unpatched-typefix.jsonl` | `1534` | **evaluation input** |
+| `outputs/train-typefix-affinity-defects.json` | `27` | audit trail for the dropped rows |
+
+Validation: dev is `-0.06%` in size vs the original, `1534` rows preserved, and
+`gold_sql` / `question` / `db_id` / system prompt / `tools` identical in every
+row — only the schema block moved.
+
+Older `outputs/*.jsonl` are left untouched. They carry the pre-fix labels, so do
+not mix them with the files above.
+
+### Pinning — `source_idx` is a line number
+
+The tool JSONL carries **no `source_idx` field**; every stage derives it from
+`enumerate()` over its input file. Dropping 27 rows renumbers everything after
+line `193`. So whichever file A1 pass@16 runs on must also be passed to:
+
+- `scripts/teacher/run_a2_greedy.sh` (`INPUT_FILE=`)
+- `scripts/teacher/run_a2b_sampled.sh` (`INPUT_FILE=`)
+- `scripts/teacher/run_a3a_selftrace.sh` (`INPUT_FILE=`)
+- `scripts/teacher/build_rft_from_traces.py` (`--train_file`)
+
+All four still default to `outputs/train-6601-schema-bare-tool.jsonl`. Mixing
+files makes `target_idx_all_wrong.txt` address different questions, silently, with
+no error raised.
+
+Related: `data/bird_train_data/raw/train.json` has `9428` entries, **no
+`difficulty` field at all**, and does not align positionally with the 6601 file.
+Train pass@k difficulty breakdowns have therefore always been `unknown`; the
+`DIFF_JSON` argument is inert for the train split. Dev is unaffected.
+
+### Not applied
+
+`qwen-3p8` also adds text-affinity guidance to the system prompt (its "Change 4"),
+warning that a TEXT column may hold numeric-looking values and that comparisons on
+it use string ordering. It is applied inside `_to_qwen_template`, so it reaches
+the Qwen side only. Porting it here means inserting at the
+`- Use sqlite_peek for date columns when the stored format is uncertain.` anchor
+in `prompts.py` (lines `144` and `361`) and regenerating every `outputs/*-tool*`
+file, since the system prompt is baked into them. Deliberately deferred: it would
+change the dev prompts that existing SFT/eval numbers were measured against.
+
+---
+
 ## Stage A1 — Find the all-wrong band
 
 **Goal.** Identify train examples the current model cannot solve even with 16
