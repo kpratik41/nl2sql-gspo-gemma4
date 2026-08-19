@@ -61,7 +61,7 @@ def print_run_configuration(args: argparse.Namespace, output_dir: Path) -> None:
     print(f"[run] max_prompt_length={args.max_prompt_length}")
     print(f"[run] max_new_tokens={args.max_new_tokens}")
     print(f"[run] num_examples={args.num_examples}")
-    print(f"[run] eval_timeout={args.eval_timeout}")
+    print(f"[run] eval_timeout={args.eval_timeout} tool_timeout={args.tool_timeout}")
     print(f"[run] eval_workers={args.eval_workers}")
     print(f"[run] skip_generation={args.skip_generation}")
     print(f"[run] shard_index={args.shard_index}")
@@ -130,7 +130,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top_p", type=float, default=1.0)
     parser.add_argument("--num_examples", type=int, default=-1)
-    parser.add_argument("--eval_timeout", type=float, default=60.0)
+    # 30s matches the official BIRD evaluator's --meta_time_out default, so a
+    # query that times out for them also times out here instead of scoring
+    # correct locally and wrong on their harness.
+    parser.add_argument("--eval_timeout", type=float, default=30.0)
+    # Separate budget for tool calls made *during* generation. This is the model
+    # exploring the database, not the graded query, so it is deliberately not
+    # tied to the scoring timeout.
+    parser.add_argument("--tool_timeout", type=float, default=60.0)
     parser.add_argument("--eval_workers", type=int, default=16)
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=None)
     parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.96)
@@ -630,7 +637,7 @@ async def generate_one_with_vllm_async_tool_loop(
     max_new_tokens: int,
     max_model_len: int,
     max_tool_rounds: int,
-    eval_timeout: float,
+    tool_timeout: float,
     temperature: float,
     top_p: float,
     force_finalize: bool = True,
@@ -762,7 +769,7 @@ async def generate_one_with_vllm_async_tool_loop(
         if generated_text:
             generated_parts.append(generated_text)
 
-        tool_responses = await asyncio.to_thread(execute_tool_calls, tool_calls, eval_timeout)
+        tool_responses = await asyncio.to_thread(execute_tool_calls, tool_calls, tool_timeout)
         for response in tool_responses:
             generated_parts.append(response["rendered"])
         messages.append(build_assistant_tool_message(generated_text, tool_calls, tool_responses))
@@ -877,7 +884,7 @@ async def _generate_predictions_with_vllm_async_impl(
                         max_new_tokens=args.max_new_tokens,
                         max_model_len=vllm_max_model_len,
                         max_tool_rounds=args.max_tool_rounds,
-                        eval_timeout=args.eval_timeout,
+                        tool_timeout=args.tool_timeout,
                         temperature=args.temperature,
                         top_p=args.top_p,
                         force_finalize=not args.no_force_finalize,
@@ -914,7 +921,7 @@ async def _generate_predictions_with_vllm_async_impl(
                             generated_text = await asyncio.to_thread(
                                 extract_and_execute_tools,
                                 generated_text,
-                                args.eval_timeout,
+                                args.tool_timeout,
                             )
                         generated = build_generation_detail(
                             row=row,
@@ -1495,6 +1502,7 @@ def render_run_config(args: argparse.Namespace, row_count: int) -> List[str]:
         f"- max_new_tokens: `{args.max_new_tokens}`",
         f"- max_tool_rounds: `{args.max_tool_rounds}`",
         f"- eval_timeout: `{args.eval_timeout}`",
+        f"- tool_timeout: `{args.tool_timeout}`",
         f"- eval_workers: `{args.eval_workers}`",
         f"- vllm_tensor_parallel_size: `{args.vllm_tensor_parallel_size}`",
         f"- vllm_async_concurrency: `{args.vllm_async_concurrency}`",

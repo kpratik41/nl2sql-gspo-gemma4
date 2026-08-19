@@ -12,15 +12,12 @@ The launchers expect `PYTHONPATH` to include `src`; `scripts/launch_inference.sh
 
 ## Resources Required
 
-**Requested allocation: 2, 4, or 8 x H200 (80GB+). If H200 is unavailable, H100
-works equally well** — the pipeline only needs >= 80 GB per card and scales with
-whatever count is allocated. Any of the three configurations below runs the full
+**Requested allocation: 2, 4, or 8 x H200. If H200 is unavailable, H100
+works but all testing has been done on H200**. Below numbers on the full
 1534-question evaluation without changes to the code.
 
 The model is 31B in bf16, roughly 62 GB of weights. It is therefore run with
-**tensor-parallel size 2** so the weights plus a 53k-token KV cache fit
-comfortably on 80 GB cards. Remaining GPUs are used for data-parallel shards,
-which is faster than widening tensor parallelism for this workload.
+**tensor-parallel size 2**.
 
 | GPUs | tp | shards | full pipeline wall clock |
 | ---: | ---: | ---: | --- |
@@ -36,12 +33,6 @@ linear extrapolations over shard count and have not been timed directly.
 
 The self-consistency voting stage that follows generation is CPU-only and takes
 a few minutes.
-
-For reference, a single temperature-0 pass over the same 1534 questions takes
-**~47 min on 8 GPUs** (measured: 2741 s generation + 78 s scoring). That is the
-relevant number only if a temperature-0 configuration is submitted instead.
-
-Disk: the checkpoint is ~62 GB. Peak host RAM stays under 32 GB per shard.
 
 ## Required Input Files
 
@@ -61,8 +52,7 @@ prompts will be weaker.
 The other required test inputs are `test.json`, `test_tables.json`, and the
 `test_databases/` SQLite directory. Note that our development results were
 produced with a `column_meaning.json` that is byte-identical to the TA-SQL
-reference file named in the submission guidelines, so dev and test prompts are
-built from the same description source.
+reference file named in the submission guidelines.
 
 ## Reproducing The Submission (One Command)
 
@@ -136,10 +126,6 @@ The final run folder includes backend, tensor-parallel size, async concurrency, 
 
 Inference and pass@k both support process-level sharding with original example indices preserved. Each shard keeps rows where `source_idx % NUM_SHARDS == SHARD_INDEX`; when `NUM_SHARDS > 1`, standalone inference and the launcher append a directory name like `shard-00000-of-00004` under `OUTPUT_DIR`.
 
-A 31B model in bf16 does not fit on one 80 GB card at this context length, so
-each shard uses tensor-parallel 2. On 8 GPUs that is 4 shards; on 4 GPUs use 2
-shards, and on 2 GPUs a single shard with `NUM_SHARDS=1`.
-
 Run temperature-0 async vLLM inference as 4 shards of tensor-parallel 2:
 
 ```bash
@@ -183,7 +169,15 @@ python scripts/run_inference_bird.py \
 - `eval_summary_by_difficulty.csv`: CSV summary by difficulty
 - `eval_summary_by_db.csv`: CSV summary by database
 
-The local EX scorer follows the official BIRD dev evaluation semantics: it executes predicted and gold SQL on SQLite and checks raw row-set equality.
+The local EX scorer follows the official BIRD dev evaluation semantics: it
+executes predicted and gold SQL on SQLite and checks raw row-set equality, with
+a **30-second per-query timeout matching the official evaluator's
+`--meta_time_out` default**, so a query that would time out on the BIRD harness
+also times out here rather than scoring correct locally and wrong there.
+
+Tool calls made *during* generation use a separate, more generous `--tool_timeout`
+(default 60 s). That budget covers the model exploring the database, not the
+graded query, so it is deliberately not tied to the scoring timeout.
 
 The predictions file always contains one entry per input row. An example whose
 prompt exceeds `max_prompt_length` cannot be generated, so it is recorded in

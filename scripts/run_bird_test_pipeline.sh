@@ -56,7 +56,11 @@ VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-2}"
 VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-53000}"
 VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.96}"
 VLLM_ASYNC_CONCURRENCY="${VLLM_ASYNC_CONCURRENCY:-16}"
-EVAL_TIMEOUT="${EVAL_TIMEOUT:-60}"
+# 30s matches the official BIRD evaluator (--meta_time_out default).
+EVAL_TIMEOUT="${EVAL_TIMEOUT:-30}"
+# Tool calls during generation keep the more generous budget; this is the
+# model exploring the database, not the graded query.
+TOOL_TIMEOUT="${TOOL_TIMEOUT:-60}"
 EVAL_WORKERS="${EVAL_WORKERS:-16}"
 FALLBACK_SQL="${FALLBACK_SQL:-SELECT 1}"
 # When a rollout exhausts MAX_TOOL_ROUNDS with a tool call still pending, give it
@@ -190,6 +194,7 @@ run_passk_shard() {
     --max_new_tokens "${MAX_NEW_TOKENS}" \
     --max_tool_rounds "${MAX_TOOL_ROUNDS}" \
     --eval_timeout "${EVAL_TIMEOUT}" \
+    --tool_timeout "${TOOL_TIMEOUT}" \
     --eval_workers "${EVAL_WORKERS}" \
     --vllm_tensor_parallel_size "${VLLM_TENSOR_PARALLEL_SIZE}" \
     --vllm_max_model_len "${VLLM_MAX_MODEL_LEN}" \
@@ -286,6 +291,7 @@ else
     --output_dir "${SC_DIR}" \
     --predictions_filename "${PREDICTIONS_FILENAME}" \
     --eval_timeout "${EVAL_TIMEOUT}" \
+    --tool_timeout "${TOOL_TIMEOUT}" \
     --eval_workers "${EVAL_WORKERS}" \
     --fallback_sql "${FALLBACK_SQL}" \
     --overwrite

@@ -17,7 +17,11 @@ MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-8000}"
 MAX_TOOL_ROUNDS="${MAX_TOOL_ROUNDS:-8}"
 TEMPERATURE="${TEMPERATURE:-0.0}"
 TOP_P="${TOP_P:-1.0}"
-EVAL_TIMEOUT="${EVAL_TIMEOUT:-60}"
+# 30s matches the official BIRD evaluator (--meta_time_out default).
+EVAL_TIMEOUT="${EVAL_TIMEOUT:-30}"
+# Tool calls during generation keep the more generous budget; this is the
+# model exploring the database, not the graded query.
+TOOL_TIMEOUT="${TOOL_TIMEOUT:-60}"
 EVAL_WORKERS="${EVAL_WORKERS:-16}"
 SHARD_INDEX="${SHARD_INDEX:-0}"
 NUM_SHARDS="${NUM_SHARDS:-1}"
@@ -113,6 +117,7 @@ cmd=(
   --temperature "${TEMPERATURE}"
   --top_p "${TOP_P}"
   --eval_timeout "${EVAL_TIMEOUT}"
+  --tool_timeout "${TOOL_TIMEOUT}"
   --eval_workers "${EVAL_WORKERS}"
   --shard_index "${SHARD_INDEX}"
   --num_shards "${NUM_SHARDS}"
