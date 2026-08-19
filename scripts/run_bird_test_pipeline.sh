@@ -29,7 +29,9 @@ export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
-MODEL_PATH="${MODEL_PATH:?set MODEL_PATH to the model directory or Hugging Face id}"
+# Private Hugging Face repo; requires HF_TOKEN (see README, "Model Access").
+# Override with a local directory if the weights are already on disk.
+MODEL_PATH="${MODEL_PATH:-pratikkakkar/gemma-4-31b-it-bird-rl}"
 
 SPLIT="${SPLIT:-test}"
 RUN_ROOT="${RUN_ROOT:-outputs/bird_${SPLIT}_pipeline}"

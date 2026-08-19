@@ -54,6 +54,52 @@ The other required test inputs are `test.json`, `test_tables.json`, and the
 produced with a `column_meaning.json` that is byte-identical to the TA-SQL
 reference file named in the submission guidelines.
 
+## Model Access
+
+The model is hosted in a **private** Hugging Face repository:
+
+```text
+pratikkakkar/gemma-4-31b-it-bird-rl
+```
+
+It is ~58 GB and is the default `MODEL_PATH` for every script here, so nothing
+needs to be set except authentication.
+
+**Authenticate before the first run.** The Hugging Face client does not prompt
+interactively — without a token the download fails with a 401 and the run stops
+immediately rather than asking. Use the read token we provide with this
+submission, either way below:
+
+```bash
+export HF_TOKEN=<token supplied with this submission>
+```
+
+or, to store it once:
+
+```bash
+hf auth login          # paste the same token when prompted
+```
+
+Then verify access before starting a long run:
+
+```bash
+hf download pratikkakkar/gemma-4-31b-it-bird-rl config.json
+```
+
+If that prints a path, authentication works. The full weights download on the
+first inference run and are cached in `~/.cache/huggingface`; **make sure at
+least 60 GB is free there** in addition to any space needed for outputs.
+
+The token is read-only and scoped to this single repository. Please tell us when
+evaluation is complete so we can revoke it.
+
+To run from local weights instead of downloading, point `MODEL_PATH` at the
+directory:
+
+```bash
+MODEL_PATH=/path/to/local/weights bash scripts/run_bird_test_pipeline.sh
+```
+
 ## Reproducing The Submission (One Command)
 
 This is the path to run for the test set. It goes from the raw `test.json` the
@@ -62,9 +108,12 @@ its output already exists, so rerunning after any failure continues where it
 stopped.
 
 ```bash
-MODEL_PATH=outputs/gemma-best-rl \
+export HF_TOKEN=<token supplied with this submission>
 bash scripts/run_bird_test_pipeline.sh
 ```
+
+`MODEL_PATH` defaults to the private Hugging Face repository, so it does not need
+to be set. See **Model Access** above.
 
 Stages: few-shot retrieval -> schema build -> tool-row build -> pass@16
 generation (auto-sharded across the available GPUs) -> self-consistency vote ->
@@ -81,7 +130,7 @@ one entry per question id in official BIRD format, `SQL\t----- bird -----\tdb_id
 Useful overrides (all optional):
 
 ```bash
-MODEL_PATH=outputs/gemma-best-rl \
+MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-rl \
 NUM_GENERATIONS=16 \
 TEMPERATURE=1.2 \
 VLLM_TENSOR_PARALLEL_SIZE=2 \
@@ -107,7 +156,7 @@ temperature-0 development number.
 Smoke test on 2 examples:
 
 ```bash
-MODEL_PATH=outputs/gemma-best-rl \
+MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-rl \
 NUM_EXAMPLES=2 \
 bash scripts/launch_inference.sh
 ```
@@ -115,7 +164,7 @@ bash scripts/launch_inference.sh
 Full temperature-0 pass over the development set:
 
 ```bash
-MODEL_PATH=outputs/gemma-best-rl \
+MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-rl \
 INPUT_FILE=outputs/old-dev-schema-tool-unpatched.jsonl \
 DATABASE_DIR=databases/dev_databases \
 bash scripts/launch_inference.sh
@@ -322,7 +371,7 @@ Run pass@k evaluation:
 
 ```bash
 python scripts/run_passk_bird.py \
-  --model_name_or_path outputs/gemma-best-rl \
+  --model_name_or_path pratikkakkar/gemma-4-31b-it-bird-rl \
   --input_file outputs/bird_dev-schema-tool.jsonl \
   --database_dir databases/dev_databases \
   --diff_json_path data/bird_dev_data/raw/bird_dev.json \
@@ -336,7 +385,7 @@ Pass@k uses the same sharding flags:
 
 ```bash
 python scripts/run_passk_bird.py \
-  --model_name_or_path outputs/gemma-best-rl \
+  --model_name_or_path pratikkakkar/gemma-4-31b-it-bird-rl \
   --input_file outputs/bird_dev-schema-tool.jsonl \
   --output_dir outputs/passk/gemma-best-rl_shards4 \
   --num_generations 16 \

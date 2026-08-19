@@ -6,7 +6,7 @@ export TOKENIZERS_PARALLELISM=false
 export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
-MODEL_PATH="${MODEL_PATH:-outputs/gemma4_31b_gspo_bird}"
+MODEL_PATH="${MODEL_PATH:-pratikkakkar/gemma-4-31b-it-bird-rl}"
 INPUT_FILE="${INPUT_FILE:-outputs/bird_dev-schema.jsonl}"
 DATABASE_DIR="${DATABASE_DIR:-databases/dev_databases}"
 DIFF_JSON_PATH="${DIFF_JSON_PATH:-data/bird_dev_data/raw/bird_dev.json}"
