@@ -97,65 +97,46 @@ development numbers instead, set `SPLIT=dev`.
 The sections below document the individual stages for anyone who wants to run
 them separately.
 
-## Run Inference
+## Single-Pass Inference (Smoke Test / Temperature-0)
+
+`scripts/launch_inference.sh` runs one greedy pass instead of the full pass@16
+pipeline. It is useful for two things: a couple-of-examples smoke test to confirm
+the environment works before committing ~12 GPU-hours, and reproducing our
+temperature-0 development number.
+
+Smoke test on 2 examples:
 
 ```bash
+MODEL_PATH=outputs/gemma-best-rl \
+NUM_EXAMPLES=2 \
 bash scripts/launch_inference.sh
 ```
 
-The launcher uses async vLLM, loads `outputs/gemma-best-rl`, reads `outputs/bird_dev-schema.jsonl`, writes official-style `predict_dev.json`, and computes BIRD-style execution accuracy against `databases/dev_databases`.
-
-Common overrides:
+Full temperature-0 pass over the development set:
 
 ```bash
-MODEL_PATH=google/gemma-4-E4B-it NUM_EXAMPLES=2 bash scripts/launch_inference.sh
-INPUT_FILE=outputs/bird_dev-schema-tool.jsonl MODEL_PATH=google/gemma-4-E4B-it NUM_EXAMPLES=2 bash scripts/launch_inference.sh
+MODEL_PATH=outputs/gemma-best-rl \
+INPUT_FILE=outputs/old-dev-schema-tool-unpatched.jsonl \
+DATABASE_DIR=databases/dev_databases \
+bash scripts/launch_inference.sh
 ```
 
-Standalone inference is async-vLLM-only. The shell launcher forwards `MAX_PROMPT_LENGTH`, `MAX_NEW_TOKENS`, `SHARD_INDEX`, `NUM_SHARDS`, `VLLM_TENSOR_PARALLEL_SIZE`, `VLLM_GPU_MEMORY_UTILIZATION`, `VLLM_MAX_MODEL_LEN`, and `VLLM_ASYNC_CONCURRENCY`.
+It writes an official-format `predict_dev.json` and computes BIRD-style
+execution accuracy. Sharding is handled the same way as the pipeline: set
+`NUM_SHARDS` and `VLLM_TENSOR_PARALLEL_SIZE`, and run one process per shard with
+`SHARD_INDEX` and `INFERENCE_CUDA_VISIBLE_DEVICES` set. Prefer
+`scripts/run_bird_test_pipeline.sh`, which does that fan-out and the merge for
+you.
 
-When `OUTPUT_DIR` is not set, the launcher creates a descriptive output directory under:
+The launcher forwards `MAX_PROMPT_LENGTH`, `MAX_NEW_TOKENS`, `MAX_TOOL_ROUNDS`,
+`TEMPERATURE`, `TOP_P`, `EVAL_TIMEOUT`, `TOOL_TIMEOUT`, `SHARD_INDEX`,
+`NUM_SHARDS`, `VLLM_TENSOR_PARALLEL_SIZE`, `VLLM_GPU_MEMORY_UTILIZATION`,
+`VLLM_MAX_MODEL_LEN`, and `VLLM_ASYNC_CONCURRENCY`.
 
-```text
-outputs/inference/<split>/<input_stem>/<model_tag>/
-```
-
-The final run folder includes backend, tensor-parallel size, async concurrency, context/prompt/output limits, tool-round budget, and a timestamp suffix. Set `APPEND_OUTPUT_TIMESTAMP=0` to keep an explicit `OUTPUT_DIR` unchanged.
-
-### Native Sharding
-
-Inference and pass@k both support process-level sharding with original example indices preserved. Each shard keeps rows where `source_idx % NUM_SHARDS == SHARD_INDEX`; when `NUM_SHARDS > 1`, standalone inference and the launcher append a directory name like `shard-00000-of-00004` under `OUTPUT_DIR`.
-
-Run temperature-0 async vLLM inference as 4 shards of tensor-parallel 2:
-
-```bash
-for shard in 0 1 2 3; do
-  gpus="$((shard * 2)),$((shard * 2 + 1))"
-  SHARD_INDEX="${shard}" \
-  NUM_SHARDS=4 \
-  INFERENCE_CUDA_VISIBLE_DEVICES="${gpus}" \
-  VLLM_TENSOR_PARALLEL_SIZE=2 \
-  TEMPERATURE=0.0 \
-  TOP_P=1.0 \
-  INPUT_FILE=outputs/old-dev-schema-tool.jsonl \
-  OUTPUT_DIR=outputs/inference/old-dev-schema-tool/temp0_async_tp2_shards4 \
-  APPEND_OUTPUT_TIMESTAMP=0 \
-  bash scripts/launch_inference.sh &
-done
-wait
-```
-
-Merge completed inference shards:
-
-```bash
-python scripts/run_inference_bird.py \
-  --input_file outputs/old-dev-schema-tool.jsonl \
-  --database_dir databases/dev_databases \
-  --diff_json_path data/bird_dev_data/raw/bird_dev.json \
-  --output_dir outputs/inference/old-dev-schema-tool/temp0_async_tp2_shards4_merged \
-  --merge_shard_dirs outputs/inference/old-dev-schema-tool/temp0_async_tp2_shards4/shard-* \
-  --overwrite
-```
+When `OUTPUT_DIR` is not set, a descriptive directory is created under
+`outputs/inference/<split>/<input_stem>/<model_tag>/` with a timestamp suffix.
+Set `APPEND_OUTPUT_TIMESTAMP=0` to keep an explicit `OUTPUT_DIR` unchanged, which
+is required for resume to work.
 
 ## Outputs
 
@@ -175,9 +156,16 @@ a **30-second per-query timeout matching the official evaluator's
 `--meta_time_out` default**, so a query that would time out on the BIRD harness
 also times out here rather than scoring correct locally and wrong there.
 
-Tool calls made *during* generation use a separate, more generous `--tool_timeout`
-(default 60 s). That budget covers the model exploring the database, not the
+Tool calls made *during* generation use a separate, more generous
+`--tool_timeout`. That budget covers the model exploring the database, not the
 graded query, so it is deliberately not tied to the scoring timeout.
+
+| flag | default | governs |
+| --- | ---: | --- |
+| `--eval_timeout` | 30 s | scoring — matches the official BIRD `--meta_time_out` |
+| `--tool_timeout` | 60 s | tool calls during generation |
+
+Both are exposed by the launchers as `EVAL_TIMEOUT` and `TOOL_TIMEOUT`.
 
 The predictions file always contains one entry per input row. An example whose
 prompt exceeds `max_prompt_length` cannot be generated, so it is recorded in
@@ -264,20 +252,33 @@ python scripts/data_generation/build_tool_dataset.py \
 
 ## Data Preparation
 
-Generate BM25-based few-shot files:
+Retrieve BM25 few-shot demonstrations from the training pool. Three
+demonstrations per question, which is what every validated prompt carries:
 
 ```bash
-python scripts/data_generation/few_shot_bm25.py --top-n 3
+python scripts/data_generation/few_shot_bm25.py \
+  --reference-input data/bird_train_data/raw/train-6601.jsonl \
+  --dev-input data/bird_dev_data/raw/bird_dev.json \
+  --dev-output data/bird_dev_data/raw/dev-few-shot.json \
+  --top-n 3
 ```
 
-Generate schema-augmented chat-format rows for inference:
+Generate schema-augmented chat-format rows, then tool-aware rows:
 
 ```bash
 python scripts/data_generation/schema_build.py \
   --split dev \
   --n-examples -1 \
   --output outputs/bird_dev-schema.jsonl
+
+python scripts/data_generation/build_tool_dataset.py \
+  --input outputs/bird_dev-schema.jsonl \
+  --output outputs/bird_dev-schema-tool.jsonl
 ```
+
+Our reported development results were produced from
+`outputs/old-dev-schema-tool-unpatched.jsonl`, which is the tool-aware dev file
+built by this same chain.
 
 The schema builder writes top-level `db_id`, `gold_sql`, `evidence`, and `question` fields alongside `messages`, injects per-column meanings, and renders table/column statistics for prompting. Older message-only rows are still accepted by the shared loader.
 
