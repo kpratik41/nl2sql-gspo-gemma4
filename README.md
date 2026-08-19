@@ -80,15 +80,9 @@ or, to store it once:
 hf auth login          # paste the same token when prompted
 ```
 
-Then verify access before starting a long run:
-
-```bash
-hf download pratikkakkar/gemma-4-31b-it-bird-rl config.json
-```
-
-If that prints a path, authentication works. The full weights download on the
-first inference run and are cached in `~/.cache/huggingface`; **make sure at
-least 60 GB is free there** in addition to any space needed for outputs.
+The full weights download on the first inference run and are cached in
+`~/.cache/huggingface`; **make sure at least 60 GB is free there** in addition to
+any space needed for outputs.
 
 The token is read-only and scoped to this single repository. Please tell us when
 evaluation is complete so we can revoke it.
