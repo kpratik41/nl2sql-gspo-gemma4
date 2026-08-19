@@ -21,18 +21,31 @@ The model is 31B in bf16, roughly 62 GB of weights. It is therefore run with
 
 | GPUs | tp | shards | full pipeline wall clock |
 | ---: | ---: | ---: | --- |
-| 8 | 2 | 4 | **~12 h (measured)** |
-| 4 | 2 | 2 | ~24 h (extrapolated) |
-| 2 | 2 | 1 | ~48 h (extrapolated) |
+| 8 | 2 | 4 | **1 h 44 min (measured)** |
+| 4 | 2 | 2 | ~3 h 20 min (extrapolated) |
+| 2 | 2 | 1 | ~6 h 30 min (extrapolated) |
 
-**8 GPUs is strongly preferred.** The submitted configuration is pass@16 with
+**8 GPUs is preferred.** The submitted configuration is pass@16 with
 self-consistency: 16 samples for each of the 1534 questions, 24,544 tool-using
-rollouts in total. Our measured 8-GPU run took 42,482 s of generation plus 334 s
-of execution scoring, about 11.9 hours end to end. The 4- and 2-GPU rows are
-linear extrapolations over shard count and have not been timed directly.
+rollouts in total.
 
-The self-consistency voting stage that follows generation is CPU-only and takes
-a few minutes.
+Stage-by-stage, measured end to end on 8 GPUs at tensor parallel 2 with 4
+data-parallel shards:
+
+| stage | wall clock |
+| --- | --- |
+| 0-2  few-shot retrieval, schema build, tool rows | 98 s |
+| 3    pass@16 generation (24,544 rollouts) | 1 h 37 min |
+| 4    self-consistency vote (CPU only) | 3 min |
+| **total** | **1 h 44 min** |
+
+The 4- and 2-GPU rows scale stage 3 by shard count and have not been timed
+directly. The **model download is not included**: the first run pulls ~58 GB from
+Hugging Face, which depends entirely on your network.
+
+For reference, a single temperature-0 pass over the same 1534 questions takes
+**~47 min on 8 GPUs**. That is the relevant number only if a temperature-0
+configuration is submitted instead of self-consistency.
 
 ## Required Input Files
 
