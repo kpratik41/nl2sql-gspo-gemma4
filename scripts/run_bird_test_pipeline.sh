@@ -293,7 +293,6 @@ else
     --output_dir "${SC_DIR}" \
     --predictions_filename "${PREDICTIONS_FILENAME}" \
     --eval_timeout "${EVAL_TIMEOUT}" \
-    --tool_timeout "${TOOL_TIMEOUT}" \
     --eval_workers "${EVAL_WORKERS}" \
     --fallback_sql "${FALLBACK_SQL}" \
     --overwrite
