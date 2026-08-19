@@ -43,10 +43,6 @@ The 4- and 2-GPU rows scale stage 3 by shard count and have not been timed
 directly. The **model download is not included**: the first run pulls ~58 GB from
 Hugging Face, which depends entirely on your network.
 
-For reference, a single temperature-0 pass over the same 1534 questions takes
-**~47 min on 8 GPUs**. That is the relevant number only if a temperature-0
-configuration is submitted instead of self-consistency.
-
 ## Required Input Files
 
 **This pipeline requires `column_meaning.json`.** The schema builder injects the
@@ -56,6 +52,9 @@ for the test split at:
 ```text
 data/bird_test_data/raw/column_meaning.json
 ```
+
+The repository ships `data/bird_test_data/raw/` **empty**, with a README naming
+the files to drop in. See that directory.
 
 `scripts/run_bird_test_pipeline.sh` checks for it during preflight and stops
 with a clear error if it is missing. If a column has no entry the builder simply
@@ -153,27 +152,18 @@ development numbers instead, set `SPLIT=dev`.
 The sections below document the individual stages for anyone who wants to run
 them separately.
 
-## Single-Pass Inference (Smoke Test / Temperature-0)
+## Smoke Test
 
-`scripts/launch_inference.sh` runs one greedy pass instead of the full pass@16
-pipeline. It is useful for two things: a couple-of-examples smoke test to confirm
-the environment works before committing ~12 GPU-hours, and reproducing our
-temperature-0 development number.
+`scripts/launch_inference.sh` runs a single greedy pass. **It is not the
+submitted configuration** -- it exists so you can confirm the environment,
+model download and tool loop all work on a couple of examples before committing
+the machine to the full run.
 
 Smoke test on 2 examples:
 
 ```bash
 MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-rl \
 NUM_EXAMPLES=2 \
-bash scripts/launch_inference.sh
-```
-
-Full temperature-0 pass over the development set:
-
-```bash
-MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-rl \
-INPUT_FILE=outputs/old-dev-schema-tool-unpatched.jsonl \
-DATABASE_DIR=databases/dev_databases \
 bash scripts/launch_inference.sh
 ```
 

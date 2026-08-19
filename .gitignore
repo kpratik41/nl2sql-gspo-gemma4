@@ -49,4 +49,5 @@ databases/
 
 # local data (symlink) and staged BIRD test inputs
 databases
-data/bird_test_data/
+data/bird_test_data/raw/*
+!data/bird_test_data/raw/README.md
