@@ -34,7 +34,10 @@ FALLBACK_SQL="${FALLBACK_SQL:-}"
 FORCE_FINALIZE="${FORCE_FINALIZE:-1}"
 APPEND_OUTPUT_TIMESTAMP="${APPEND_OUTPUT_TIMESTAMP:-1}"
 OUTPUT_TIMESTAMP="${OUTPUT_TIMESTAMP:-}"
-VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-8}"
+# tp=2: a 31B model in bf16 is ~62 GB of weights, so it does not fit on one
+# 80 GB card at this context length. Extra GPUs are better spent on shards
+# (data parallelism) than on widening tensor parallelism.
+VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-2}"
 
 sanitize_path_part() {
   local value="$1"
