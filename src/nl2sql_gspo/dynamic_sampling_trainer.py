@@ -44,6 +44,7 @@ Key invariants
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import os
 import random
@@ -67,6 +68,44 @@ from transformers.training_args import OptimizerNames
 from nl2sql_gspo.inference_tool_executor import extract_tool_calls
 from nl2sql_gspo.sql_utils import extract_completion_text, extract_final_answer_sql, extract_sql
 from nl2sql_gspo.tool_dialects import get_dialect
+
+
+# Hard wall-clock ceiling on a single rollout tool call.
+#
+# The gen_tools SQLite helpers guard themselves with a progress handler that
+# fires every 1000 VM steps, but that callback cannot run while SQLite is
+# blocked inside one long page read, so a query can hang indefinitely. Nothing
+# in the tool loop bounded that: the sync path called the tool directly and the
+# async path used ``.result()`` with no timeout. A single stuck call therefore
+# stranded one rank before ``_global_sum_int``, and the other five sat in that
+# scalar all-reduce until the 2 h NCCL watchdog aborted the whole job -- which
+# is how the run died at step 33 on 2026-08-18.
+#
+# ``rewards.py`` already carries the same guard for the reward-side execution
+# path (see ``_run_with_hard_timeout`` there); this is the rollout-side twin.
+# A timed-out call is surfaced to the model as an ordinary tool error, so the
+# rollout continues and only that one observation is lost.
+TOOL_HARD_TIMEOUT_S: float = float(os.environ.get("NL2SQL_TOOL_HARD_TIMEOUT_S") or 180.0)
+
+
+def _call_tool_with_hard_timeout(fn, kwargs, timeout_s: float = TOOL_HARD_TIMEOUT_S):
+    """Call ``fn(**kwargs)``, raising TimeoutError past ``timeout_s`` seconds.
+
+    Uses a fresh single-thread executor per call and shuts it down with
+    ``wait=False`` so a hung worker cannot block the next call or rank
+    shutdown; the thread is deliberately leaked rather than joined.
+    """
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        future = executor.submit(fn, **kwargs)
+        try:
+            return future.result(timeout=timeout_s)
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(
+                f"tool call exceeded hard timeout of {timeout_s:.0f}s"
+            ) from None
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def _pad_to_width(tensor: torch.Tensor, target_width: int, pad_value, side: str) -> torch.Tensor:
@@ -656,7 +695,13 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                         try:
                             if name in sync_tool_dict:
                                 tool_call_results.append(
-                                    (tool_call_id, name, sync_tool_dict[name](**function["arguments"]))
+                                    (
+                                        tool_call_id,
+                                        name,
+                                        _call_tool_with_hard_timeout(
+                                            sync_tool_dict[name], function["arguments"]
+                                        ),
+                                    )
                                 )
                             elif name in async_tool_dict:
                                 async_coros.append(
@@ -684,9 +729,28 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
                             for (tool_call_id, name, _), result in zip(coros_with_names, results, strict=False)
                         ]
 
-                    async_results = asyncio.run_coroutine_threadsafe(
+                    async_future = asyncio.run_coroutine_threadsafe(
                         _run_async_tools(async_coros), self.async_loop
-                    ).result()
+                    )
+                    try:
+                        async_results = async_future.result(
+                            timeout=TOOL_HARD_TIMEOUT_S * max(len(async_coros), 1)
+                        )
+                    except concurrent.futures.TimeoutError:
+                        # Do not cancel: the coroutine owns the event loop
+                        # thread and cancelling from here can wedge it. Abandon
+                        # the batch and report every call in it as failed.
+                        async_results = [
+                            (
+                                tool_call_id,
+                                name,
+                                TimeoutError(
+                                    "async tool batch exceeded hard timeout of "
+                                    f"{TOOL_HARD_TIMEOUT_S * max(len(async_coros), 1):.0f}s"
+                                ),
+                            )
+                            for tool_call_id, name, _ in async_coros
+                        ]
 
                     for tool_call_id, name, result in async_results:
                         if isinstance(result, Exception):
