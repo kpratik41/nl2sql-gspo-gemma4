@@ -87,6 +87,12 @@ from nl2sql_gspo.tool_dialects import get_dialect
 # rollout continues and only that one observation is lost.
 TOOL_HARD_TIMEOUT_S: float = float(os.environ.get("NL2SQL_TOOL_HARD_TIMEOUT_S") or 180.0)
 
+# Free space the rolling full checkpoint needs before we attempt to write it.
+# The DeepSpeed optimizer shards dominate (~353 GB for this 27B ZeRO-3 run).
+_LATEST_FULL_CKPT_MIN_FREE_BYTES: int = int(
+    os.environ.get("NL2SQL_FULL_CKPT_MIN_FREE_BYTES") or 420 * 1024**3
+)
+
 
 def _call_tool_with_hard_timeout(fn, kwargs, timeout_s: float = TOOL_HARD_TIMEOUT_S):
     """Call ``fn(**kwargs)``, raising TimeoutError past ``timeout_s`` seconds.
@@ -348,6 +354,41 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
             self.state.save_to_json(os.path.join(output_dir, "trainer_state.json"))
         self._wait_for_everyone()
 
+    def _latest_full_checkpoint_ready(self, output_dir: str) -> bool:
+        """Collectively decide whether the rolling full checkpoint can be written.
+
+        Every rank probes the target filesystem and the ranks agree on a single
+        answer via an all-reduce, so all ranks take the same branch.
+
+        A bare per-rank try/except would not be safe on its own:
+        ``_save_latest_restart_checkpoint`` runs collectives (``save_model``,
+        ``_save_optimizer_and_scheduler``, two ``_wait_for_everyone`` barriers).
+        If one rank raised and skipped ahead while the others entered those
+        barriers, the process group would desync and the job would hang at the
+        next collective until the NCCL watchdog killed it -- the very failure
+        mode this guard is meant to avoid. So the decision is made collectively
+        *before* any collective work starts; the try/except downstream is only a
+        backstop for genuinely unexpected errors.
+        """
+        ok = True
+        try:
+            parent = os.path.dirname(os.path.abspath(output_dir)) or "/"
+            os.makedirs(parent, exist_ok=True)
+            stat_result = os.statvfs(parent)
+            free_bytes = stat_result.f_bavail * stat_result.f_frsize
+            if free_bytes < _LATEST_FULL_CKPT_MIN_FREE_BYTES:
+                ok = False
+            else:
+                probe_path = os.path.join(parent, f".ckpt_write_probe_{os.getpid()}")
+                with open(probe_path, "wb") as handle:
+                    handle.write(b"0")
+                os.remove(probe_path)
+        except Exception:  # noqa: BLE001 - any failure means "not writable"
+            ok = False
+
+        world_size = max(1, int(getattr(self.accelerator, "num_processes", 1) or 1))
+        return self._global_sum_int(1 if ok else 0) == world_size
+
     def _save_checkpoint(self, model, trial) -> None:
         original_save_only_model = self.args.save_only_model
         if self.save_latest_full_checkpoint:
@@ -357,7 +398,25 @@ class DynamicSamplingGRPOTrainer(GRPOTrainer):
         finally:
             self.args.save_only_model = original_save_only_model
         if self.save_latest_full_checkpoint:
-            self._save_latest_restart_checkpoint(trial=trial)
+            output_dir = self._latest_full_checkpoint_dir(trial=trial)
+            if not self._latest_full_checkpoint_ready(output_dir):
+                if self.is_world_process_zero():
+                    print(
+                        f"[full-ckpt] SKIPPED {output_dir}: target not writable or "
+                        "below the free-space floor. Training continues; the "
+                        "previous rolling checkpoint is left intact.",
+                        flush=True,
+                    )
+            else:
+                try:
+                    self._save_latest_restart_checkpoint(trial=trial)
+                except Exception as exc:  # noqa: BLE001 - never kill the run over a checkpoint
+                    if self.is_world_process_zero():
+                        print(
+                            f"[full-ckpt] FAILED {output_dir}: {type(exc).__name__}: {exc}. "
+                            "Training continues.",
+                            flush=True,
+                        )
 
     # ------------------------------------------------------------------ #
     # Backup pool of replacement prompts (shared shuffled tail queue)
