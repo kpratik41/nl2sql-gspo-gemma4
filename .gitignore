@@ -51,3 +51,6 @@ databases/
 databases
 data/bird_test_data/raw/*
 !data/bird_test_data/raw/README.md
+
+# Stray per-run progress file if a runner writes it at the repo root.
+generation_progress.jsonl

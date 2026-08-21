@@ -6,7 +6,8 @@ export TOKENIZERS_PARALLELISM=false
 export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
-MODEL_PATH="${MODEL_PATH:-pratikkakkar/gemma-4-31b-it-bird-rl}"
+# TODO(submission): set to the checkpoint being submitted (HF repo id or local path).
+MODEL_PATH="${MODEL_PATH:?set MODEL_PATH to the checkpoint being submitted (HF repo id or local weights directory)}"
 INPUT_FILE="${INPUT_FILE:-outputs/bird_dev-schema.jsonl}"
 DATABASE_DIR="${DATABASE_DIR:-databases/dev_databases}"
 DIFF_JSON_PATH="${DIFF_JSON_PATH:-data/bird_dev_data/raw/bird_dev.json}"

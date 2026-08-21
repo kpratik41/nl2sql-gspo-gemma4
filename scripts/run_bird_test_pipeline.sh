@@ -29,9 +29,13 @@ export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
-# Private Hugging Face repo; requires HF_TOKEN (see README, "Model Access").
-# Override with a local directory if the weights are already on disk.
-MODEL_PATH="${MODEL_PATH:-pratikkakkar/gemma-4-31b-it-bird-rl}"
+# TODO(submission): REPLACE THIS BEFORE ZIPPING THE SUBMISSION.
+# The default below is a LOCAL development checkpoint and will not exist on the
+# BIRD team's machine. Before submitting, set it to the Hugging Face repo id of
+# the checkpoint being submitted (private repos need HF_TOKEN; see README,
+# "Model Access"). Overridden by the first argument to run.sh, or by MODEL_PATH
+# in the environment.
+MODEL_PATH="${MODEL_PATH:-outputs/sft_rft_32/checkpoint-15}"
 
 SPLIT="${SPLIT:-test}"
 RUN_ROOT="${RUN_ROOT:-outputs/bird_${SPLIT}_pipeline}"
@@ -76,22 +80,88 @@ exec > >(tee -a "${LOG}") 2>&1
 
 say() { echo "[$(date -Is)] [pipeline] $*"; }
 
+# Completion markers and a run manifest.
+#
+# A stage is "done" only when its own done.flag exists. Checking output-file
+# size alone is not enough: a process killed mid-write leaves a non-empty but
+# truncated file, which would then be silently reused as if it were complete.
+# The flag is written only after the stage returns successfully.
+#
+# NOTE: run directories created before this change have no done.flag, so a
+# rerun against one of them redoes the stage rather than reusing it.
+MANIFEST="${RUN_ROOT}/run_manifest.tsv"
+
+manifest_init() {
+  if [[ ! -s "${MANIFEST}" ]]; then
+    printf 'stage\tartifact\trows\tstatus\tfinished_at\n' > "${MANIFEST}"
+  fi
+}
+
+manifest_add() {
+  local stage="$1" artifact="$2" rows="$3" status="$4"
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "${stage}" "${artifact}" "${rows}" "${status}" "$(date -Is)" >> "${MANIFEST}"
+}
+
+mark_done() { : > "$1/done.flag"; }
+is_done()   { [[ -f "$1/done.flag" ]]; }
+
+# Count rows in a .jsonl, or entries in a .json object, without failing on
+# a missing file.
+count_rows() {
+  local path="$1"
+  if [[ ! -e "${path}" ]]; then echo 0; return; fi
+  case "${path}" in
+    *.jsonl) wc -l < "${path}" ;;
+    *.json)  "${PYTHON_BIN}" -c "import json,sys;d=json.load(open(sys.argv[1]));print(len(d))" "${path}" 2>/dev/null || echo 0 ;;
+    *)       echo 0 ;;
+  esac
+}
+
+manifest_init
+
 say "repo=${REPO_ROOT}"
 say "model=${MODEL_PATH}"
 say "split=${SPLIT} run_root=${RUN_ROOT}"
 say "num_generations=${NUM_GENERATIONS} temperature=${TEMPERATURE} tp=${VLLM_TENSOR_PARALLEL_SIZE}"
 
 # ---------------------------------------------------------------- preflight --
-for required in \
-  "data/bird_${SPLIT}_data/raw/${SPLIT}.json" \
-  "data/bird_${SPLIT}_data/raw/column_meaning.json" \
-  "${DATABASE_DIR}"
-do
-  if [[ ! -e "${required}" ]]; then
-    say "FATAL: missing required input ${required}"
-    exit 1
+# Fail before loading 62 GB of weights, with a message that names what to supply.
+preflight_failed=0
+
+require_input() {
+  local path="$1" why="$2"
+  if [[ ! -e "${path}" ]]; then
+    say "FATAL: missing required input: ${path}"
+    say "       ${why}"
+    preflight_failed=1
   fi
-done
+}
+
+require_input "data/bird_${SPLIT}_data/raw/${SPLIT}.json" \
+  "The ${SPLIT} questions, as provided by the BIRD team."
+
+# Called out separately: column descriptions are not optional here. schema_build
+# injects them inline into every prompt, so without this file the model is
+# evaluated on a prompt format it was never tuned on and accuracy drops.
+require_input "data/bird_${SPLIT}_data/raw/column_meaning.json" \
+  "THIS PIPELINE REQUIRES column_meaning.json. It ships alongside ${SPLIT}.json in the BIRD data release. Column descriptions are inlined into every prompt by schema_build.py; the run cannot proceed without them."
+
+require_input "${DATABASE_DIR}" \
+  "The ${SPLIT} SQLite databases, one directory per db_id."
+
+if [[ -z "${MODEL_PATH}" ]]; then
+  say "FATAL: MODEL_PATH is not set."
+  say "       Set it to a Hugging Face repo id or a local weights directory, e.g."
+  say "         MODEL_PATH=<org>/<repo> bash run.sh"
+  say "         MODEL_PATH=/path/to/checkpoint bash run.sh"
+  say "       Or edit the MODEL_PATH default near the top of this script."
+  preflight_failed=1
+fi
+
+if [[ "${preflight_failed}" -ne 0 ]]; then
+  exit 1
+fi
 say "preflight OK: inputs present"
 
 # ------------------------------------------------------------- 0. few-shots --
@@ -118,6 +188,7 @@ else
     --top-n "${FEWSHOT_TOP_N}"
   say "stage 0/4 done"
 fi
+manifest_add "0-fewshot" "${FEWSHOT_JSON}" "$(count_rows "${FEWSHOT_JSON}")" "ok"
 
 # Refuse to continue if any demonstration came from a database under evaluation.
 "${PYTHON_BIN}" - "${FEWSHOT_JSON}" <<'PY'
@@ -154,6 +225,7 @@ else
     --output "${SCHEMA_JSONL}"
   say "stage 1/4 done: $(wc -l < "${SCHEMA_JSONL}") rows"
 fi
+manifest_add "1-schema" "${SCHEMA_JSONL}" "$(count_rows "${SCHEMA_JSONL}")" "ok"
 
 # ---------------------------------------------------------- 2. tool-aware rows --
 if [[ -s "${TOOL_JSONL}" ]]; then
@@ -165,6 +237,7 @@ else
     --output "${TOOL_JSONL}"
   say "stage 2/4 done: $(wc -l < "${TOOL_JSONL}") rows"
 fi
+manifest_add "2-tool" "${TOOL_JSONL}" "$(count_rows "${TOOL_JSONL}")" "ok"
 
 # ------------------------------------------------------------- 3. pass@k sampling --
 # Tensor parallelism is fixed at 2: a 31B model in bf16 is ~62 GB of weights, so
@@ -229,7 +302,7 @@ else
   PASSK_CANDIDATES="${PASSK_DIR}/merged/passk_candidates.jsonl"
 fi
 
-if [[ -s "${PASSK_CANDIDATES}" ]]; then
+if [[ -s "${PASSK_CANDIDATES}" ]] && is_done "${PASSK_DIR}"; then
   say "stage 3/4 pass@${NUM_GENERATIONS}: reusing candidates in ${PASSK_CANDIDATES}"
 else
   say "stage 3/4 pass@${NUM_GENERATIONS}: sampling into ${PASSK_DIR} across ${NUM_SHARDS} shard(s)"
@@ -277,12 +350,19 @@ else
       --merge_output_dir "${PASSK_DIR}/merged" \
       --overwrite
   fi
+  for shard_dir in "${PASSK_DIR}"/shard-*-of-*; do
+    [[ -d "${shard_dir}" ]] || continue
+    manifest_add "3-passk-shard" "${shard_dir}/passk_candidates.jsonl" \
+      "$(count_rows "${shard_dir}/passk_candidates.jsonl")" "ok"
+  done
+  manifest_add "3-passk" "${PASSK_CANDIDATES}" "$(count_rows "${PASSK_CANDIDATES}")" "ok"
+  mark_done "${PASSK_DIR}"
   say "stage 3/4 done"
 fi
 
 # ------------------------------------------------------ 4. self-consistency vote --
 PREDICTIONS_PATH="${SC_DIR}/${PREDICTIONS_FILENAME}"
-if [[ -s "${PREDICTIONS_PATH}" ]]; then
+if [[ -s "${PREDICTIONS_PATH}" ]] && is_done "${SC_DIR}"; then
   say "stage 4/4 self-consistency: reusing ${PREDICTIONS_PATH}"
 else
   say "stage 4/4 self-consistency: voting into ${SC_DIR}"
@@ -296,6 +376,9 @@ else
     --eval_workers "${EVAL_WORKERS}" \
     --fallback_sql "${FALLBACK_SQL}" \
     --overwrite
+  manifest_add "4-self-consistency" "${PREDICTIONS_PATH}" \
+    "$(count_rows "${PREDICTIONS_PATH}")" "ok"
+  mark_done "${SC_DIR}"
   say "stage 4/4 done"
 fi
 
@@ -333,5 +416,9 @@ if malformed:
 print("[verify] OK: every question id present and correctly formatted")
 PY
 
+manifest_add "5-verify" "${PREDICTIONS_PATH}" "$(count_rows "${PREDICTIONS_PATH}")" "verified"
+mark_done "${RUN_ROOT}"
+
 say "COMPLETE"
 say "submit this file: ${PREDICTIONS_PATH}"
+say "run manifest:     ${MANIFEST}"

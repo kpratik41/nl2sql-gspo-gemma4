@@ -10,6 +10,34 @@ pip install -r requirements.txt
 
 The launchers expect `PYTHONPATH` to include `src`; `scripts/launch_inference.sh` sets that automatically.
 
+## Repository Map
+
+```text
+.
+├── run.sh                                  one-touch entry point; runs the whole pipeline
+├── prompts.py                              system prompt (mission, rules, tool syntax, examples)
+├── gen_tools.py                            tool implementations exposed to the model
+├── requirements.txt                        pinned inference dependencies
+├── scripts/
+│   ├── run_bird_test_pipeline.sh           the pipeline: few-shot -> schema -> tools -> pass@k -> vote -> verify
+│   ├── run_passk_bird.py                   pass@k sampling with the tool loop; shards across GPU pairs
+│   ├── run_self_consistency_bird.py        majority vote over execution result sets
+│   ├── run_inference_bird.py               single-pass inference and the async vLLM tool loop
+│   ├── eval_bird_ex.py                     standalone BIRD EX scorer (see "Scoring" below)
+│   ├── launch_inference.sh                 convenience launcher; sets PYTHONPATH
+│   └── data_generation/
+│       ├── few_shot_bm25.py                BM25 retrieval of demonstrations from the TRAIN pool
+│       ├── schema_build.py                 builds the schema block and column descriptions per question
+│       └── build_tool_dataset.py           wraps schema rows in the tool-calling system prompt
+└── src/nl2sql_gspo/
+    ├── tool_calling.py                     tool catalog, native call parsing, dispatch
+    ├── inference_tool_executor.py          executes tool calls against the SQLite databases
+    ├── schema_utils.py                     schema introspection and M-schema rendering
+    ├── sql_utils.py                        SQL extraction, safety checks, BIRD execution + row-set match
+    ├── model_utils.py                      model/tokenizer loading, chat templating
+    └── data.py                             dataset loading helpers
+```
+
 ## Resources Required
 
 **Requested allocation: 2, 4, or 8 x H200. If H200 is unavailable, H100
@@ -21,27 +49,13 @@ The model is 31B in bf16, roughly 62 GB of weights. It is therefore run with
 
 | GPUs | tp | shards | full pipeline wall clock |
 | ---: | ---: | ---: | --- |
-| 8 | 2 | 4 | **1 h 44 min (measured)** |
-| 4 | 2 | 2 | ~3 h 20 min (extrapolated) |
-| 2 | 2 | 1 | ~6 h 30 min (extrapolated) |
+| 8 | 2 | 4 | **2 h 44 min (measured)** |
+| 4 | 2 | 2 | ~5 h 20 min (extrapolated) |
+| 2 | 2 | 1 | ~10 h 30 min (extrapolated) |
 
 **8 GPUs is preferred.** The submitted configuration is pass@16 with
 self-consistency: 16 samples for each of the 1534 questions, 24,544 tool-using
 rollouts in total.
-
-Stage-by-stage, measured end to end on 8 GPUs at tensor parallel 2 with 4
-data-parallel shards:
-
-| stage | wall clock |
-| --- | --- |
-| 0-2  few-shot retrieval, schema build, tool rows | 98 s |
-| 3    pass@16 generation (24,544 rollouts) | 1 h 37 min |
-| 4    self-consistency vote (CPU only) | 3 min |
-| **total** | **1 h 44 min** |
-
-The 4- and 2-GPU rows scale stage 3 by shard count and have not been timed
-directly. The **model download is not included**: the first run pulls ~58 GB from
-Hugging Face, which depends entirely on your network.
 
 ## Required Input Files
 
@@ -68,19 +82,21 @@ reference file named in the submission guidelines.
 
 ## Model Access
 
-The model is hosted in a **private** Hugging Face repository:
+> **TODO (to be filled in before submission):** the checkpoint has not been
+> finalised yet. The repository id, and whether one or two checkpoints are
+> submitted, will be supplied with the submission email along with the read
+> token. Until then `MODEL_PATH` has no default and must be passed explicitly:
+>
+> ```bash
+> MODEL_PATH=<org>/<repo>            bash run.sh   # Hugging Face repo
+> MODEL_PATH=/path/to/checkpoint     bash run.sh   # local weights
+> ```
+>
+> The pipeline fails preflight with instructions if `MODEL_PATH` is unset, so a
+> run cannot silently evaluate the wrong checkpoint.
 
-```text
-pratikkakkar/gemma-4-31b-it-bird-rl
-```
-
-It is ~58 GB and is the default `MODEL_PATH` for every script here, so nothing
-needs to be set except authentication.
-
-**Authenticate before the first run.** The Hugging Face client does not prompt
-interactively — without a token the download fails with a 401 and the run stops
-immediately rather than asking. Use the read token we provide with this
-submission, either way below:
+The model will be hosted in a **private** Hugging Face repository of roughly
+58 GB. Use the read token we provide with this submission, either way below:
 
 ```bash
 export HF_TOKEN=<token supplied with this submission>
@@ -96,14 +112,11 @@ The full weights download on the first inference run and are cached in
 `~/.cache/huggingface`; **make sure at least 60 GB is free there** in addition to
 any space needed for outputs.
 
-The token is read-only and scoped to this single repository. Please tell us when
-evaluation is complete so we can revoke it.
-
 To run from local weights instead of downloading, point `MODEL_PATH` at the
 directory:
 
 ```bash
-MODEL_PATH=/path/to/local/weights bash scripts/run_bird_test_pipeline.sh
+MODEL_PATH=/path/to/local/weights bash run.sh
 ```
 
 ## Reproducing The Submission (One Command)
@@ -115,11 +128,17 @@ stopped.
 
 ```bash
 export HF_TOKEN=<token supplied with this submission>
-bash scripts/run_bird_test_pipeline.sh
+MODEL_PATH=<org>/<repo> bash run.sh
 ```
 
-`MODEL_PATH` defaults to the private Hugging Face repository, so it does not need
-to be set. See **Model Access** above.
+`run.sh` is the whole submission. Apart from `MODEL_PATH`, every parameter
+already defaults to the validated setting, so nothing else needs to be passed or
+edited. It is a thin wrapper around `scripts/run_bird_test_pipeline.sh`, which
+can also be called directly if you prefer.
+
+`MODEL_PATH` is the one required value — see **Model Access** above. To avoid
+passing it every time, edit its default near the top of
+`scripts/run_bird_test_pipeline.sh` (the line marked `TODO(submission)`).
 
 Stages: few-shot retrieval -> schema build -> tool-row build -> pass@16
 generation (auto-sharded across the available GPUs) -> self-consistency vote ->
@@ -136,7 +155,7 @@ one entry per question id in official BIRD format, `SQL\t----- bird -----\tdb_id
 Useful overrides (all optional):
 
 ```bash
-MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-rl \
+MODEL_PATH=<org>/<repo> \
 NUM_GENERATIONS=16 \
 TEMPERATURE=1.2 \
 VLLM_TENSOR_PARALLEL_SIZE=2 \
@@ -152,6 +171,28 @@ development numbers instead, set `SPLIT=dev`.
 The sections below document the individual stages for anyone who wants to run
 them separately.
 
+## Configuration
+
+Every setting has a validated default; override by exporting the variable before
+`bash run.sh`. Nothing here needs changing for a standard submission run.
+
+| variable | default | governs |
+| --- | --- | --- |
+| `MODEL_PATH` | private HF repo | weights; set to a local directory to skip the download |
+| `SPLIT` | `test` | which `data/bird_<split>_data` and `databases/<split>_databases` to use |
+| `RUN_ROOT` | `outputs/bird_test_pipeline` | where all artifacts for this run are written |
+| `NUM_GENERATIONS` | `16` | samples per question for pass@k; `1` gives a single greedy pass |
+| `TEMPERATURE` | `1.2` | sampling temperature; the value every validated pass@16 run used |
+| `NUM_EXAMPLES` | `-1` | limit questions processed; `-1` is all |
+| `VLLM_TENSOR_PARALLEL_SIZE` | `2` | fixed at 2; 31B bf16 does not fit one 80 GB card at this context |
+| `NUM_SHARDS` | GPUs / tp | independent engines, one shard of questions each |
+| `EVAL_TIMEOUT` | `30` | scoring timeout — matches the official BIRD `--meta_time_out` |
+| `TOOL_TIMEOUT` | `60` | tool calls during generation; deliberately not tied to scoring |
+| `MAX_PROMPT_LENGTH` | `44000` | prompts above this are filtered and get `FALLBACK_SQL` |
+| `VLLM_MAX_MODEL_LEN` | `53000` | must exceed `MAX_PROMPT_LENGTH`; the tool loop grows context |
+| `FALLBACK_SQL` | `SELECT 1` | written for a question that could not be generated |
+| `FEWSHOT_TOP_N` | `3` | demonstrations per question; matches the prompt the model was tuned on |
+
 ## Smoke Test
 
 `scripts/launch_inference.sh` runs a single greedy pass. **It is not the
@@ -162,7 +203,7 @@ the machine to the full run.
 Smoke test on 2 examples:
 
 ```bash
-MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-rl \
+MODEL_PATH=<org>/<repo> \
 NUM_EXAMPLES=2 \
 bash scripts/launch_inference.sh
 ```
@@ -195,6 +236,15 @@ is required for resume to work.
 - `eval_summary.md`: summary tables by difficulty and by database
 - `eval_summary_by_difficulty.csv`: CSV summary by difficulty
 - `eval_summary_by_db.csv`: CSV summary by database
+- `run_manifest.tsv`: one row per completed stage — stage, artifact path, row
+  count, status, timestamp. Written by the pipeline as each stage finishes, so
+  it doubles as a record of what was produced and a quick coverage check.
+- `done.flag`: written into a stage directory only after that stage returns
+  successfully. A stage is treated as complete only when its flag exists —
+  checking output-file size alone is not enough, because a process killed
+  mid-write leaves a non-empty but truncated file that would otherwise be
+  silently reused. Run directories created before this marker existed have no
+  flag, so rerunning against one redoes the stage rather than reusing it.
 
 The local EX scorer follows the official BIRD dev evaluation semantics: it
 executes predicted and gold SQL on SQLite and checks raw row-set equality, with
@@ -222,6 +272,38 @@ rather than leaving a hole in the file. Default limits are
 `--max_prompt_length 44000` and `--vllm_max_model_len 53000`; the latter must
 stay above the former, since the tool loop appends each tool response to the
 running context.
+
+## Scoring
+
+`scripts/eval_bird_ex.py` scores a predictions file against gold SQL. It reuses
+the same execution helpers the pipeline uses (`bird_execute_sql`,
+`bird_result_match` in `src/nl2sql_gspo/sql_utils.py`), so a number produced by
+this script is directly comparable to the pipeline's own eval output.
+
+```bash
+python scripts/eval_bird_ex.py \
+  --predictions outputs/bird_test_pipeline/self_consistency/predict_test.json \
+  --gold data/bird_dev_data/raw/bird_dev.json \
+  --database_dir databases/dev_databases
+```
+
+It prints overall EX plus breakdowns by difficulty and by database, and accepts
+`--output_json` to write per-question results.
+
+**The two timeouts are different and must not be conflated.** `--meta_time_out`
+(default **30 s**) caps the *graded* query, matching the official BIRD
+evaluator. Tool calls issued by the model *during generation* use a separate,
+more generous **60 s** budget (`TOOL_TIMEOUT`); that covers the model exploring
+the database, not the query being scored.
+
+Two of the 1534 BIRD dev gold queries do not finish inside 30 s. Under BIRD
+semantics they are unscorable and count as wrong for every system, so the
+practical ceiling on dev is 1532, not 1534. A scorer without a real per-query
+timeout will report roughly two questions more than the official harness would.
+
+Reported dev numbers in this repository were produced with the command above,
+against `data/bird_dev_data/raw/bird_dev.json` and `databases/dev_databases`,
+at the default 30 s `--meta_time_out`.
 
 ## Logging And Restarting Mid-Run
 
@@ -368,7 +450,7 @@ Run pass@k evaluation:
 
 ```bash
 python scripts/run_passk_bird.py \
-  --model_name_or_path pratikkakkar/gemma-4-31b-it-bird-rl \
+  --model_name_or_path <org>/<repo> \
   --input_file outputs/bird_dev-schema-tool.jsonl \
   --database_dir databases/dev_databases \
   --diff_json_path data/bird_dev_data/raw/bird_dev.json \
@@ -382,7 +464,7 @@ Pass@k uses the same sharding flags:
 
 ```bash
 python scripts/run_passk_bird.py \
-  --model_name_or_path pratikkakkar/gemma-4-31b-it-bird-rl \
+  --model_name_or_path <org>/<repo> \
   --input_file outputs/bird_dev-schema-tool.jsonl \
   --output_dir outputs/passk/gemma-best-rl_shards4 \
   --num_generations 16 \
