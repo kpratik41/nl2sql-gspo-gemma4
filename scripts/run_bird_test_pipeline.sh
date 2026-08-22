@@ -29,13 +29,12 @@ export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
-# TODO(submission): REPLACE THIS BEFORE ZIPPING THE SUBMISSION.
-# The default below is a LOCAL development checkpoint and will not exist on the
-# BIRD team's machine. Before submitting, set it to the Hugging Face repo id of
-# the checkpoint being submitted (private repos need HF_TOKEN; see README,
-# "Model Access"). Overridden by the first argument to run.sh, or by MODEL_PATH
-# in the environment.
-MODEL_PATH="${MODEL_PATH:-outputs/sft_rft_32/checkpoint-15}"
+# Primary submission: the SFT+RL checkpoint. Private Hugging Face repo, so
+# HF_TOKEN must be set (see README, "Model Access"). The second submitted model
+# is pratikkakkar/gemma-4-31b-it-bird-rl -- pass it as the first argument to
+# run.sh, or set MODEL_PATH, to evaluate that one instead. A local weights
+# directory works here too.
+MODEL_PATH="${MODEL_PATH:-pratikkakkar/gemma-4-31b-it-bird-sft-rl}"
 
 SPLIT="${SPLIT:-test}"
 RUN_ROOT="${RUN_ROOT:-outputs/bird_${SPLIT}_pipeline}"

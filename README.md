@@ -18,6 +18,9 @@ The launchers expect `PYTHONPATH` to include `src`; `scripts/launch_inference.sh
 ├── prompts.py                              system prompt (mission, rules, tool syntax, examples)
 ├── gen_tools.py                            tool implementations exposed to the model
 ├── requirements.txt                        pinned inference dependencies
+├── predictions/                            dev predictions from both submitted models
+│   ├── dev_predictions_sft_rl.json         SFT+RL, self-consistency, 74.51%
+│   └── dev_predictions_rl_only.json        RL only, self-consistency, 73.86%
 ├── scripts/
 │   ├── run_bird_test_pipeline.sh           the pipeline: few-shot -> schema -> tools -> pass@k -> vote -> verify
 │   ├── run_passk_bird.py                   pass@k sampling with the tool loop; shards across GPU pairs
@@ -82,21 +85,42 @@ reference file named in the submission guidelines.
 
 ## Model Access
 
-> **TODO (to be filled in before submission):** the checkpoint has not been
-> finalised yet. The repository id, and whether one or two checkpoints are
-> submitted, will be supplied with the submission email along with the read
-> token. Until then `MODEL_PATH` has no default and must be passed explicitly:
->
-> ```bash
-> MODEL_PATH=<org>/<repo>            bash run.sh   # Hugging Face repo
-> MODEL_PATH=/path/to/checkpoint     bash run.sh   # local weights
-> ```
->
-> The pipeline fails preflight with instructions if `MODEL_PATH` is unset, so a
-> run cannot silently evaluate the wrong checkpoint.
+Two checkpoints are submitted. **Please evaluate them in this order:**
 
-The model will be hosted in a **private** Hugging Face repository of roughly
-58 GB. Use the read token we provide with this submission, either way below:
+| order | model | Hugging Face repository | dev EX, temp 0 | dev EX, self-consistency |
+| :---: | --- | --- | ---: | ---: |
+| **1st** | **SFT + RL** *(primary)* | `pratikkakkar/gemma-4-31b-it-bird-sft-rl` | **73.73%** | **74.51%** |
+| 2nd | RL only | `pratikkakkar/gemma-4-31b-it-bird-rl` | 73.40% | 73.86% |
+
+Both numbers are on the BIRD dev set (1534 questions), produced by this
+repository at its default settings. Self-consistency over 16 samples at
+temperature 1.2 is the submitted configuration.
+
+The dev predictions behind those numbers ship with this submission, in
+`predictions/`, so they can be checked without re-running generation:
+
+| file | model | dev EX |
+| --- | --- | ---: |
+| `predictions/dev_predictions_sft_rl.json` | SFT + RL | **74.51%** (1143/1534) |
+| `predictions/dev_predictions_rl_only.json` | RL only | 73.86% (1133/1534) |
+
+```bash
+python scripts/eval_bird_ex.py \
+  --predictions predictions/dev_predictions_sft_rl.json \
+  --gold data/bird_dev_data/raw/bird_dev.json \
+  --database_dir databases/dev_databases
+```
+
+See `predictions/README.md` for details. These are dev predictions; the test-set
+file is produced by running the pipeline.
+
+**Please score the SFT+RL model first** — it is our primary submission and the
+one the defaults in this repository point at. The RL-only model is submitted as
+a secondary entry.
+
+Both are **private** Hugging Face repositories of roughly 58 GB each, based on
+`gemma-4-31b-it`. Use the read token supplied with the submission email, either
+way below:
 
 ```bash
 export HF_TOKEN=<token supplied with this submission>
@@ -108,9 +132,24 @@ or, to store it once:
 hf auth login          # paste the same token when prompted
 ```
 
+Running each model is a one-word change:
+
+```bash
+bash run.sh                                              # SFT+RL  (default, evaluate first)
+bash run.sh pratikkakkar/gemma-4-31b-it-bird-rl          # RL only (evaluate second)
+```
+
+Use a separate `RUN_ROOT` for the second model so the two sets of predictions do
+not overwrite each other:
+
+```bash
+RUN_ROOT=outputs/bird_test_rl_only \
+  bash run.sh pratikkakkar/gemma-4-31b-it-bird-rl
+```
+
 The full weights download on the first inference run and are cached in
-`~/.cache/huggingface`; **make sure at least 60 GB is free there** in addition to
-any space needed for outputs.
+`~/.cache/huggingface`; **make sure at least 60 GB is free there per model** in
+addition to any space needed for outputs.
 
 To run from local weights instead of downloading, point `MODEL_PATH` at the
 directory:
@@ -128,17 +167,22 @@ stopped.
 
 ```bash
 export HF_TOKEN=<token supplied with this submission>
-MODEL_PATH=<org>/<repo> bash run.sh
+bash run.sh
 ```
 
-`run.sh` is the whole submission. Apart from `MODEL_PATH`, every parameter
-already defaults to the validated setting, so nothing else needs to be passed or
-edited. It is a thin wrapper around `scripts/run_bird_test_pipeline.sh`, which
-can also be called directly if you prefer.
+`run.sh` is the whole submission. Every parameter already defaults to the
+validated setting — including the model, which defaults to the primary SFT+RL
+checkpoint — so nothing needs to be passed or edited. It is a thin wrapper
+around `scripts/run_bird_test_pipeline.sh`, which can also be called directly if
+you prefer.
 
-`MODEL_PATH` is the one required value — see **Model Access** above. To avoid
-passing it every time, edit its default near the top of
-`scripts/run_bird_test_pipeline.sh` (the line marked `TODO(submission)`).
+To score the second submitted model afterwards, pass it as the first argument
+and give it its own run directory:
+
+```bash
+RUN_ROOT=outputs/bird_test_rl_only \
+  bash run.sh pratikkakkar/gemma-4-31b-it-bird-rl
+```
 
 Stages: few-shot retrieval -> schema build -> tool-row build -> pass@16
 generation (auto-sharded across the available GPUs) -> self-consistency vote ->

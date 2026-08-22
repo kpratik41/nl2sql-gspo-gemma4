@@ -21,9 +21,11 @@
 # finished stages and resumes generation from the candidate it reached; it does
 # not repeat completed work.
 #
-# The checkpoint may be given as the first argument, which overrides MODEL_PATH:
-#   bash run.sh <org>/<repo>                          # Hugging Face repo
-#   bash run.sh outputs/sft_rft_32/checkpoint-15      # local weights
+# MODEL_PATH defaults to the primary submitted checkpoint
+# (pratikkakkar/gemma-4-31b-it-bird-sft-rl). To score the second submitted model,
+# pass it as the first argument:
+#   bash run.sh pratikkakkar/gemma-4-31b-it-bird-rl   # the RL-only checkpoint
+#   bash run.sh /path/to/local/weights                # local weights
 #
 # Any other setting is overridden through the environment, e.g.
 #   NUM_GENERATIONS=1 TEMPERATURE=0.0 bash run.sh     # quick single-sample pass
