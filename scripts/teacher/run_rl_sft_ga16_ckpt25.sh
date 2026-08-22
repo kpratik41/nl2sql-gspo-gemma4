@@ -13,7 +13,7 @@
 # Batch math: per_device_bs(2) x steps_per_generation(=grad_accum 32) = 64
 # sequences per rank -> 4 groups of num_generations(16) per rank -> 24 unique
 # prompts per optimizer step across 6 ranks -> 6574/24 = 274 steps for 1 epoch.
-# With K=11 that is 4,224 rollouts generated per step.
+# With K=14 that is 5,376 rollouts generated per step.
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-/home/ubuntu/sft-rl/nl2sql-gspo-gemma4}"
@@ -40,10 +40,12 @@ export DEEPSPEED_CONFIG="${DEEPSPEED_CONFIG:-configs/ds_zero3_bf16_no_scheduler.
 # gave each rank a mean of 5 heterogeneous groups against 4 needed -- close
 # enough to the boundary that 1-3 of 24 slots were padded with zero-advantage
 # groups on most steps. K=11 raises the per-rank mean to ~6.6 and cuts the
-# padding probability well down.
+# padding probability down. Raised again to 14 at the step-35 restart:
+# heterogeneity kept falling as the policy converged (7.95% at step 35,
+# fill_rate 66.67%), so K=11 left each rank a mean of ~4.0 against 4 needed.
 export NUM_GENERATIONS="${NUM_GENERATIONS:-16}"
 export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-32}"
-export DAPO_OVERSAMPLE_FACTOR="${DAPO_OVERSAMPLE_FACTOR:-11}"
+export DAPO_OVERSAMPLE_FACTOR="${DAPO_OVERSAMPLE_FACTOR:-14}"
 export PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-2}"
 export PER_DEVICE_EVAL_BATCH_SIZE="${PER_DEVICE_EVAL_BATCH_SIZE:-16}"
 export TRAIN_LIMIT="${TRAIN_LIMIT:--1}"
