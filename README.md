@@ -19,8 +19,8 @@ The launchers expect `PYTHONPATH` to include `src`; `scripts/launch_inference.sh
 ├── gen_tools.py                            tool implementations exposed to the model
 ├── requirements.txt                        pinned inference dependencies
 ├── predictions/                            dev predictions from both submitted models
-│   ├── dev_predictions_sft_rl.json         SFT+RL, self-consistency, 74.51%
-│   └── dev_predictions_rl_only.json        RL only, self-consistency, 73.86%
+│   ├── dev_predictions_sft_rl.json         SFT+RL, self-consistency, 74.58%
+│   └── dev_predictions_rl_only.json        RL only, self-consistency, 73.73%
 ├── scripts/
 │   ├── run_bird_test_pipeline.sh           the pipeline: few-shot -> schema -> tools -> pass@k -> vote -> verify
 │   ├── run_passk_bird.py                   pass@k sampling with the tool loop; shards across GPU pairs
@@ -89,8 +89,8 @@ Two checkpoints are submitted. **Please evaluate them in this order:**
 
 | order | model | Hugging Face repository | dev EX, temp 0 | dev EX, self-consistency |
 | :---: | --- | --- | ---: | ---: |
-| **1st** | **SFT + RL** *(primary)* | `pratikkakkar/gemma-4-31b-it-bird-sft-rl` | **73.73%** | **74.51%** |
-| 2nd | RL only | `pratikkakkar/gemma-4-31b-it-bird-rl` | 73.40% | 73.86% |
+| **1st** | **SFT + RL** *(primary)* | `pratikkakkar/gemma-4-31b-it-bird-sft-rl` | **73.53%** | **74.58%** |
+| 2nd | RL only | `pratikkakkar/gemma-4-31b-it-bird-rl` | 73.34% | 73.73% |
 
 Both numbers are on the BIRD dev set (1534 questions), produced by this
 repository at its default settings. Self-consistency over 16 samples at
@@ -101,8 +101,8 @@ The dev predictions behind those numbers ship with this submission, in
 
 | file | model | dev EX |
 | --- | --- | ---: |
-| `predictions/dev_predictions_sft_rl.json` | SFT + RL | **74.51%** (1143/1534) |
-| `predictions/dev_predictions_rl_only.json` | RL only | 73.86% (1133/1534) |
+| `predictions/dev_predictions_sft_rl.json` | SFT + RL | **74.58%** (1144/1534) |
+| `predictions/dev_predictions_rl_only.json` | RL only | 73.73% (1131/1534) |
 
 ```bash
 python scripts/eval_bird_ex.py \

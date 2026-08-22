@@ -7,8 +7,8 @@ reported dev numbers can be verified without re-running generation.
 
 | file | model | dev EX |
 | --- | --- | ---: |
-| `dev_predictions_sft_rl.json` | `pratikkakkar/gemma-4-31b-it-bird-sft-rl` | **74.51%** (1143/1534) |
-| `dev_predictions_rl_only.json` | `pratikkakkar/gemma-4-31b-it-bird-rl` | 73.86% (1133/1534) |
+| `dev_predictions_sft_rl.json` | `pratikkakkar/gemma-4-31b-it-bird-sft-rl` | **74.58%** (1144/1534) |
+| `dev_predictions_rl_only.json` | `pratikkakkar/gemma-4-31b-it-bird-rl` | 73.73% (1131/1534) |
 
 Both were produced by `bash run.sh` at its default settings: pass@16 sampling at
 temperature 1.2, followed by a majority vote over execution result sets.
