@@ -21,11 +21,13 @@
 # finished stages and resumes generation from the candidate it reached; it does
 # not repeat completed work.
 #
-# MODEL_PATH defaults to the primary submitted checkpoint
-# (pratikkakkar/gemma-4-31b-it-bird-sft-rl). To score the second submitted model,
-# pass it as the first argument:
-#   bash run.sh pratikkakkar/gemma-4-31b-it-bird-rl   # the RL-only checkpoint
-#   bash run.sh /path/to/local/weights                # local weights
+# MODEL_PATH has no default and must be set: two checkpoints are submitted, so an
+# implicit default would make it ambiguous which one produced a given
+# predictions file. Set RUN_ROOT too, so the two runs do not overwrite each
+# other:
+#   MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-sft-rl RUN_ROOT=outputs/bird_test_sft_rl  bash run.sh
+#   MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-rl     RUN_ROOT=outputs/bird_test_rl_only bash run.sh
+# A local weights directory works in place of a repo id.
 #
 # Any other setting is overridden through the environment, e.g.
 #   NUM_GENERATIONS=1 TEMPERATURE=0.0 bash run.sh     # quick single-sample pass

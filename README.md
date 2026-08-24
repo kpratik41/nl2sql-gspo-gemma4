@@ -1,45 +1,257 @@
-# NL2SQL Gemma Inference
+# NL2SQL Gemma — BIRD Test-Set Submission
 
-This repository contains inference and evaluation utilities for NL2SQL on BIRD-style SQLite datasets. It supports standard generation, native Gemma tool-calling loops, pass@k evaluation, and execution-result self-consistency.
+Inference code for our BIRD leaderboard submission. **Two checkpoints are
+submitted**; please score them in the order given in Step 6 and Step 7.
 
-## Setup
+Follow the steps below in order. Everything after Step 8 is reference material.
+
+---
+
+## Step 1 — Create the environment
+
+Python 3.12 with CUDA-capable GPUs. Create a fresh environment so the pinned
+versions below are the ones actually used:
 
 ```bash
+conda create -n nl2sql python=3.12 -y
+conda activate nl2sql
 pip install -r requirements.txt
 ```
 
-The launchers expect `PYTHONPATH` to include `src`; `scripts/launch_inference.sh` sets that automatically.
+or with venv:
 
-## Repository Map
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+**Keep this environment active for every step that follows.** The pipeline calls
+`python`, so an inactive environment fails with `python: command not found`.
+
+Verify:
+
+```bash
+python -c "import torch, vllm, transformers; print(torch.cuda.device_count(), 'GPUs visible')"
+```
+
+---
+
+## Step 2 — Set the Hugging Face token
+
+The two model repositories are private. Export the read token supplied with our
+submission email:
+
+```bash
+export HF_TOKEN=<token supplied with this submission>
+```
+
+or store it once:
+
+```bash
+hf auth login          # paste the same token when prompted
+```
+
+The token grants read access to both repositories and nothing else. Without it
+the run stops at the download step with a 401/403 rather than part-way through
+generation.
+
+---
+
+## Step 3 — Place the test questions and schema
+
+Copy these three files from the BIRD test release into
+`data/bird_test_data/raw/`:
 
 ```text
-.
-├── run.sh                                  one-touch entry point; runs the whole pipeline
-├── prompts.py                              system prompt (mission, rules, tool syntax, examples)
-├── gen_tools.py                            tool implementations exposed to the model
-├── requirements.txt                        pinned inference dependencies
-├── predictions/                            dev predictions from both submitted models
-│   ├── dev_predictions_sft_rl.json         SFT+RL, self-consistency, 74.58%
-│   └── dev_predictions_rl_only.json        RL only, self-consistency, 73.73%
-├── scripts/
-│   ├── run_bird_test_pipeline.sh           the pipeline: few-shot -> schema -> tools -> pass@k -> vote -> verify
-│   ├── run_passk_bird.py                   pass@k sampling with the tool loop; shards across GPU pairs
-│   ├── run_self_consistency_bird.py        majority vote over execution result sets
-│   ├── run_inference_bird.py               single-pass inference and the async vLLM tool loop
-│   ├── eval_bird_ex.py                     standalone BIRD EX scorer (see "Scoring" below)
-│   ├── launch_inference.sh                 convenience launcher; sets PYTHONPATH
-│   └── data_generation/
-│       ├── few_shot_bm25.py                BM25 retrieval of demonstrations from the TRAIN pool
-│       ├── schema_build.py                 builds the schema block and column descriptions per question
-│       └── build_tool_dataset.py           wraps schema rows in the tool-calling system prompt
-└── src/nl2sql_gspo/
-    ├── tool_calling.py                     tool catalog, native call parsing, dispatch
-    ├── inference_tool_executor.py          executes tool calls against the SQLite databases
-    ├── schema_utils.py                     schema introspection and M-schema rendering
-    ├── sql_utils.py                        SQL extraction, safety checks, BIRD execution + row-set match
-    ├── model_utils.py                      model/tokenizer loading, chat templating
-    └── data.py                             dataset loading helpers
+data/bird_test_data/raw/test.json              questions; the "SQL" field is empty
+data/bird_test_data/raw/test_tables.json       schema description
+data/bird_test_data/raw/column_meaning.json    per-column descriptions (REQUIRED)
 ```
+
+**`column_meaning.json` is not optional.** The schema builder inlines those
+descriptions into every prompt, and the models were tuned on prompts containing
+them; without it accuracy drops. Our dev results used a `column_meaning.json`
+byte-identical to the TA-SQL reference file named in the submission guidelines.
+
+The directory ships empty apart from a README naming these files.
+
+---
+
+## Step 4 — Place the test databases
+
+Put the SQLite databases at the repository root, one directory per `db_id`:
+
+```text
+databases/test_databases/<db_id>/<db_id>.sqlite
+```
+
+A symlink is fine if the databases live elsewhere:
+
+```bash
+ln -s /path/to/test_databases databases/test_databases
+```
+
+Steps 3 and 4 are both checked during preflight. A missing file stops the run
+immediately with a message naming it, before any weights are loaded.
+
+---
+
+## Step 5 — Download the model weights
+
+The pipeline does this automatically in a **single process** before it shards,
+so you can skip straight to Step 6. Run it ahead of time if you would rather
+separate the download from the evaluation:
+
+```bash
+hf download pratikkakkar/gemma-4-31b-it-bird-sft-rl
+hf download pratikkakkar/gemma-4-31b-it-bird-rl
+```
+
+Each model is ~58 GB, so allow **~120 GB free in `~/.cache/huggingface`** for
+both, plus space for outputs.
+
+> **Why this matters:** generation runs N shards in parallel and each resolves
+> the model independently. Against a cold cache that means N processes reaching
+> for the hub at once — they serialise on a file lock, and the transfer has been
+> seen to stall in `hf_xet`'s finalize step under that contention. The pipeline
+> therefore downloads once, serially, and only then starts the shards, by which
+> point every shard is a cache hit. If a download stalls anyway, retry with
+> `HF_HUB_DISABLE_XET=1`.
+
+---
+
+## Step 6 — Run the primary model (SFT + RL)
+
+**Please evaluate this model first.** It is the stronger of the two.
+
+Each model takes about **3.5 hours on 8 GPUs**, so run it detached — otherwise a
+dropped SSH connection kills the run. `tmux` is preinstalled on Ubuntu Server and
+Amazon Linux; a `nohup` fallback for machines without it is at the end of this
+step.
+
+Start a detached session and launch the run inside it:
+
+```bash
+tmux new -s bird
+
+# inside the session:
+conda activate nl2sql                      # or: source .venv/bin/activate
+export HF_TOKEN=<token supplied with this submission>
+MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-sft-rl \
+RUN_ROOT=outputs/bird_test_sft_rl \
+  bash run.sh 2>&1 | tee run_sft_rl.log
+```
+
+Then detach with **`Ctrl-b`** followed by **`d`**. The run keeps going. To come
+back:
+
+```bash
+tmux ls                    # list sessions
+tmux attach -t bird        # reattach
+```
+
+Progress can also be followed without attaching:
+
+```bash
+tail -f outputs/bird_test_sft_rl/pipeline.log
+```
+
+During generation the pipeline prints a combined progress line every 5 minutes,
+so you can tell at a glance that the run is alive:
+
+```text
+[2026-...] [pipeline]   generating [elapsed 1h12m30s]: shard0=1250/6144 shard1=1300/6144 shard2=1210/6128 shard3=1180/6128
+```
+
+A shard shows `loading` until its engine has finished bringing ~62 GB of weights
+onto the GPUs, which takes a few minutes. Set `PROGRESS_INTERVAL=60` for a line
+every minute instead.
+
+Full per-shard detail, including vLLM's own output, goes to
+`outputs/bird_test_sft_rl/passk-shard<N>.log`.
+
+If `tmux` is unavailable, `nohup` needs no package:
+
+```bash
+nohup env MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-sft-rl \
+          RUN_ROOT=outputs/bird_test_sft_rl \
+          bash run.sh > run_sft_rl.log 2>&1 &
+```
+
+This step produces:
+
+```text
+outputs/bird_test_sft_rl/self_consistency/predict_test.json
+```
+
+## Step 7 — Run the second model (RL only)
+
+Same shape as Step 6, in a detached session, with a different model and a
+different `RUN_ROOT`:
+
+```bash
+tmux new -s bird2
+
+# inside the session:
+conda activate nl2sql                      # or: source .venv/bin/activate
+export HF_TOKEN=<token supplied with this submission>
+MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-rl \
+RUN_ROOT=outputs/bird_test_rl_only \
+  bash run.sh 2>&1 | tee run_rl_only.log
+```
+
+Produces:
+
+```text
+outputs/bird_test_rl_only/self_consistency/predict_test.json
+```
+
+`RUN_ROOT` differs between Step 6 and Step 7 so the two sets of predictions do
+not overwrite each other. `MODEL_PATH` has no default and must be passed on
+every run, so it is always unambiguous which checkpoint produced a given file.
+
+Run the two models one after the other, not at the same time: each uses every
+visible GPU.
+
+---
+
+## Step 8 — Collect the predictions
+
+Each run writes the file to score at `<RUN_ROOT>/self_consistency/predict_test.json`,
+in the official format (`SQL\t----- bird -----\tdb_id`), one entry per question id.
+
+Alongside it:
+
+```text
+<RUN_ROOT>/run_manifest.tsv    what each stage produced
+<RUN_ROOT>/pipeline.log        full log of the run
+```
+
+A verification gate runs before the pipeline reports success and fails if any
+question id is missing or malformed, so a short or corrupt file is never
+reported as complete.
+
+**The run is resumable.** Re-running the same command after an interruption
+skips finished stages and picks generation up from the candidate it reached; no
+work already done is repeated.
+
+---
+
+## What we measured
+
+BIRD dev (1534 questions), execution accuracy, produced by this same code:
+
+| order | model | Hugging Face repository | temp 0 | self-consistency |
+| :---: | --- | --- | ---: | ---: |
+| **1st** | **SFT + RL** *(primary)* | `pratikkakkar/gemma-4-31b-it-bird-sft-rl` | **73.53%** | **74.58%** |
+| 2nd | RL only | `pratikkakkar/gemma-4-31b-it-bird-rl` | 73.34% | 73.73% |
+
+Self-consistency over 16 samples at temperature 1.2 is the submitted
+configuration. The dev predictions behind those numbers ship in `predictions/`
+so they can be checked without re-running generation — see `## Scoring` below.
+
+---
 
 ## Resources Required
 
@@ -60,171 +272,77 @@ The model is 31B in bf16, roughly 62 GB of weights. It is therefore run with
 self-consistency: 16 samples for each of the 1534 questions, 24,544 tool-using
 rollouts in total.
 
-## Required Input Files
+## How The Pipeline Runs
 
-**This pipeline requires `column_meaning.json`.** The schema builder injects the
-per-column descriptions inline into every prompt, so the file must be present
-for the test split at:
+`run.sh` wraps `scripts/run_bird_test_pipeline.sh`. Stages, in order:
 
 ```text
-data/bird_test_data/raw/column_meaning.json
+0  few-shot retrieval      BM25 over the TRAIN pool only, never the split being scored
+1  schema build            per-question schema block + column descriptions
+2  tool-row build          wraps each row in the tool-calling system prompt
+3a weight prefetch         single process, before any sharding
+3b pass@16 generation      sharded across the available GPUs, temperature 1.2
+4  self-consistency vote   majority over execution result sets
+5  verification gate       every question id present and correctly formatted
 ```
 
-The repository ships `data/bird_test_data/raw/` **empty**, with a README naming
-the files to drop in. See that directory.
+Each stage is skipped when its output already exists **and** its `done.flag` was
+written, so rerunning after a failure continues where it stopped rather than
+repeating finished work.
 
-`scripts/run_bird_test_pipeline.sh` checks for it during preflight and stops
-with a clear error if it is missing. If a column has no entry the builder simply
-omits that comment rather than failing, so a partial file is tolerated — but
-prompts will be weaker.
+Tensor-parallel size is fixed at 2 — the 31B model in bf16 is ~62 GB and does
+not fit one 80 GB card at this context length. Remaining GPUs are used for data
+parallelism: 8 GPUs give 4 shards, 2 GPUs give 1 shard.
 
-The other required test inputs are `test.json`, `test_tables.json`, and the
-`test_databases/` SQLite directory. Note that our development results were
-produced with a `column_meaning.json` that is byte-identical to the TA-SQL
-reference file named in the submission guidelines.
-
-## Model Access
-
-Two checkpoints are submitted. **Please evaluate them in this order:**
-
-| order | model | Hugging Face repository | dev EX, temp 0 | dev EX, self-consistency |
-| :---: | --- | --- | ---: | ---: |
-| **1st** | **SFT + RL** *(primary)* | `pratikkakkar/gemma-4-31b-it-bird-sft-rl` | **73.53%** | **74.58%** |
-| 2nd | RL only | `pratikkakkar/gemma-4-31b-it-bird-rl` | 73.34% | 73.73% |
-
-Both numbers are on the BIRD dev set (1534 questions), produced by this
-repository at its default settings. Self-consistency over 16 samples at
-temperature 1.2 is the submitted configuration.
-
-The dev predictions behind those numbers ship with this submission, in
-`predictions/`, so they can be checked without re-running generation:
-
-| file | model | dev EX |
-| --- | --- | ---: |
-| `predictions/dev_predictions_sft_rl.json` | SFT + RL | **74.58%** (1144/1534) |
-| `predictions/dev_predictions_rl_only.json` | RL only | 73.73% (1131/1534) |
+To run from local weights instead of downloading, point `MODEL_PATH` at a
+directory; the prefetch step detects this and skips the hub entirely:
 
 ```bash
-python scripts/eval_bird_ex.py \
-  --predictions predictions/dev_predictions_sft_rl.json \
-  --gold data/bird_dev_data/raw/bird_dev.json \
-  --database_dir databases/dev_databases
+MODEL_PATH=/path/to/local/weights RUN_ROOT=outputs/bird_test_local bash run.sh
 ```
 
-See `predictions/README.md` for details. These are dev predictions; the test-set
-file is produced by running the pipeline.
-
-**Please score the SFT+RL model first** — it is our primary submission and the
-one the defaults in this repository point at. The RL-only model is submitted as
-a secondary entry.
-
-Both are **private** Hugging Face repositories of roughly 58 GB each, based on
-`gemma-4-31b-it`. Use the read token supplied with the submission email, either
-way below:
-
-```bash
-export HF_TOKEN=<token supplied with this submission>
-```
-
-or, to store it once:
-
-```bash
-hf auth login          # paste the same token when prompted
-```
-
-Running each model is a one-word change:
-
-```bash
-bash run.sh                                              # SFT+RL  (default, evaluate first)
-bash run.sh pratikkakkar/gemma-4-31b-it-bird-rl          # RL only (evaluate second)
-```
-
-Use a separate `RUN_ROOT` for the second model so the two sets of predictions do
-not overwrite each other:
-
-```bash
-RUN_ROOT=outputs/bird_test_rl_only \
-  bash run.sh pratikkakkar/gemma-4-31b-it-bird-rl
-```
-
-The full weights download on the first inference run and are cached in
-`~/.cache/huggingface`; **make sure at least 60 GB is free there per model** in
-addition to any space needed for outputs.
-
-To run from local weights instead of downloading, point `MODEL_PATH` at the
-directory:
-
-```bash
-MODEL_PATH=/path/to/local/weights bash run.sh
-```
-
-## Reproducing The Submission (One Command)
-
-This is the path to run for the test set. It goes from the raw `test.json` the
-BIRD team provides to the final prediction file, and every stage is skipped when
-its output already exists, so rerunning after any failure continues where it
-stopped.
-
-```bash
-export HF_TOKEN=<token supplied with this submission>
-bash run.sh
-```
-
-`run.sh` is the whole submission. Every parameter already defaults to the
-validated setting — including the model, which defaults to the primary SFT+RL
-checkpoint — so nothing needs to be passed or edited. It is a thin wrapper
-around `scripts/run_bird_test_pipeline.sh`, which can also be called directly if
-you prefer.
-
-To score the second submitted model afterwards, pass it as the first argument
-and give it its own run directory:
-
-```bash
-RUN_ROOT=outputs/bird_test_rl_only \
-  bash run.sh pratikkakkar/gemma-4-31b-it-bird-rl
-```
-
-Stages: few-shot retrieval -> schema build -> tool-row build -> pass@16
-generation (auto-sharded across the available GPUs) -> self-consistency vote ->
-a verification gate that fails if any question id is missing or malformed.
-
-Final artifact:
+## Repository Map
 
 ```text
-outputs/bird_test_pipeline/self_consistency/predict_test.json
+.
+├── run.sh                                  entry point; wraps the pipeline
+├── prompts.py                              system prompt (mission, rules, tool syntax, memory)
+├── gen_tools.py                            tool implementations exposed to the model
+├── requirements.txt                        pinned inference dependencies
+├── predictions/                            dev predictions from both submitted models
+│   ├── dev_predictions_sft_rl.json         SFT+RL, self-consistency, 74.58%
+│   └── dev_predictions_rl_only.json        RL only, self-consistency, 73.73%
+├── scripts/
+│   ├── run_bird_test_pipeline.sh           the pipeline: few-shot -> schema -> tools -> prefetch -> pass@k -> vote -> verify
+│   ├── run_passk_bird.py                   pass@k sampling with the tool loop; shards across GPU pairs
+│   ├── run_self_consistency_bird.py        majority vote over execution result sets
+│   ├── run_inference_bird.py               single-pass inference and the async vLLM tool loop
+│   ├── eval_bird_ex.py                     standalone BIRD EX scorer (see "Scoring")
+│   ├── launch_inference.sh                 convenience launcher; sets PYTHONPATH
+│   └── data_generation/
+│       ├── few_shot_bm25.py                BM25 retrieval of demonstrations from the TRAIN pool
+│       ├── schema_build.py                 builds the schema block and column descriptions
+│       └── build_tool_dataset.py           wraps schema rows in the tool-calling system prompt
+└── src/nl2sql_gspo/
+    ├── tool_calling.py                     tool catalog, native call parsing, dispatch
+    ├── inference_tool_executor.py          executes tool calls against the SQLite databases
+    ├── schema_utils.py                     schema introspection and M-schema rendering
+    ├── sql_utils.py                        SQL extraction, safety checks, BIRD execution + row-set match
+    ├── model_utils.py                      model/tokenizer loading, chat templating
+    └── data.py                             dataset loading helpers
 ```
-
-one entry per question id in official BIRD format, `SQL\t----- bird -----\tdb_id`.
-
-Useful overrides (all optional):
-
-```bash
-MODEL_PATH=<org>/<repo> \
-NUM_GENERATIONS=16 \
-TEMPERATURE=1.2 \
-VLLM_TENSOR_PARALLEL_SIZE=2 \
-NUM_SHARDS=4 \
-RUN_ROOT=outputs/bird_test_pipeline \
-bash scripts/run_bird_test_pipeline.sh
-```
-
-`NUM_SHARDS` defaults to `GPU_COUNT / VLLM_TENSOR_PARALLEL_SIZE`, so on 8 GPUs it
-runs 4 shards of tensor-parallel-2 without being set. To reproduce our
-development numbers instead, set `SPLIT=dev`.
-
-The sections below document the individual stages for anyone who wants to run
-them separately.
 
 ## Configuration
 
 Every setting has a validated default; override by exporting the variable before
-`bash run.sh`. Nothing here needs changing for a standard submission run.
+the command in Step 6 or Step 7. Nothing here needs changing for a standard
+submission run — `MODEL_PATH` and `RUN_ROOT` are the two you set explicitly.
 
 | variable | default | governs |
 | --- | --- | --- |
-| `MODEL_PATH` | private HF repo | weights; set to a local directory to skip the download |
+| `MODEL_PATH` | **none — required** | which checkpoint to run; the run fails if unset (Steps 6-7) |
 | `SPLIT` | `test` | which `data/bird_<split>_data` and `databases/<split>_databases` to use |
-| `RUN_ROOT` | `outputs/bird_test_pipeline` | where all artifacts for this run are written |
+| `RUN_ROOT` | `outputs/bird_test_pipeline` | where this run's artifacts go; **set per model** so runs do not collide |
 | `NUM_GENERATIONS` | `16` | samples per question for pass@k; `1` gives a single greedy pass |
 | `TEMPERATURE` | `1.2` | sampling temperature; the value every validated pass@16 run used |
 | `NUM_EXAMPLES` | `-1` | limit questions processed; `-1` is all |
@@ -236,6 +354,7 @@ Every setting has a validated default; override by exporting the variable before
 | `VLLM_MAX_MODEL_LEN` | `53000` | must exceed `MAX_PROMPT_LENGTH`; the tool loop grows context |
 | `FALLBACK_SQL` | `SELECT 1` | written for a question that could not be generated |
 | `FEWSHOT_TOP_N` | `3` | demonstrations per question; matches the prompt the model was tuned on |
+| `PROGRESS_INTERVAL` | `300` | seconds between generation progress lines |
 
 ## Smoke Test
 
@@ -247,7 +366,7 @@ the machine to the full run.
 Smoke test on 2 examples:
 
 ```bash
-MODEL_PATH=<org>/<repo> \
+MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-sft-rl \
 NUM_EXAMPLES=2 \
 bash scripts/launch_inference.sh
 ```
@@ -326,7 +445,7 @@ this script is directly comparable to the pipeline's own eval output.
 
 ```bash
 python scripts/eval_bird_ex.py \
-  --predictions outputs/bird_test_pipeline/self_consistency/predict_test.json \
+  --predictions outputs/bird_test_sft_rl/self_consistency/predict_test.json \
   --gold data/bird_dev_data/raw/bird_dev.json \
   --database_dir databases/dev_databases
 ```

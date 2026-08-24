@@ -29,12 +29,10 @@ export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
-# Primary submission: the SFT+RL checkpoint. Private Hugging Face repo, so
-# HF_TOKEN must be set (see README, "Model Access"). The second submitted model
-# is pratikkakkar/gemma-4-31b-it-bird-rl -- pass it as the first argument to
-# run.sh, or set MODEL_PATH, to evaluate that one instead. A local weights
-# directory works here too.
-MODEL_PATH="${MODEL_PATH:-pratikkakkar/gemma-4-31b-it-bird-sft-rl}"
+# No default on purpose. Two checkpoints are submitted, so an implicit default
+# would make it ambiguous which one produced a given predictions file. The
+# caller must name the model every time -- see README, Step 6 and Step 7.
+MODEL_PATH="${MODEL_PATH:-}"
 
 SPLIT="${SPLIT:-test}"
 RUN_ROOT="${RUN_ROOT:-outputs/bird_${SPLIT}_pipeline}"
@@ -79,6 +77,13 @@ exec > >(tee -a "${LOG}") 2>&1
 
 say() { echo "[$(date -Is)] [pipeline] $*"; }
 
+PIPELINE_START="$(date +%s)"
+# Wall-clock since the run started, so a long stage is obvious in the log.
+elapsed() {
+  local s=$(( $(date +%s) - PIPELINE_START ))
+  printf '%dh%02dm%02ds' $(( s/3600 )) $(( (s%3600)/60 )) $(( s%60 ))
+}
+
 # Completion markers and a run manifest.
 #
 # A stage is "done" only when its own done.flag exists. Checking output-file
@@ -119,10 +124,16 @@ count_rows() {
 
 manifest_init
 
+say "=============================================================="
+say "BIRD ${SPLIT}-set pipeline starting"
+say "=============================================================="
 say "repo=${REPO_ROOT}"
 say "model=${MODEL_PATH}"
 say "split=${SPLIT} run_root=${RUN_ROOT}"
 say "num_generations=${NUM_GENERATIONS} temperature=${TEMPERATURE} tp=${VLLM_TENSOR_PARALLEL_SIZE}"
+say "python=${PYTHON_BIN} ($("${PYTHON_BIN}" --version 2>&1 || echo 'NOT FOUND'))"
+say "log=${LOG}"
+say "expect roughly 3-4 hours end to end on 8 GPUs at pass@${NUM_GENERATIONS}"
 
 # ---------------------------------------------------------------- preflight --
 # Fail before loading 62 GB of weights, with a message that names what to supply.
@@ -150,11 +161,22 @@ require_input "${DATABASE_DIR}" \
   "The ${SPLIT} SQLite databases, one directory per db_id."
 
 if [[ -z "${MODEL_PATH}" ]]; then
-  say "FATAL: MODEL_PATH is not set."
-  say "       Set it to a Hugging Face repo id or a local weights directory, e.g."
-  say "         MODEL_PATH=<org>/<repo> bash run.sh"
-  say "         MODEL_PATH=/path/to/checkpoint bash run.sh"
-  say "       Or edit the MODEL_PATH default near the top of this script."
+  say "FATAL: MODEL_PATH is not set. There is no default: two checkpoints are"
+  say "       submitted, so the model must be named explicitly on every run."
+  say ""
+  say "       Primary model (evaluate this one first):"
+  say "         MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-sft-rl \\"
+  say "         RUN_ROOT=outputs/bird_test_sft_rl \\"
+  say "           bash run.sh"
+  say ""
+  say "       Second model:"
+  say "         MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-rl \\"
+  say "         RUN_ROOT=outputs/bird_test_rl_only \\"
+  say "           bash run.sh"
+  say ""
+  say "       A local weights directory also works:"
+  say "         MODEL_PATH=/path/to/checkpoint RUN_ROOT=outputs/local bash run.sh"
+  say "       See README, Step 6 and Step 7."
   preflight_failed=1
 fi
 
@@ -185,7 +207,7 @@ else
     --dev-input "data/bird_${SPLIT}_data/raw/${SPLIT}.json" \
     --dev-output "${FEWSHOT_JSON}" \
     --top-n "${FEWSHOT_TOP_N}"
-  say "stage 0/4 done"
+  say "stage 0/4 done [elapsed $(elapsed)]"
 fi
 manifest_add "0-fewshot" "${FEWSHOT_JSON}" "$(count_rows "${FEWSHOT_JSON}")" "ok"
 
@@ -222,7 +244,7 @@ else
     --input-file "${FEWSHOT_JSON}" \
     --n-examples "${NUM_EXAMPLES}" \
     --output "${SCHEMA_JSONL}"
-  say "stage 1/4 done: $(wc -l < "${SCHEMA_JSONL}") rows"
+  say "stage 1/4 done: $(wc -l < "${SCHEMA_JSONL}") rows [elapsed $(elapsed)]"
 fi
 manifest_add "1-schema" "${SCHEMA_JSONL}" "$(count_rows "${SCHEMA_JSONL}")" "ok"
 
@@ -234,7 +256,7 @@ else
   "${PYTHON_BIN}" scripts/data_generation/build_tool_dataset.py \
     --input "${SCHEMA_JSONL}" \
     --output "${TOOL_JSONL}"
-  say "stage 2/4 done: $(wc -l < "${TOOL_JSONL}") rows"
+  say "stage 2/4 done: $(wc -l < "${TOOL_JSONL}") rows [elapsed $(elapsed)]"
 fi
 manifest_add "2-tool" "${TOOL_JSONL}" "$(count_rows "${TOOL_JSONL}")" "ok"
 
@@ -304,12 +326,70 @@ fi
 if [[ -s "${PASSK_CANDIDATES}" ]] && is_done "${PASSK_DIR}"; then
   say "stage 3/4 pass@${NUM_GENERATIONS}: reusing candidates in ${PASSK_CANDIDATES}"
 else
+  # ---- prefetch the weights in ONE process before the shards start ----------
+  # Each shard resolves MODEL_PATH independently. With a repo id and a cold
+  # cache that means N processes hitting the hub at once: huggingface_hub locks
+  # per file so only one actually transfers, but the others block on that lock
+  # and the transfer itself has been observed to hang in hf_xet's finalize step
+  # under concurrent access. Downloading once, serially, removes the race
+  # entirely -- afterwards every shard is a cache hit.
+  #
+  # Idempotent: a warm cache or a local directory makes this a no-op.
+  if [[ -d "${MODEL_PATH}" ]]; then
+    say "stage 3/4 weights: MODEL_PATH is a local directory, nothing to download"
+  else
+    say "stage 3/4 weights: downloading ${MODEL_PATH}"
+    say "           single process, before any sharding; ~58 GB on a cold cache"
+    say "           cache=${HF_HOME:-${HOME}/.cache/huggingface}"
+    say "           this is the slowest stage on a first run -- please be patient"
+    if ! "${PYTHON_BIN}" - "${MODEL_PATH}" <<'PYPREFETCH'
+import sys
+from huggingface_hub import snapshot_download
+repo = sys.argv[1]
+path = snapshot_download(repo_id=repo, max_workers=8)
+print(f"[prefetch] weights ready at {path}", flush=True)
+PYPREFETCH
+    then
+      say "FATAL: could not download ${MODEL_PATH}"
+      say "       Check HF_TOKEN is exported and has read access to that repo:"
+      say "         export HF_TOKEN=<read token>"
+      say "       For a private repo an unset or wrong token gives 401/403."
+      say "       If the transfer stalls, retry with:  HF_HUB_DISABLE_XET=1"
+      exit 1
+    fi
+    say "stage 3/4 weights: ready [elapsed $(elapsed)]"
+  fi
+
   say "stage 3/4 pass@${NUM_GENERATIONS}: sampling into ${PASSK_DIR} across ${NUM_SHARDS} shard(s)"
   say "           (an interrupted shard resumes from its generation_progress.jsonl)"
 
   if [[ "${NUM_SHARDS}" -eq 1 ]]; then
     run_passk_shard 0 1 "$(seq -s, 0 $(( VLLM_TENSOR_PARALLEL_SIZE - 1 )))"
   else
+    say "           each shard loads ~62 GB of weights first; expect 2-5 minutes"
+    say "           of silence before the first token is generated"
+    say "           per-shard detail goes to ${PASSK_DIR}-shard<N>.log"
+
+    # Shard stdout is redirected to per-shard logs, so this stage would
+    # otherwise print nothing for hours. Poll those logs and summarise, so the
+    # run is visibly alive. Killed as soon as the shards are done.
+    heartbeat() {
+      local interval="${PROGRESS_INTERVAL:-300}"
+      while true; do
+        sleep "${interval}"
+        local line="" n
+        for (( i = 0; i < NUM_SHARDS; i++ )); do
+          n="$(grep -oE 'generated [0-9]+/[0-9]+' "${PASSK_DIR}-shard${i}.log" 2>/dev/null | tail -1 | grep -oE '[0-9]+/[0-9]+' || true)"
+          line+=" shard${i}=${n:-loading}"
+        done
+        say "  generating [elapsed $(elapsed)]:${line}"
+      done
+    }
+    heartbeat &
+    HEARTBEAT_PID=$!
+    # Stop the heartbeat however this stage ends, including on error.
+    trap 'kill "${HEARTBEAT_PID}" 2>/dev/null || true' EXIT
+
     shard_pids=()
     for (( shard = 0; shard < NUM_SHARDS; shard++ )); do
       first_gpu=$(( shard * VLLM_TENSOR_PARALLEL_SIZE ))
@@ -331,10 +411,14 @@ else
         failed=1
       fi
     done
+    kill "${HEARTBEAT_PID}" 2>/dev/null || true
+    trap - EXIT
+
     if [[ "${failed}" -ne 0 ]]; then
       say "FATAL: at least one pass@k shard failed; rerun this script to resume"
       exit 1
     fi
+    say "all ${NUM_SHARDS} shards finished [elapsed $(elapsed)]"
 
     say "merging ${NUM_SHARDS} shards"
     "${PYTHON_BIN}" scripts/run_passk_bird.py \
@@ -356,7 +440,7 @@ else
   done
   manifest_add "3-passk" "${PASSK_CANDIDATES}" "$(count_rows "${PASSK_CANDIDATES}")" "ok"
   mark_done "${PASSK_DIR}"
-  say "stage 3/4 done"
+  say "stage 3/4 done [elapsed $(elapsed)]"
 fi
 
 # ------------------------------------------------------ 4. self-consistency vote --
@@ -364,7 +448,8 @@ PREDICTIONS_PATH="${SC_DIR}/${PREDICTIONS_FILENAME}"
 if [[ -s "${PREDICTIONS_PATH}" ]] && is_done "${SC_DIR}"; then
   say "stage 4/4 self-consistency: reusing ${PREDICTIONS_PATH}"
 else
-  say "stage 4/4 self-consistency: voting into ${SC_DIR}"
+  say "stage 4/4 self-consistency: executing every candidate, then voting into ${SC_DIR}"
+  say "           this runs all $(( NUM_GENERATIONS * $(wc -l < "${TOOL_JSONL}") )) candidates against the databases; a few minutes"
   "${PYTHON_BIN}" scripts/run_self_consistency_bird.py \
     --passk_candidates_path "${PASSK_CANDIDATES}" \
     --input_file "${TOOL_JSONL}" \
@@ -378,7 +463,7 @@ else
   manifest_add "4-self-consistency" "${PREDICTIONS_PATH}" \
     "$(count_rows "${PREDICTIONS_PATH}")" "ok"
   mark_done "${SC_DIR}"
-  say "stage 4/4 done"
+  say "stage 4/4 done [elapsed $(elapsed)]"
 fi
 
 # ----------------------------------------------------------------- final check --
@@ -418,6 +503,9 @@ PY
 manifest_add "5-verify" "${PREDICTIONS_PATH}" "$(count_rows "${PREDICTIONS_PATH}")" "verified"
 mark_done "${RUN_ROOT}"
 
-say "COMPLETE"
+say "=============================================================="
+say "COMPLETE in $(elapsed)"
+say "=============================================================="
 say "submit this file: ${PREDICTIONS_PATH}"
 say "run manifest:     ${MANIFEST}"
+say "full log:         ${LOG}"

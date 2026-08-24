@@ -18,3 +18,10 @@ protobuf==6.33.6
 
 # BM25 retrieval used by the schema search tool.
 rank-bm25==0.2.2
+
+# Weight download. Pinned rather than left to transformers' resolver: the
+# pipeline prefetches the model through huggingface_hub before sharding, and
+# hf-xet is the transfer backend that prefetch relies on. If a download stalls,
+# set HF_HUB_DISABLE_XET=1 to fall back to plain HTTP.
+huggingface_hub==1.14.0
+hf-xet==1.5.0
