@@ -23,7 +23,7 @@ EVAL_TIMEOUT="${EVAL_TIMEOUT:-30}"
 # Tool calls during generation keep the more generous budget; this is the
 # model exploring the database, not the graded query.
 TOOL_TIMEOUT="${TOOL_TIMEOUT:-60}"
-EVAL_WORKERS="${EVAL_WORKERS:-16}"
+EVAL_WORKERS="${EVAL_WORKERS:-8}"
 SHARD_INDEX="${SHARD_INDEX:-0}"
 NUM_SHARDS="${NUM_SHARDS:-1}"
 NO_APPEND_SHARD_TO_OUTPUT_DIR="${NO_APPEND_SHARD_TO_OUTPUT_DIR:-0}"

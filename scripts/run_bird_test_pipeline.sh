@@ -64,7 +64,7 @@ EVAL_TIMEOUT="${EVAL_TIMEOUT:-30}"
 # Tool calls during generation keep the more generous budget; this is the
 # model exploring the database, not the graded query.
 TOOL_TIMEOUT="${TOOL_TIMEOUT:-60}"
-EVAL_WORKERS="${EVAL_WORKERS:-16}"
+EVAL_WORKERS="${EVAL_WORKERS:-8}"
 FALLBACK_SQL="${FALLBACK_SQL:-SELECT 1}"
 # When a rollout exhausts MAX_TOOL_ROUNDS with a tool call still pending, give it
 # one non-tool turn to commit to SQL instead of returning nothing. Set to 0 to

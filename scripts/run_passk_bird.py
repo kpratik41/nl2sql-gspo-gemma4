@@ -96,7 +96,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval_timeout", type=float, default=30.0)
     # Tool calls made during generation get their own, more generous budget.
     parser.add_argument("--tool_timeout", type=float, default=60.0)
-    parser.add_argument("--eval_workers", type=int, default=16)
+    parser.add_argument("--eval_workers", type=int, default=8)
     parser.add_argument("--vllm_tensor_parallel_size", type=int, default=8)
     parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.96)
     # Must exceed max_prompt_length; the tool loop appends each tool response to

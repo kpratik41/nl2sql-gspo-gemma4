@@ -355,6 +355,7 @@ submission run — `MODEL_PATH` and `RUN_ROOT` are the two you set explicitly.
 | `FALLBACK_SQL` | `SELECT 1` | written for a question that could not be generated |
 | `FEWSHOT_TOP_N` | `3` | demonstrations per question; matches the prompt the model was tuned on |
 | `PROGRESS_INTERVAL` | `300` | seconds between generation progress lines |
+| `EVAL_WORKERS` | `8` | threads used to execute candidates when scoring and voting |
 
 ## Smoke Test
 
@@ -498,6 +499,24 @@ No work already generated is repeated and no tokens are spent twice.
 example is already present, the model is not even loaded and the run proceeds
 straight to scoring. A progress file torn by a hard kill is handled: the partial
 final line is discarded and that single example is regenerated.
+
+**That said, if a run is interrupted we recommend restarting the pipeline from
+the beginning rather than resuming.** Delete the run directory and launch the
+same command again:
+
+```bash
+rm -rf outputs/bird_test_sft_rl
+MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-sft-rl \
+RUN_ROOT=outputs/bird_test_sft_rl \
+  bash run.sh
+```
+
+Resume is there so a long run is not lost to a transient failure, but a clean
+restart is the safest way to be certain no samples were dropped by whatever
+interrupted the run — a dropped sample means fewer candidates in the
+self-consistency vote for that question, and therefore a small accuracy cost.
+Given the accuracy of the submitted numbers matters more than the extra hours, we
+would rather you restart from scratch if anything goes wrong mid-run.
 
 Generation is checkpointed per example. Every completed example is appended to
 `generation_progress.jsonl` and fsynced before the next one starts, so a crash,
