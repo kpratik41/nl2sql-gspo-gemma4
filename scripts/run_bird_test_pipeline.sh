@@ -157,6 +157,9 @@ require_input "data/bird_${SPLIT}_data/raw/${SPLIT}.json" \
 require_input "data/bird_${SPLIT}_data/raw/column_meaning.json" \
   "THIS PIPELINE REQUIRES column_meaning.json. It ships alongside ${SPLIT}.json in the BIRD data release. Column descriptions are inlined into every prompt by schema_build.py; the run cannot proceed without them."
 
+require_input "data/bird_${SPLIT}_data/raw/${SPLIT}_tables.json" \
+  "The ${SPLIT} schema description, as provided by the BIRD team."
+
 require_input "${DATABASE_DIR}" \
   "The ${SPLIT} SQLite databases, one directory per db_id."
 

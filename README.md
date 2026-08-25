@@ -66,8 +66,12 @@ Copy these three files from the BIRD test release into
 ```text
 data/bird_test_data/raw/test.json              questions; the "SQL" field is empty
 data/bird_test_data/raw/test_tables.json       schema description
-data/bird_test_data/raw/column_meaning.json    per-column descriptions (REQUIRED)
+data/bird_test_data/raw/column_meaning.json    per-column descriptions
 ```
+
+All three are mandatory and all three are checked during preflight: a missing
+file stops the run immediately with a message naming it, before any weights are
+loaded.
 
 **`column_meaning.json` is not optional.** The schema builder inlines those
 descriptions into every prompt, and the models were tuned on prompts containing
@@ -373,7 +377,19 @@ bash scripts/launch_inference.sh
 ```
 
 It writes an official-format `predict_dev.json` and computes BIRD-style
-execution accuracy. Sharding is handled the same way as the pipeline: set
+execution accuracy.
+
+**After any trial run, clean up before the real one.** Delete the run directory
+*and* the few-shot file, which is written to a fixed path outside it:
+
+```bash
+rm -rf outputs/<the trial run root>
+rm -f data/bird_test_data/raw/test-few-shot.json
+```
+
+A trial run limited with `NUM_EXAMPLES` builds `test-few-shot.json` from that
+truncated set. Left in place, the real run reuses it instead of rebuilding, so
+the safest habit is to remove both and use a fresh `RUN_ROOT`. Sharding is handled the same way as the pipeline: set
 `NUM_SHARDS` and `VLLM_TENSOR_PARALLEL_SIZE`, and run one process per shard with
 `SHARD_INDEX` and `INFERENCE_CUDA_VISIBLE_DEVICES` set. Prefer
 `scripts/run_bird_test_pipeline.sh`, which does that fan-out and the merge for
@@ -501,15 +517,27 @@ straight to scoring. A progress file torn by a hard kill is handled: the partial
 final line is discarded and that single example is regenerated.
 
 **That said, if a run is interrupted we recommend restarting the pipeline from
-the beginning rather than resuming.** Delete the run directory and launch the
-same command again:
+the beginning rather than resuming.** Delete **two** things and launch the same
+command again:
 
 ```bash
+# 1. the run directory
 rm -rf outputs/bird_test_sft_rl
+
+# 2. the few-shot file -- it lives at a FIXED path, not under RUN_ROOT
+rm -f data/bird_test_data/raw/test-few-shot.json
+
 MODEL_PATH=pratikkakkar/gemma-4-31b-it-bird-sft-rl \
 RUN_ROOT=outputs/bird_test_sft_rl \
   bash run.sh
 ```
+
+The second one is easy to miss. Stage 0 writes `test-few-shot.json` into
+`data/bird_test_data/raw/`, **outside** the run directory, and reuses it when it
+already exists. Deleting only the run directory therefore leaves the previous
+run's few-shot file in place. That is harmless if `test.json` has not changed,
+but if the earlier run used a different or partial `test.json`, the new run would
+silently inherit demonstrations built for the wrong question set.
 
 Resume is there so a long run is not lost to a transient failure, but a clean
 restart is the safest way to be certain no samples were dropped by whatever
