@@ -93,6 +93,161 @@ signal is <em>which</em> of the equally-good tokens was chosen. Detection replay
 over the candidate text, computes the g-values that generation would have used, and asks
 whether they are biased upward. Under the null hypothesis — text not watermarked with this
 key — each g-value is an unbiased coin flip and the mean sits at 0.5.</p>
+<h3 id="what-that-looks-like-on-real-text">What that looks like on real text</h3>
+<p>Here is a passage the model actually generated, token by token. Each token gets 30
+independent coin flips — one per key in the bundle — seeded by the secret key and the four
+tokens immediately before it. The same passage is also scored under a <em>different</em> key.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Token</th>
+<th>Heads (of 30)</th>
+<th>g</th>
+<th>Running mean g</th>
+<th>g, wrong key</th>
+<th>Running mean, wrong key</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>relentless</code></td>
+<td>17/30</td>
+<td>0.567</td>
+<td><strong>0.567</strong></td>
+<td>0.567</td>
+<td>0.567</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>sculptor</code></td>
+<td>13/30</td>
+<td>0.433</td>
+<td><strong>0.500</strong></td>
+<td>0.633</td>
+<td>0.600</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>against</code></td>
+<td>19/30</td>
+<td>0.633</td>
+<td><strong>0.544</strong></td>
+<td>0.700</td>
+<td>0.633</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>the</code></td>
+<td>16/30</td>
+<td>0.533</td>
+<td><strong>0.542</strong></td>
+<td>0.567</td>
+<td>0.617</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>granite</code></td>
+<td>15/30</td>
+<td>0.500</td>
+<td><strong>0.533</strong></td>
+<td>0.467</td>
+<td>0.587</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>tower</code></td>
+<td>13/30</td>
+<td>0.433</td>
+<td><strong>0.517</strong></td>
+<td>0.400</td>
+<td>0.556</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>of</code></td>
+<td>14/30</td>
+<td>0.467</td>
+<td><strong>0.510</strong></td>
+<td>0.500</td>
+<td>0.548</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>the</code></td>
+<td>11/30</td>
+<td>0.367</td>
+<td><strong>0.492</strong></td>
+<td>0.567</td>
+<td>0.550</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>Black</code></td>
+<td>16/30</td>
+<td>0.533</td>
+<td><strong>0.496</strong></td>
+<td>0.500</td>
+<td>0.544</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>water</code></td>
+<td>17/30</td>
+<td>0.567</td>
+<td><strong>0.503</strong></td>
+<td>0.467</td>
+<td>0.537</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>Point</code></td>
+<td>14/30</td>
+<td>0.467</td>
+<td><strong>0.500</strong></td>
+<td>0.600</td>
+<td>0.542</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>lighthouse</code></td>
+<td>15/30</td>
+<td>0.500</td>
+<td><strong>0.500</strong></td>
+<td>0.500</td>
+<td>0.539</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>.</code></td>
+<td>18/30</td>
+<td>0.600</td>
+<td><strong>0.508</strong></td>
+<td>0.467</td>
+<td>0.533</td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>Silas</code></td>
+<td>19/30</td>
+<td>0.633</td>
+<td><strong>0.517</strong></td>
+<td>0.600</td>
+<td>0.538</td>
+</tr>
+</tbody>
+</table></div>
+<p>Over the full 396-token passage: correct key <strong>0.5372</strong>, a different key 0.5096, null expectation 0.5000 (z = +8.11, p = 2.5e-16).</p>
+<p>This is the whole idea in one table. <strong>No individual token is a tell.</strong> Token 8 comes up
+0.367 under the correct key, well <em>below</em> chance; token 3 comes up 0.633 under the wrong
+one. Reading any single row, you could not say which key produced the text — which is
+precisely why a reader sees nothing unusual and why the watermark costs no quality.</p>
+<p>The signal lives only in the average. Watch the two running means: they are
+indistinguishable for the first dozen tokens, and only over hundreds of tokens does the
+correct key's average settle above 0.5 while the wrong key's stays at chance. That single
+observation explains most of §4 — why detection needs length, why one key cannot read
+another's traffic, and why an edit that changes tokens costs signal.</p>
 <p>Two properties follow directly from the mechanism, and they bound everything in §4:</p>
 <ul>
 <li><strong>It can only use randomness that already exists.</strong> Where the model is nearly certain of

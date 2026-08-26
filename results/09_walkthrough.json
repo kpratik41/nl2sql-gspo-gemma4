@@ -1,0 +1,156 @@
+{
+  "prompt": "Write a short story about a lighthouse keeper who finds a message in a bottle.",
+  "text_preview": "The wind was a relentless sculptor against the granite tower of the Blackwater Point lighthouse. Silas, a man whose face seemed etched by the salty spray and the endless monochrome of the North Atlant",
+  "model": "google/gemma-4-E4B-it",
+  "depth": 30,
+  "ngram_len": 5,
+  "tokens": [
+    {
+      "index": 1,
+      "token": " relentless",
+      "heads": 17,
+      "depth": 30,
+      "g": 0.5666666626930237,
+      "running_g": 0.5666666626930237,
+      "g_wrong_key": 0.5666666626930237,
+      "running_g_wrong_key": 0.5666666626930237
+    },
+    {
+      "index": 2,
+      "token": " sculptor",
+      "heads": 13,
+      "depth": 30,
+      "g": 0.4333333373069763,
+      "running_g": 0.5,
+      "g_wrong_key": 0.6333333253860474,
+      "running_g_wrong_key": 0.5999999940395355
+    },
+    {
+      "index": 3,
+      "token": " against",
+      "heads": 19,
+      "depth": 30,
+      "g": 0.6333333253860474,
+      "running_g": 0.5444444417953491,
+      "g_wrong_key": 0.699999988079071,
+      "running_g_wrong_key": 0.6333333253860474
+    },
+    {
+      "index": 4,
+      "token": " the",
+      "heads": 16,
+      "depth": 30,
+      "g": 0.5333333611488342,
+      "running_g": 0.5416666716337204,
+      "g_wrong_key": 0.5666666626930237,
+      "running_g_wrong_key": 0.6166666597127914
+    },
+    {
+      "index": 5,
+      "token": " granite",
+      "heads": 15,
+      "depth": 30,
+      "g": 0.5,
+      "running_g": 0.5333333373069763,
+      "g_wrong_key": 0.46666666865348816,
+      "running_g_wrong_key": 0.5866666615009308
+    },
+    {
+      "index": 6,
+      "token": " tower",
+      "heads": 13,
+      "depth": 30,
+      "g": 0.4333333373069763,
+      "running_g": 0.5166666706403097,
+      "g_wrong_key": 0.4000000059604645,
+      "running_g_wrong_key": 0.5555555522441864
+    },
+    {
+      "index": 7,
+      "token": " of",
+      "heads": 14,
+      "depth": 30,
+      "g": 0.46666666865348816,
+      "running_g": 0.5095238132136208,
+      "g_wrong_key": 0.5,
+      "running_g_wrong_key": 0.5476190447807312
+    },
+    {
+      "index": 8,
+      "token": " the",
+      "heads": 11,
+      "depth": 30,
+      "g": 0.36666667461395264,
+      "running_g": 0.49166667088866234,
+      "g_wrong_key": 0.5666666626930237,
+      "running_g_wrong_key": 0.5499999970197678
+    },
+    {
+      "index": 9,
+      "token": " Black",
+      "heads": 16,
+      "depth": 30,
+      "g": 0.5333333611488342,
+      "running_g": 0.49629630313979256,
+      "g_wrong_key": 0.5,
+      "running_g_wrong_key": 0.5444444417953491
+    },
+    {
+      "index": 10,
+      "token": "water",
+      "heads": 17,
+      "depth": 30,
+      "g": 0.5666666626930237,
+      "running_g": 0.5033333390951157,
+      "g_wrong_key": 0.46666666865348816,
+      "running_g_wrong_key": 0.5366666644811631
+    },
+    {
+      "index": 11,
+      "token": " Point",
+      "heads": 14,
+      "depth": 30,
+      "g": 0.46666666865348816,
+      "running_g": 0.5000000054186041,
+      "g_wrong_key": 0.6000000238418579,
+      "running_g_wrong_key": 0.5424242426048625
+    },
+    {
+      "index": 12,
+      "token": " lighthouse",
+      "heads": 15,
+      "depth": 30,
+      "g": 0.5,
+      "running_g": 0.5000000049670538,
+      "g_wrong_key": 0.5,
+      "running_g_wrong_key": 0.5388888890544573
+    },
+    {
+      "index": 13,
+      "token": ".",
+      "heads": 18,
+      "depth": 30,
+      "g": 0.6000000238418579,
+      "running_g": 0.5076923141112695,
+      "g_wrong_key": 0.46666666865348816,
+      "running_g_wrong_key": 0.5333333336389982
+    },
+    {
+      "index": 14,
+      "token": " Silas",
+      "heads": 19,
+      "depth": 30,
+      "g": 0.6333333253860474,
+      "running_g": 0.5166666720594678,
+      "g_wrong_key": 0.6000000238418579,
+      "running_g_wrong_key": 0.5380952400820596
+    }
+  ],
+  "whole_passage": {
+    "tokens_scored": 396,
+    "mean_g_correct_key": 0.5372053980827332,
+    "mean_g_wrong_key": 0.5095959901809692,
+    "z_score": 8.110435440925812,
+    "p_value": 2.521934049602032e-16
+  }
+}

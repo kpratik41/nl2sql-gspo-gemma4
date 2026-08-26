@@ -37,10 +37,14 @@ head = (S/"report_head.md").read_text()
 tail = (S/"report_tail.md").read_text()
 body = (S/"report_body.md").read_text()
 
+# Placeholders may appear in any of the three prose files, not just the body.
 for key, block in blocks.items():
-    body = body.replace(f"{{{{{key}}}}}", block)
+    ph = f"{{{{{key}}}}}"
+    head = head.replace(ph, block)
+    body = body.replace(ph, block)
+    tail = tail.replace(ph, block)
 
-left = re.findall(r"\{\{T\d+\}\}", body)
+left = re.findall(r"\{\{T\d+\}\}", head + body + tail)
 if left:
     print(f"WARNING: unreplaced placeholders: {left}", file=sys.stderr)
 

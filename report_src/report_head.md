@@ -41,6 +41,25 @@ over the candidate text, computes the g-values that generation would have used, 
 whether they are biased upward. Under the null hypothesis — text not watermarked with this
 key — each g-value is an unbiased coin flip and the mean sits at 0.5.
 
+### What that looks like on real text
+
+Here is a passage the model actually generated, token by token. Each token gets 30
+independent coin flips — one per key in the bundle — seeded by the secret key and the four
+tokens immediately before it. The same passage is also scored under a *different* key.
+
+{{T18}}
+
+This is the whole idea in one table. **No individual token is a tell.** Token 8 comes up
+0.367 under the correct key, well *below* chance; token 3 comes up 0.633 under the wrong
+one. Reading any single row, you could not say which key produced the text — which is
+precisely why a reader sees nothing unusual and why the watermark costs no quality.
+
+The signal lives only in the average. Watch the two running means: they are
+indistinguishable for the first dozen tokens, and only over hundreds of tokens does the
+correct key's average settle above 0.5 while the wrong key's stays at chance. That single
+observation explains most of §4 — why detection needs length, why one key cannot read
+another's traffic, and why an edit that changes tokens costs signal.
+
 Two properties follow directly from the mechanism, and they bound everything in §4:
 
 - **It can only use randomness that already exists.** Where the model is nearly certain of

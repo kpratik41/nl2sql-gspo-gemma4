@@ -262,6 +262,23 @@ def processor_cost():
         print(f"| {dep} | {ms:.2f} |")
 
 
+def walkthrough():
+    """The token-by-token illustration used in section 2."""
+    d = load("09_walkthrough.json")
+    if not d:
+        return
+    print("\n### T18 — Token-by-token: the same passage under the correct key and a different one\n")
+    print(f"| # | Token | Heads (of {d['depth']}) | g | Running mean g | g, wrong key | Running mean, wrong key |")
+    print("|---|---|---|---|---|---|---|")
+    for r in d["tokens"]:
+        print(f"| {r['index']} | `{r['token']}` | {r['heads']}/{r['depth']} | {r['g']:.3f} | "
+              f"**{r['running_g']:.3f}** | {r['g_wrong_key']:.3f} | {r['running_g_wrong_key']:.3f} |")
+    w = d["whole_passage"]
+    print(f"\nOver the full {w['tokens_scored']}-token passage: correct key **{w['mean_g_correct_key']:.4f}**, "
+          f"a different key {w['mean_g_wrong_key']:.4f}, null expectation 0.5000 "
+          f"(z = {w['z_score']:+.2f}, p = {w['p_value']:.1e}).")
+
+
 def bayesian():
     d = load("06_bayesian.json")
     if not d:
@@ -278,7 +295,7 @@ def bayesian():
 
 
 if __name__ == "__main__":
-    for fn in (detectability, quality, robustness, overhead, processor_cost, bayesian):
+    for fn in (detectability, quality, robustness, overhead, processor_cost, walkthrough, bayesian):
         try:
             fn()
         except Exception as e:  # a missing study should not block the rest

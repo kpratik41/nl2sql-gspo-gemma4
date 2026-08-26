@@ -41,6 +41,42 @@ over the candidate text, computes the g-values that generation would have used, 
 whether they are biased upward. Under the null hypothesis — text not watermarked with this
 key — each g-value is an unbiased coin flip and the mean sits at 0.5.
 
+### What that looks like on real text
+
+Here is a passage the model actually generated, token by token. Each token gets 30
+independent coin flips — one per key in the bundle — seeded by the secret key and the four
+tokens immediately before it. The same passage is also scored under a *different* key.
+
+| # | Token | Heads (of 30) | g | Running mean g | g, wrong key | Running mean, wrong key |
+|---|---|---|---|---|---|---|
+| 1 | ` relentless` | 17/30 | 0.567 | **0.567** | 0.567 | 0.567 |
+| 2 | ` sculptor` | 13/30 | 0.433 | **0.500** | 0.633 | 0.600 |
+| 3 | ` against` | 19/30 | 0.633 | **0.544** | 0.700 | 0.633 |
+| 4 | ` the` | 16/30 | 0.533 | **0.542** | 0.567 | 0.617 |
+| 5 | ` granite` | 15/30 | 0.500 | **0.533** | 0.467 | 0.587 |
+| 6 | ` tower` | 13/30 | 0.433 | **0.517** | 0.400 | 0.556 |
+| 7 | ` of` | 14/30 | 0.467 | **0.510** | 0.500 | 0.548 |
+| 8 | ` the` | 11/30 | 0.367 | **0.492** | 0.567 | 0.550 |
+| 9 | ` Black` | 16/30 | 0.533 | **0.496** | 0.500 | 0.544 |
+| 10 | `water` | 17/30 | 0.567 | **0.503** | 0.467 | 0.537 |
+| 11 | ` Point` | 14/30 | 0.467 | **0.500** | 0.600 | 0.542 |
+| 12 | ` lighthouse` | 15/30 | 0.500 | **0.500** | 0.500 | 0.539 |
+| 13 | `.` | 18/30 | 0.600 | **0.508** | 0.467 | 0.533 |
+| 14 | ` Silas` | 19/30 | 0.633 | **0.517** | 0.600 | 0.538 |
+
+Over the full 396-token passage: correct key **0.5372**, a different key 0.5096, null expectation 0.5000 (z = +8.11, p = 2.5e-16).
+
+This is the whole idea in one table. **No individual token is a tell.** Token 8 comes up
+0.367 under the correct key, well *below* chance; token 3 comes up 0.633 under the wrong
+one. Reading any single row, you could not say which key produced the text — which is
+precisely why a reader sees nothing unusual and why the watermark costs no quality.
+
+The signal lives only in the average. Watch the two running means: they are
+indistinguishable for the first dozen tokens, and only over hundreds of tokens does the
+correct key's average settle above 0.5 while the wrong key's stays at chance. That single
+observation explains most of §4 — why detection needs length, why one key cannot read
+another's traffic, and why an edit that changes tokens costs signal.
+
 Two properties follow directly from the mechanism, and they bound everything in §4:
 
 - **It can only use randomness that already exists.** Where the model is nearly certain of
