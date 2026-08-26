@@ -1,0 +1,43 @@
+==============================================================================
+Quality and accuracy under watermarking
+==============================================================================
+==============================================================================
+1. Diversity and degeneracy on the generated corpus (paired by prompt)
+==============================================================================
+code         n=  96  distinct-2 wm 0.9005 vs 0.9007 (diff -0.0002 [-0.0090,+0.0084])
+                    rep-4gram  wm 0.0523 vs 0.0570 (diff -0.0047 [-0.0159,+0.0061])
+creative     n=  96  distinct-2 wm 0.9628 vs 0.9640 (diff -0.0012 [-0.0046,+0.0022])
+                    rep-4gram  wm 0.0006 vs 0.0006 (diff +0.0001 [-0.0006,+0.0007])
+factual      n=  76  distinct-2 wm 0.9774 vs 0.9801 (diff -0.0027 [-0.0075,+0.0030])
+                    rep-4gram  wm 0.0088 vs 0.0092 (diff -0.0004 [-0.0051,+0.0034])
+financial    n=  96  distinct-2 wm 0.9350 vs 0.9408 (diff -0.0057 [-0.0119,+0.0003])
+                    rep-4gram  wm 0.0173 vs 0.0135 (diff +0.0038 [-0.0011,+0.0090])
+open_ended   n=  96  distinct-2 wm 0.9596 vs 0.9602 (diff -0.0006 [-0.0041,+0.0028])
+                    rep-4gram  wm 0.0045 vs 0.0043 (diff +0.0003 [-0.0015,+0.0021])
+structured   n=  64  distinct-2 wm 0.9621 vs 0.9622 (diff -0.0000 [-0.0040,+0.0045])
+                    rep-4gram  wm 0.0119 vs 0.0134 (diff -0.0015 [-0.0074,+0.0052])
+==============================================================================
+2. Fluency: perplexity under an independent judge (google/gemma-4-E2B-it)
+==============================================================================
+The judge must be a different model. Scoring watermarked text with the model
+that produced it is biased against it by construction: SynthID selects among
+near-ties using the g-function rather than raw probability, so watermarked
+text sits slightly off that model's own argmax path regardless of quality.
+A different-sized sibling has different weights and a different argmax path,
+so it does not inherit that bias, though it does share a tokenizer and
+training lineage -- an independent architecture would be a stronger control.
+creative     n=  96  PPL wm 17.789 vs un 17.395  diff +0.394 [-0.557,+1.355]  no significant difference
+open_ended   n=  96  PPL wm 5.480 vs un 5.511  diff -0.030 [-0.268,+0.203]  no significant difference
+financial    n=  96  PPL wm 5.694 vs un 5.686  diff +0.008 [-0.399,+0.449]  no significant difference
+==============================================================================
+3. Task accuracy: GSM8K (250 problems, sampled CoT, temperature 1.0)
+==============================================================================
+  watermarked    156/250 = 0.624  (270 tok/s)
+  unwatermarked  161/250 = 0.644  (623 tok/s)
+  accuracy delta (watermarked - unwatermarked): -0.0200 [-0.1037, +0.0641]
+  items correct only when watermarked:   15
+  items correct only when unwatermarked: 20
+  Both arms sample at temperature 1.0, so item-level flips in both
+  directions are expected from sampling noise alone.
+  wrote results/03_gsm8k_samples.json
+  wrote results/03_quality.json

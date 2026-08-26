@@ -1,0 +1,29 @@
+==============================================================================
+Inference overhead | google/gemma-4-E4B-it
+==============================================================================
+==============================================================================
+1. Generation throughput, watermark on vs off
+==============================================================================
+ batch  plain tok/s   wm tok/s  overhead
+     1         26.9       25.8     4.2%
+     4         99.9       87.2    12.7%
+    16        398.0      241.4    39.4%
+    32        770.4      329.0    57.3%
+==============================================================================
+2. Cost of watermarking depth (batch size 16)
+==============================================================================
+ depth   wm tok/s  overhead
+     1      392.7     1.3%
+     5      369.1     7.3%
+    10      337.7    15.2%
+    30      241.1    39.4%
+Depth is the detection-power / decoding-cost knob: more depth means more
+independent g-values per token, and more work per decoding step.
+==============================================================================
+3. Detection throughput
+==============================================================================
+cpu        1082.6 texts/s  (0.9 ms per 252-token text)
+cuda:0     1241.9 texts/s  (0.8 ms per 252-token text)
+Detection is a hash plus a mean: it needs the tokenizer, not the model,
+and runs fast enough on CPU that a detection service needs no GPU.
+  wrote results/05_overhead.json

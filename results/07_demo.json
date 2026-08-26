@@ -1,0 +1,46 @@
+{
+  "prompt": "Write three paragraphs explaining to a client why bond prices fall when interest rates rise.",
+  "watermarked": "When prevailing interest rates in the broader economy rise, the market value of existing bonds tends to fall, and this relationship is rooted in the concept of relative value. A bond is essentially an IOU that promises a fixed stream of interest payments (the coupon) and the return of the principal on a specific maturity date. When new bonds are issued in a higher-rate environment, those new bonds offer a more attractive yield to investors. For example, if an existing bond pays a 3% coupon, but a new, comparable bond is now available paying 5%, the original 3% bond becomes less desirable. To make the older, lower-paying bond competitive with the new, higher-yielding options, its market price must decrease until its overall effective yield matches the prevailing higher market rates.\n\nThis concept is best understood by thinking about yield as an inverse function of price. Bond investors are primarily concerned with the yield they receive relative to the current market. If interest rates rise, the \"opportunity cost\" of holding a fixed-rate, lower-paying bond increases. If you can now earn 5% risk-free in the market, why would you buy a bond that only promises 3%? To incentivize an investor to purchase the older, lower-coupon bond, its price must drop. This drop in price effectively increases the buyer's yield-to-maturity (YTM). The lower purchase price, combined with the fixed coupon payments, mathematically boosts the effective return to be more attractive to the market, aligning it with the new, higher interest rate environment.\n\nIn summary",
+  "unwatermarked": "When interest rates in the broader economy rise, bond prices typically move in the opposite direction, which can seem counterintuitive at first. The core reason lies in the relationship between the fixed coupon payments a bond provides and the new, higher prevailing interest rates. Imagine you own a bond paying a fixed 3% interest rate. If the central bank raises rates, newly issued bonds in the market will now be offering a 5% interest rate to attract investors. Why would an investor choose your 3% bond when they can buy a brand-new one paying 5%? To make your older, lower-yielding bond competitive with the newer, higher-yielding market options, its market price must drop. This drop in price effectively increases the overall return (the yield-to-maturity) for the buyer, bringing it closer to the current 5% market standard.\n\nThis inverse relationship is fundamentally about the present value of future cash flows. A bond\u2019s price is simply the discounted value of all the interest payments it will make over its life, plus the return of its principal at maturity. When interest rates rise, the discount rate used in financial calculations also increases. A higher discount rate makes those future fixed payments\u2014the coupons\u2014worth less in today's dollars. Therefore, to make the stream of fixed payments equal to the higher rate investors now demand, the current selling price of the bond must be lowered.\n\nIn summary, rising interest rates increase the opportunity cost of holding a fixed-rate security. Investors shift their focus to the higher returns available elsewhere. To entice investors to purchase",
+  "detection": [
+    {
+      "case": "watermarked, correct key",
+      "score": 0.5218279361724854,
+      "num_tokens_scored": 310,
+      "z_score": 4.21001986561388,
+      "p_value": 1.2767411737623772e-05,
+      "empirical_p_value": null,
+      "is_watermarked": null,
+      "threshold": null,
+      "key_id": "markets-research/v1",
+      "key_fingerprint": "42f009f241c0659c",
+      "method": "mean"
+    },
+    {
+      "case": "watermarked, wrong key",
+      "score": 0.4906451404094696,
+      "num_tokens_scored": 310,
+      "z_score": -1.8042999761840137,
+      "p_value": 0.9644078532353777,
+      "empirical_p_value": null,
+      "is_watermarked": null,
+      "threshold": null,
+      "key_id": "other-desk/v1",
+      "key_fingerprint": "a17910df487d2ff5",
+      "method": "mean"
+    },
+    {
+      "case": "unwatermarked, correct key",
+      "score": 0.5030590295791626,
+      "num_tokens_scored": 316,
+      "z_score": 0.5956866137139472,
+      "p_value": 0.27569230124552163,
+      "empirical_p_value": null,
+      "is_watermarked": null,
+      "threshold": null,
+      "key_id": "markets-research/v1",
+      "key_fingerprint": "42f009f241c0659c",
+      "method": "mean"
+    }
+  ]
+}

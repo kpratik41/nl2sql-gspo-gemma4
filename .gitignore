@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Generated artefacts
+data/corpus.json
+data/human_texts.json
+# experiment logs are versioned: they carry the formatted tables the report cites
+results/bayesian_detector/
+
+# Never commit key material
+keys/
+*.key
+*key*.json
+!results/calibration_*.json

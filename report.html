@@ -1,0 +1,1236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watermarking Gemma-4 with SynthID-Text</title>
+<style>
+:root {
+  --bg: #ffffff; --fg: #1a1d21; --muted: #5c6570; --rule: #e3e7ec;
+  --accent: #12507b; --code-bg: #f5f7f9; --th-bg: #f0f3f6; --tr-alt: #fafbfc;
+  --good: #1a6b3c; --warn: #8a5300; --bad: #97231f; --quote-bg: #f7f9fb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171a; --fg: #e6e9ec; --muted: #99a2ac; --rule: #2b3238;
+    --accent: #7cb8e0; --code-bg: #1c2126; --th-bg: #1f252b; --tr-alt: #181c20;
+    --good: #6ed49b; --warn: #e0b063; --bad: #f08c86; --quote-bg: #1a1f24;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); margin: 0;
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 900px; margin: 0 auto; padding: 3rem 1.5rem 6rem; }
+h1, h2, h3, h4 { line-height: 1.25; font-weight: 650; margin: 2.4em 0 0.7em; }
+h1 { font-size: 2.1rem; margin-top: 0; letter-spacing: -0.02em; }
+h2 { font-size: 1.45rem; padding-bottom: 0.35rem; border-bottom: 2px solid var(--rule); }
+h3 { font-size: 1.13rem; color: var(--accent); }
+h4 { font-size: 1rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+p, li { color: var(--fg); }
+a { color: var(--accent); }
+code {
+  background: var(--code-bg); padding: 0.12em 0.38em; border-radius: 4px;
+  font: 0.87em/1.5 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--rule); border-radius: 8px;
+  padding: 1rem 1.1rem; overflow-x: auto;
+}
+pre code { background: none; padding: 0; font-size: 0.85rem; }
+blockquote {
+  margin: 1.4em 0; padding: 0.9rem 1.2rem; background: var(--quote-bg);
+  border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0;
+}
+blockquote p:first-child { margin-top: 0; } blockquote p:last-child { margin-bottom: 0; }
+.table-scroll { overflow-x: auto; margin: 1.5em 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { padding: 0.5rem 0.8rem; text-align: left; border-bottom: 1px solid var(--rule); }
+th { background: var(--th-bg); font-weight: 600; white-space: nowrap; }
+tbody tr:nth-child(even) { background: var(--tr-alt); }
+td:not(:first-child), th:not(:first-child) { font-variant-numeric: tabular-nums; }
+hr { border: none; border-top: 1px solid var(--rule); margin: 3rem 0; }
+.subtitle { color: var(--muted); font-size: 1.05rem; margin-top: -0.4rem; }
+.meta { color: var(--muted); font-size: 0.85rem; }
+strong { font-weight: 650; }
+.yes { color: var(--good); font-weight: 650; }
+.no  { color: var(--bad); font-weight: 650; }
+.part { color: var(--warn); font-weight: 650; }
+ul, ol { padding-left: 1.4rem; }
+li { margin: 0.3em 0; }
+</style>
+</head>
+<body><div class="wrap">
+<h1 id="watermarking-gemma-4-with-synthid-text">Watermarking Gemma-4 with SynthID-Text</h1>
+<p><strong>An evaluation and a reusable toolkit</strong></p>
+<p>Model <code>google/gemma-4-E4B-it</code> · 2 × NVIDIA RTX PRO 6000 Blackwell (97 GB) · SynthID-Text via
+Hugging Face Transformers 5.12.1 · package <code>synthmark</code> v0.1.0</p>
+<hr />
+<h2 id="1-what-was-done">1. What was done</h2>
+<p>Two deliverables.</p>
+<p><strong>A package (<code>synthmark</code>).</strong> A thin, reusable layer over the SynthID-Text implementation
+that ships in Hugging Face Transformers, adding the parts a real deployment needs and the
+reference code omits: key derivation and storage, calibrated decision thresholds, a
+CPU-only detection service, a CLI, and an evaluation harness. It is model-agnostic; Gemma-4
+is the model it was validated on.</p>
+<p><strong>An evaluation.</strong> A measurement of what the watermark actually delivers on this model —
+how detectable it is, how much text it needs, whether it degrades output, what destroys it,
+and what it costs — with the limitations stated rather than glossed.</p>
+<p>One substantive bug was found and fixed along the way; see §4.</p>
+<hr />
+<h2 id="2-how-the-watermark-works">2. How the watermark works</h2>
+<p>At each decoding step the model produces a distribution over next tokens. Where several
+tokens are near-equally good — after <em>"the weather was cold and…"</em>, both <em>"grey"</em> and
+<em>"overcast"</em> work — an ordinary sampler picks between them with a random number. SynthID
+replaces that random number with a pseudorandom function ("g-function") seeded by a secret
+key and a sliding window of the preceding tokens, then runs a small tournament among the
+candidates that biases the outcome towards tokens with high g-values.</p>
+<p>Nothing is inserted into the text: no hidden characters, no markup, no extra tokens. The
+signal is <em>which</em> of the equally-good tokens was chosen. Detection replays the same key
+over the candidate text, computes the g-values that generation would have used, and asks
+whether they are biased upward. Under the null hypothesis — text not watermarked with this
+key — each g-value is an unbiased coin flip and the mean sits at 0.5.</p>
+<p>Two properties follow directly from the mechanism, and they bound everything in §4:</p>
+<ul>
+<li><strong>It can only use randomness that already exists.</strong> Where the model is nearly certain of
+  the next token — arithmetic, code, fixed schemas, terse factual answers — there is no
+  choice to steer and little or no watermark is embedded.</li>
+<li><strong>It cannot make the output worse.</strong> It never introduces a token the model would not
+  otherwise have sampled. Quality is preserved <em>at the expense of</em> watermark strength, not
+  the other way around.</li>
+</ul>
+<hr />
+<h2 id="3-experimental-setup">3. Experimental setup</h2>
+<p><strong>Corpus.</strong> 24 prompts × 4 independent samples across six prompt suites, generated twice —
+once watermarked, once not — with the <em>same prompts and the same seeds</em> under both
+conditions, so every comparison is paired. 400 new tokens per generation, sampled at
+temperature 1.0, top-k 64, top-p 0.95 (the model's own defaults).</p>
+<p>The suites are split by <strong>entropy</strong>, because entropy is the variable that governs watermark
+strength. Reporting a single aggregate number over a mixed prompt set would hide the effect
+that matters most in practice.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Suite</th>
+<th>Content</th>
+<th>Expected freedom in token choice</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>creative</code></td>
+<td>Stories, descriptive writing</td>
+<td>Highest</td>
+</tr>
+<tr>
+<td><code>open_ended</code></td>
+<td>Explanatory prose</td>
+<td>High</td>
+</tr>
+<tr>
+<td><code>financial</code></td>
+<td>Client notes, product explanations</td>
+<td>High</td>
+</tr>
+<tr>
+<td><code>factual</code></td>
+<td>Short answers pinned by facts</td>
+<td>Low</td>
+</tr>
+<tr>
+<td><code>structured</code></td>
+<td>JSON with a fixed schema</td>
+<td>Very low</td>
+</tr>
+<tr>
+<td><code>code</code></td>
+<td>Python, SQL, bash</td>
+<td>Lowest</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Key.</strong> Watermarking depth 30, n-gram length 5 — the reference configuration from the
+SynthID-Text paper. Keys are derived by HKDF-SHA256 from a single master secret, so a label
+like <code>markets-research/v1</code> deterministically yields an independent key.</p>
+<p><strong>Negative controls.</strong> Three distinct kinds, because they answer different questions:</p>
+<ol>
+<li><em>Unwatermarked output from the same model</em> — does the detector key on the watermark, or
+   merely on the model's style?</li>
+<li><em>Human-written text</em> (600 WikiText-103 passages, detokenised) — how often would we
+   wrongly flag a person's writing?</li>
+<li><em>The same watermarked text scored with a different key</em> — can one desk's detector read
+   another desk's traffic?</li>
+</ol>
+<hr />
+<h2 id="4-results">4. Results</h2>
+<h3 id="40-summary-of-claims">4.0 Summary of claims</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Claim</th>
+<th>Verdict</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The watermark is detectable with our key</td>
+<td><span class="yes">✅</span></td>
+<td>AUC 1.000, 100% detection at a 1% false-positive rate, on ~390-token free-form text</td>
+</tr>
+<tr>
+<td>It is invisible to a different key</td>
+<td><span class="yes">✅</span></td>
+<td>Wrong-key AUC 0.45–0.60 (chance); mean score 0.503 either way</td>
+</tr>
+<tr>
+<td>It does not degrade quality</td>
+<td><span class="yes">✅</span></td>
+<td>Fluency, diversity and GSM8K accuracy differences all statistically indistinguishable from zero</td>
+</tr>
+<tr>
+<td>False positives on human writing are controlled</td>
+<td><span class="yes">✅</span></td>
+<td>1.3% observed at a nominal 1% threshold, 0% at 0.1%</td>
+</tr>
+<tr>
+<td>It works on short text</td>
+<td><span class="no">❌</span></td>
+<td>59% detection at 100 tokens, 18% at 25</td>
+</tr>
+<tr>
+<td>It works on code and structured output</td>
+<td><span class="no">❌</span></td>
+<td>AUC 0.77 on code, 0.55 on JSON — despite ample length</td>
+</tr>
+<tr>
+<td>It survives paraphrasing</td>
+<td><span class="no">❌</span></td>
+<td>AUC collapses 1.000 → 0.607; detection rate 0%</td>
+</tr>
+<tr>
+<td>It is free at inference time</td>
+<td><span class="no">❌</span></td>
+<td>39% throughput cost at batch 16, 57% at batch 32</td>
+</tr>
+<tr>
+<td>Detection needs no GPU</td>
+<td><span class="yes">✅</span></td>
+<td>1,083 texts/s on CPU (0.9 ms/text)</td>
+</tr>
+</tbody>
+</table></div>
+<p>The three <span class="no">❌</span> rows are inherent to the method, not defects in this implementation. They
+define what the control can and cannot be used for.</p>
+<h3 id="41-detection-at-full-length">4.1 Detection at full length</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Suite</th>
+<th>Median tokens scored</th>
+<th>AUC</th>
+<th>95% CI</th>
+<th>TPR @1% FPR</th>
+<th>Mean score (WM)</th>
+<th>Mean score (plain)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>creative</td>
+<td>394</td>
+<td>1.0000</td>
+<td>[1.000, 1.000]</td>
+<td>1.000</td>
+<td>0.5446</td>
+<td>0.4999</td>
+</tr>
+<tr>
+<td>open_ended</td>
+<td>390</td>
+<td>1.0000</td>
+<td>[1.000, 1.000]</td>
+<td>1.000</td>
+<td>0.5256</td>
+<td>0.5001</td>
+</tr>
+<tr>
+<td>financial</td>
+<td>380</td>
+<td>1.0000</td>
+<td>[1.000, 1.000]</td>
+<td>1.000</td>
+<td>0.5229</td>
+<td>0.4988</td>
+</tr>
+<tr>
+<td>factual</td>
+<td>6</td>
+<td>0.5772</td>
+<td>[0.483, 0.677]</td>
+<td>0.028</td>
+<td>0.5249</td>
+<td>0.5146</td>
+</tr>
+<tr>
+<td>structured</td>
+<td>35</td>
+<td>0.5472</td>
+<td>[0.441, 0.645]</td>
+<td>0.000</td>
+<td>0.5020</td>
+<td>0.4992</td>
+</tr>
+<tr>
+<td>code</td>
+<td>352</td>
+<td>0.7692</td>
+<td>[0.696, 0.834]</td>
+<td>0.010</td>
+<td>0.5047</td>
+<td>0.4981</td>
+</tr>
+<tr>
+<td><strong>pooled (high-entropy)</strong></td>
+<td>390</td>
+<td>1.0000</td>
+<td>[1.000, 1.000]</td>
+<td>1.000</td>
+<td>0.5310</td>
+<td>0.4996</td>
+</tr>
+</tbody>
+</table></div>
+<p>On free-form prose the watermark is not merely detectable, it is <strong>unmistakable</strong>: every
+watermarked text scores above every unwatermarked one, at ~390 tokens.</p>
+<p>The <code>code</code> row is the important one. It has <strong>352 scored tokens — as many as <code>creative</code> —
+yet reaches only AUC 0.77</strong>. This isolates the mechanism cleanly: the weakness of
+low-entropy text is not that it is short, it is that there is no choice to encode a signal
+in. Where the next token is determined, no watermark can exist. <code>structured</code> and <code>factual</code>
+are weak for both reasons at once: low entropy <em>and</em> short outputs (35 and 6 scored tokens).</p>
+<h3 id="42-how-much-text-is-needed">4.2 How much text is needed</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Target tokens</th>
+<th>Median scored</th>
+<th>AUC</th>
+<th>TPR @1% FPR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>25</td>
+<td>21</td>
+<td>0.7309</td>
+<td>0.181</td>
+</tr>
+<tr>
+<td>50</td>
+<td>46</td>
+<td>0.8453</td>
+<td>0.326</td>
+</tr>
+<tr>
+<td>100</td>
+<td>96</td>
+<td>0.9582</td>
+<td>0.594</td>
+</tr>
+<tr>
+<td>200</td>
+<td>195</td>
+<td>0.9961</td>
+<td>0.847</td>
+</tr>
+<tr>
+<td>300</td>
+<td>293</td>
+<td>0.9998</td>
+<td>0.993</td>
+</tr>
+<tr>
+<td>400</td>
+<td>388</td>
+<td>1.0000</td>
+<td>1.000</td>
+</tr>
+</tbody>
+</table></div>
+<p><em>(averaged over the creative, open_ended and financial suites)</em></p>
+<p>This is the table that should govern a deployment. At a 1% false-positive rate the detector
+finds fewer than 6 in 10 watermarked documents at 100 tokens, and fewer than 2 in 10 at 25.</p>
+<p><strong>Recommended policy: issue no verdict below ~100 scored tokens, and treat 200+ as the range
+where a negative result carries real weight.</strong> The service enforces a hard floor at 40 tokens
+and returns <code>text_too_short</code> rather than a number.</p>
+<p>The weighted-mean detector is consistently stronger than the flat mean at exactly the lengths
+where it matters — at 25 tokens on <code>open_ended</code>, AUC 0.710 vs 0.627 — and identical once text
+is long enough for both to saturate.</p>
+<h3 id="43-key-isolation">4.3 Key isolation</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Suite</th>
+<th>AUC (wrong key)</th>
+<th>Mean score (WM text)</th>
+<th>Mean score (plain)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>creative</td>
+<td>0.5969</td>
+<td>0.5043</td>
+<td>0.5027</td>
+</tr>
+<tr>
+<td>open_ended</td>
+<td>0.4549</td>
+<td>0.5036</td>
+<td>0.5040</td>
+</tr>
+<tr>
+<td>financial</td>
+<td>0.5190</td>
+<td>0.5041</td>
+<td>0.5038</td>
+</tr>
+<tr>
+<td>factual</td>
+<td>0.5155</td>
+<td>0.5098</td>
+<td>0.5101</td>
+</tr>
+<tr>
+<td>structured</td>
+<td>0.5260</td>
+<td>0.5056</td>
+<td>0.5060</td>
+</tr>
+<tr>
+<td>code</td>
+<td>0.4903</td>
+<td>0.5031</td>
+<td>0.5032</td>
+</tr>
+</tbody>
+</table></div>
+<p>A detector holding the wrong key sees nothing: AUC scatters around 0.5, and watermarked and
+unwatermarked text score identically (0.503 vs 0.503). Different desks or business units can
+hold different keys, and a detection result is scoped strictly to the key that produced it.</p>
+<h3 id="44-false-positives-on-human-writing">4.4 False positives on human writing</h3>
+<p>300 WikiText-103 passages, median 132 scored tokens, mean score 0.4985 (null expectation 0.5).</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Target FPR</th>
+<th>Observed (empirical threshold)</th>
+<th>Observed (analytic p-value)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10.0%</td>
+<td>0.1067</td>
+<td>0.0833</td>
+</tr>
+<tr>
+<td>1.0%</td>
+<td>0.0333</td>
+<td>0.0133</td>
+</tr>
+<tr>
+<td>0.1%</td>
+<td>0.0300</td>
+<td>0.0000</td>
+</tr>
+</tbody>
+</table></div>
+<p>Human prose scores 0.4985 on average against a null expectation of 0.5000 — the detector is
+unbiased on writing it has never seen.</p>
+<p><strong>An unexpected result: the analytic threshold beats the empirical one.</strong> Calibrating on 300
+human texts gives 3.3% false positives at a nominal 1% target, while the closed-form p-value
+gives 1.3%. The reason is sample size, not principle: 300 texts split across length buckets
+leaves ~150 per bucket, and a 1-in-1000 quantile cannot be estimated from 150 samples.
+Empirical calibration is the right approach <em>given enough data</em> — on the order of 10⁴ texts
+per length bucket — and actively harmful below that.</p>
+<p>The analytic null was checked directly against 516 unwatermarked model outputs and is
+well-calibrated and slightly conservative:</p>
+<p>n = 516</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Nominal p threshold</th>
+<th>Observed rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0.10</td>
+<td>0.0814</td>
+</tr>
+<tr>
+<td>0.01</td>
+<td>0.0019</td>
+</tr>
+<tr>
+<td>0.001</td>
+<td>0.0000</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Token round-trip:</strong> 66.8% of texts re-tokenise exactly; 99.5% of token positions agree.</p>
+<p><strong>Use the analytic p-value unless you can calibrate at scale.</strong></p>
+<h3 id="45-quality-and-accuracy">4.5 Quality and accuracy</h3>
+<p>Fluency, scored by an independent model:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Suite</th>
+<th>n pairs</th>
+<th>PPL watermarked</th>
+<th>PPL plain</th>
+<th>Difference [95% CI]</th>
+<th>Significant?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>creative</td>
+<td>96</td>
+<td>17.79</td>
+<td>17.39</td>
+<td>+0.39 [-0.56, +1.35]</td>
+<td>no</td>
+</tr>
+<tr>
+<td>open_ended</td>
+<td>96</td>
+<td>5.48</td>
+<td>5.51</td>
+<td>-0.03 [-0.27, +0.20]</td>
+<td>no</td>
+</tr>
+<tr>
+<td>financial</td>
+<td>96</td>
+<td>5.69</td>
+<td>5.69</td>
+<td>+0.01 [-0.40, +0.45]</td>
+<td>no</td>
+</tr>
+</tbody>
+</table></div>
+<p>Diversity and degeneracy, paired by prompt:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Suite</th>
+<th>n pairs</th>
+<th>distinct-2 WM</th>
+<th>distinct-2 plain</th>
+<th>Difference [95% CI]</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>creative</td>
+<td>96</td>
+<td>0.9628</td>
+<td>0.9640</td>
+<td>-0.0012 [-0.0046, +0.0022]</td>
+</tr>
+<tr>
+<td>open_ended</td>
+<td>96</td>
+<td>0.9596</td>
+<td>0.9602</td>
+<td>-0.0006 [-0.0041, +0.0028]</td>
+</tr>
+<tr>
+<td>financial</td>
+<td>96</td>
+<td>0.9350</td>
+<td>0.9408</td>
+<td>-0.0057 [-0.0119, +0.0003]</td>
+</tr>
+<tr>
+<td>factual</td>
+<td>76</td>
+<td>0.9774</td>
+<td>0.9801</td>
+<td>-0.0027 [-0.0075, +0.0030]</td>
+</tr>
+<tr>
+<td>structured</td>
+<td>64</td>
+<td>0.9621</td>
+<td>0.9622</td>
+<td>-0.0000 [-0.0040, +0.0045]</td>
+</tr>
+<tr>
+<td>code</td>
+<td>96</td>
+<td>0.9005</td>
+<td>0.9007</td>
+<td>-0.0002 [-0.0090, +0.0084]</td>
+</tr>
+</tbody>
+</table></div>
+<p>Task accuracy on sampled chain-of-thought:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Correct</th>
+<th>Accuracy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>watermarked</td>
+<td>156/250</td>
+<td>0.6240</td>
+</tr>
+<tr>
+<td>unwatermarked</td>
+<td>161/250</td>
+<td>0.6440</td>
+</tr>
+</tbody>
+</table></div>
+<p>Difference <strong>-0.0200</strong>, 95% CI [-0.1037, +0.0641].<br />
+Item-level flips: 15 correct only when watermarked, 20 correct only when not.</p>
+<p>No measure shows a degradation. Every confidence interval contains zero, and the GSM8K
+item-level flips are near-symmetric (15 vs 20), which is what temperature-1.0 sampling noise
+produces on its own.</p>
+<p>Two honest caveats about strength of evidence:</p>
+<ul>
+<li>The GSM8K interval is <strong>wide</strong> (±8 pp). It rules out a large accuracy loss, not a small
+  one. The fluency and diversity measures are far tighter — the <code>open_ended</code> perplexity
+  interval is ±0.24 on a base of 5.5, roughly ±4% — and carry most of the weight.</li>
+<li>The judge is a smaller sibling of the model under test. It has different weights and a
+  different argmax path, so it does not inherit the self-scoring bias, but an unrelated
+  architecture would be a stronger control.</li>
+</ul>
+<p><strong>A methodological note.</strong> Multiple-choice benchmarks scored by comparing option
+log-probabilities — MMLU, HellaSwag, ARC — are <strong>unaffected by watermarking by
+construction</strong>, because no sampling occurs and the logits processor is never invoked.
+Reporting "no MMLU delta" would be measuring nothing at all. Only sampled, free-form
+generation can be affected, which is why GSM8K with sampled chain-of-thought was used.</p>
+<h3 id="46-robustness">4.6 Robustness</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Attack</th>
+<th>Level</th>
+<th>Median tokens</th>
+<th>AUC</th>
+<th>TPR @1% FPR</th>
+<th>Mean score (WM)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>none</td>
+<td>-</td>
+<td>392</td>
+<td>1.0000</td>
+<td>1.000</td>
+<td>0.5351</td>
+</tr>
+<tr>
+<td>lowercase</td>
+<td>-</td>
+<td>389</td>
+<td>0.9941</td>
+<td>0.891</td>
+<td>0.5233</td>
+</tr>
+<tr>
+<td>strip_formatting</td>
+<td>-</td>
+<td>370</td>
+<td>0.9999</td>
+<td>0.995</td>
+<td>0.5307</td>
+</tr>
+<tr>
+<td>truncate</td>
+<td>0.75</td>
+<td>285</td>
+<td>0.9995</td>
+<td>0.969</td>
+<td>0.5316</td>
+</tr>
+<tr>
+<td>truncate</td>
+<td>0.5</td>
+<td>187</td>
+<td>0.9932</td>
+<td>0.896</td>
+<td>0.5298</td>
+</tr>
+<tr>
+<td>truncate</td>
+<td>0.25</td>
+<td>90</td>
+<td>0.9433</td>
+<td>0.589</td>
+<td>0.5270</td>
+</tr>
+<tr>
+<td>truncate</td>
+<td>0.125</td>
+<td>42</td>
+<td>0.8625</td>
+<td>0.276</td>
+<td>0.5248</td>
+</tr>
+<tr>
+<td>delete_words</td>
+<td>0.05</td>
+<td>364</td>
+<td>0.9974</td>
+<td>0.979</td>
+<td>0.5272</td>
+</tr>
+<tr>
+<td>delete_words</td>
+<td>0.1</td>
+<td>345</td>
+<td>0.9910</td>
+<td>0.911</td>
+<td>0.5228</td>
+</tr>
+<tr>
+<td>delete_words</td>
+<td>0.2</td>
+<td>307</td>
+<td>0.9710</td>
+<td>0.682</td>
+<td>0.5153</td>
+</tr>
+<tr>
+<td>delete_words</td>
+<td>0.4</td>
+<td>230</td>
+<td>0.7575</td>
+<td>0.036</td>
+<td>0.5065</td>
+</tr>
+<tr>
+<td>swap_words</td>
+<td>0.05</td>
+<td>384</td>
+<td>0.9985</td>
+<td>0.974</td>
+<td>0.5247</td>
+</tr>
+<tr>
+<td>swap_words</td>
+<td>0.1</td>
+<td>384</td>
+<td>0.9921</td>
+<td>0.859</td>
+<td>0.5184</td>
+</tr>
+<tr>
+<td>swap_words</td>
+<td>0.2</td>
+<td>384</td>
+<td>0.9054</td>
+<td>0.271</td>
+<td>0.5099</td>
+</tr>
+<tr>
+<td>swap_words</td>
+<td>0.4</td>
+<td>385</td>
+<td>0.7196</td>
+<td>0.021</td>
+<td>0.5024</td>
+</tr>
+<tr>
+<td>substitute_words</td>
+<td>0.05</td>
+<td>381</td>
+<td>0.9989</td>
+<td>0.953</td>
+<td>0.5263</td>
+</tr>
+<tr>
+<td>substitute_words</td>
+<td>0.1</td>
+<td>378</td>
+<td>0.9929</td>
+<td>0.911</td>
+<td>0.5212</td>
+</tr>
+<tr>
+<td>substitute_words</td>
+<td>0.2</td>
+<td>371</td>
+<td>0.9585</td>
+<td>0.703</td>
+<td>0.5130</td>
+</tr>
+<tr>
+<td>substitute_words</td>
+<td>0.4</td>
+<td>360</td>
+<td>0.7491</td>
+<td>0.188</td>
+<td>0.5036</td>
+</tr>
+<tr>
+<td>mix_with_human</td>
+<td>0.75</td>
+<td>378</td>
+<td>0.9983</td>
+<td>0.969</td>
+<td>0.5239</td>
+</tr>
+<tr>
+<td>mix_with_human</td>
+<td>0.5</td>
+<td>324</td>
+<td>0.9783</td>
+<td>0.688</td>
+<td>0.5174</td>
+</tr>
+<tr>
+<td>mix_with_human</td>
+<td>0.25</td>
+<td>226</td>
+<td>0.8715</td>
+<td>0.328</td>
+<td>0.5108</td>
+</tr>
+<tr>
+<td>mix_with_human</td>
+<td>0.1</td>
+<td>170</td>
+<td>0.7034</td>
+<td>0.042</td>
+<td>0.5049</td>
+</tr>
+<tr>
+<td>paraphrase</td>
+<td>1</td>
+<td>394</td>
+<td>0.6074</td>
+<td>0.000</td>
+<td>0.5010</td>
+</tr>
+<tr>
+<td>paraphrase</td>
+<td>2</td>
+<td>391</td>
+<td>0.6451</td>
+<td>0.016</td>
+<td>0.5012</td>
+</tr>
+<tr>
+<td>round_trip_translate</td>
+<td>fr</td>
+<td>288</td>
+<td>0.9788</td>
+<td>0.547</td>
+<td>0.5163</td>
+</tr>
+</tbody>
+</table></div>
+<p><em>(unattacked baseline AUC = 1.0000)</em></p>
+<p>Every attack was applied to <strong>both</strong> arms and the AUC recomputed on the attacked pair, so
+these numbers isolate damage to the watermark from changes to the score distribution.</p>
+<p>Reading the table:</p>
+<ul>
+<li><strong>Free edits are free.</strong> Lowercasing and stripping markdown cost almost nothing (AUC 0.994
+  and 0.9999), even though they re-tokenise much of the text.</li>
+<li><strong>Casual editing survives.</strong> Deleting, swapping or substituting up to 10% of words leaves
+  AUC above 0.99. It degrades at 20% and collapses at 40% — but by then the text is visibly
+  damaged, so a real editor would not go there.</li>
+<li><strong>Dilution behaves sensibly.</strong> A document that is 25% model-written scores AUC 0.87 and is
+  flagged 33% of the time. A weak signal on a mostly-human document is the <em>correct</em> answer,
+  not a failure.</li>
+<li><strong>Paraphrase defeats it completely.</strong> One pass through another model takes AUC from 1.000
+  to 0.607 and detection at a 1% false-positive rate from 100% to <strong>0%</strong>. A second pass adds
+  nothing because the first already reached the floor.</li>
+<li><strong>But round-trip translation does not.</strong> EN→FR→EN retains AUC 0.979 and 55% detection.</li>
+</ul>
+<p>That last contrast is the most useful finding here. "Passed through another model" is not
+what destroys the watermark — <em>deliberate rewording</em> is. Back-translation reconstructs
+similar phrasing and therefore similar token sequences; a paraphrase prompt explicitly asks
+for different ones. The practical implication: the watermark survives ordinary round-tripping
+through tools, and fails against anyone actively trying to remove it.</p>
+<h3 id="47-the-learned-detector">4.7 The learned detector</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Tokens</th>
+<th>AUC mean</th>
+<th>AUC weighted</th>
+<th>AUC Bayesian</th>
+<th>TPR@1% mean</th>
+<th>TPR@1% Bayesian</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>25</td>
+<td>0.6798</td>
+<td>0.7067</td>
+<td>0.6833</td>
+<td>0.250</td>
+<td>0.133</td>
+</tr>
+<tr>
+<td>50</td>
+<td>0.8020</td>
+<td>0.8563</td>
+<td>0.8182</td>
+<td>0.292</td>
+<td>0.300</td>
+</tr>
+<tr>
+<td>100</td>
+<td>0.9454</td>
+<td>0.9656</td>
+<td>0.9475</td>
+<td>0.525</td>
+<td>0.558</td>
+</tr>
+<tr>
+<td>200</td>
+<td>0.9943</td>
+<td>0.9992</td>
+<td>0.9942</td>
+<td>0.883</td>
+<td>0.833</td>
+</tr>
+<tr>
+<td>400</td>
+<td>1.0000</td>
+<td>1.0000</td>
+<td>1.0000</td>
+<td>1.000</td>
+<td>1.000</td>
+</tr>
+</tbody>
+</table></div>
+<p>The Bayesian detector from the paper was trained on the existing corpus and evaluated on
+<strong>disjoint prompts</strong>. It gives no meaningful improvement over the flat mean, and the simple
+weighted mean beats both at every length below saturation.</p>
+<p>This is a negative result and it is worth stating: on this model, <strong>the extra machinery is
+not worth it</strong>. The per-depth weighted mean is training-free, has a closed-form null, and is
+the better detector. A larger training corpus might change this, but the burden of proof sits
+with the more complex method.</p>
+<h3 id="48-inference-cost">4.8 Inference cost</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Batch size</th>
+<th>Plain (tok/s)</th>
+<th>Watermarked (tok/s)</th>
+<th>Overhead</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>26.9</td>
+<td>25.8</td>
+<td>4.2%</td>
+</tr>
+<tr>
+<td>4</td>
+<td>99.9</td>
+<td>87.2</td>
+<td>12.7%</td>
+</tr>
+<tr>
+<td>16</td>
+<td>398.0</td>
+<td>241.4</td>
+<td>39.4%</td>
+</tr>
+<tr>
+<td>32</td>
+<td>770.4</td>
+<td>329.0</td>
+<td>57.3%</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>This is the finding that most contradicts the received wisdom.</strong> "Negligible speed impact"
+does not hold here: at production batch sizes the watermark costs 39–57% of throughput.</p>
+<p>The reason is structural rather than a defect. The watermark's work per decoding step is
+proportional to <code>vocab_size × depth</code> and is <strong>independent of model size</strong>. Gemma-4-E4B has a
+262,144-token vocabulary and depth 30, so it performs 30 passes over a 262k-wide tensor per
+token. On a frontier-scale model that same absolute cost disappears into a much larger
+forward pass — which is why the claim is true for large models and does not transfer to small
+ones. The cost also grows with batch size, because the model forward parallelises across the
+batch far better than the sequential per-depth tournament does.</p>
+<p>Depth is the lever, and it is close to linear:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Depth</th>
+<th>Throughput (tok/s)</th>
+<th>Overhead vs. plain</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>392.7</td>
+<td>1.3%</td>
+</tr>
+<tr>
+<td>5</td>
+<td>369.1</td>
+<td>7.3%</td>
+</tr>
+<tr>
+<td>10</td>
+<td>337.7</td>
+<td>15.2%</td>
+</tr>
+<tr>
+<td>30</td>
+<td>241.1</td>
+<td>39.4%</td>
+</tr>
+</tbody>
+</table></div>
+<p>Given that detection already saturates at AUC 1.000 by 200–400 tokens with depth 30, <strong>depth
+10 (15% overhead) or even 5 (7%) is likely the better operating point</strong> for long-form output,
+trading headroom you are not using for throughput you are. Depth should be chosen from the
+length distribution of the text you actually need to detect. Note that depth is part of the
+key: changing it changes the watermark, so it must be fixed before keys are issued.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Device</th>
+<th>Texts/s</th>
+<th>ms per text</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cpu</td>
+<td>1082.6</td>
+<td>0.9</td>
+</tr>
+<tr>
+<td>cuda:0</td>
+<td>1241.9</td>
+<td>0.8</td>
+</tr>
+</tbody>
+</table></div>
+<p>Detection is a hash and a mean. It needs the tokenizer, not the model, and CPU is within 13%
+of GPU — so the detection service needs no accelerator at all.</p>
+<h3 id="49-a-bug-worth-knowing-about">4.9 A bug worth knowing about</h3>
+<p>Upstream Transformers builds the watermark's g-value sampling table with a <strong>device-local
+RNG</strong>:</p>
+<pre><code class="language-python">generator = torch.Generator(device=device).manual_seed(sampling_table_seed)
+self.sampling_table = torch.randint(0, 2, (size,), generator=generator, device=device)
+</code></pre>
+<p><code>torch.randint</code> draws different values from CUDA and CPU generators given the same seed. The
+consequence is that <strong>the same key produces a different watermark depending on which device
+the processor was built on.</strong> Text generated on a GPU is invisible to a detector running on
+CPU — and the failure is silent: the detector returns an ordinary-looking null score, not an
+error.</p>
+<p>This was found the first time generation was run on GPU and detection on CPU: the
+watermarked text scored 0.4974 (p = 0.69), indistinguishable from unwatermarked.</p>
+<p>Since the sampling table is the <em>only</em> source of randomness in the algorithm — the rest is a
+deterministic linear-congruential hash over int64 — the fix is to draw the table on CPU and
+move it to the target device. <code>synthmark</code> does this for both generation and detection, so
+they cannot disagree. Two regression tests cover it: one asserting g-values, masks and scores
+match across devices, and one documenting the upstream behaviour so we learn when it is fixed
+upstream.</p>
+<p>Anyone deploying SynthID via Transformers should check this. It would not show up in a
+single-machine test, and it silently breaks CPU detection services and mixed-hardware fleets.</p>
+<h3 id="410-worked-example">4.10 Worked example</h3>
+<p>Generated on GPU with key <code>markets-research/v1</code>, detected on <strong>CPU</strong> — which only works
+because of the fix above.</p>
+<blockquote>
+<p>When interest rates in the broader economy rise, bond prices typically move in the opposite
+direction, which can seem counterintuitive at first. The core reason lies in the
+relationship between the fixed coupon payments a bond provides and the new, higher
+prevailing interest rates. […]</p>
+</blockquote>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Case</th>
+<th>Score</th>
+<th>Tokens</th>
+<th>z</th>
+<th>p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>watermarked, correct key</td>
+<td>0.5218</td>
+<td>310</td>
+<td>+4.21</td>
+<td>1.3 × 10⁻⁵</td>
+</tr>
+<tr>
+<td>watermarked, <strong>wrong</strong> key</td>
+<td>0.4906</td>
+<td>310</td>
+<td>−1.80</td>
+<td>0.96</td>
+</tr>
+<tr>
+<td>unwatermarked, correct key</td>
+<td>0.5031</td>
+<td>316</td>
+<td>+0.60</td>
+<td>0.28</td>
+</tr>
+</tbody>
+</table></div>
+<p>The watermarked and unwatermarked outputs read identically well; the difference lives
+entirely in the statistics of which near-equivalent words were chosen.</p>
+<h3 id="411-token-round-trip">4.11 Token round-trip</h3>
+<p>The watermark lives in <em>token</em> choices, but a detector is handed <em>text</em> and must re-tokenise
+it. Of 400 watermarked texts, only <strong>66.8% re-tokenise to exactly the original ids</strong> — but
+<strong>99.5% of individual token positions agree</strong>. The disagreements are isolated boundary
+effects, and the cost to detection is negligible. Worth knowing, not worth engineering
+around.</p>
+<hr />
+<h2 id="5-the-package">5. The package</h2>
+<p><code>synthmark</code> is the reusable half of this work. It wraps the Transformers SynthID
+implementation and adds what a deployment needs.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Module</th>
+<th>What it provides</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>keys.py</code></td>
+<td>HKDF-SHA256 key derivation from one master secret, fingerprints, 0600 storage</td>
+</tr>
+<tr>
+<td><code>config.py</code></td>
+<td>Bridge to the HF API, plus the device-portability fix</td>
+</tr>
+<tr>
+<td><code>generate.py</code></td>
+<td>Watermarked / unwatermarked generation, perplexity scoring</td>
+</tr>
+<tr>
+<td><code>detect.py</code></td>
+<td>g-values, masking, three scoring methods, empirical calibration</td>
+</tr>
+<tr>
+<td><code>bayesian.py</code></td>
+<td>Training and use of the learned detector</td>
+</tr>
+<tr>
+<td><code>attacks.py</code></td>
+<td>Truncation, editing, paraphrase, translation, dilution</td>
+</tr>
+<tr>
+<td><code>metrics.py</code></td>
+<td>AUC, TPR@FPR, bootstrap and Newcombe confidence intervals</td>
+</tr>
+<tr>
+<td><code>serve.py</code></td>
+<td>FastAPI detection service, multi-key</td>
+</tr>
+<tr>
+<td><code>cli.py</code></td>
+<td><code>keygen</code> · <code>generate</code> · <code>detect</code> · <code>calibrate</code> · <code>serve</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Turning the watermark on is a one-argument change at the call site:</p>
+<pre><code class="language-python">out = lm.generate(prompts, key=key)      # watermarked
+out = lm.generate(prompts, key=None)     # ordinary HF path
+</code></pre>
+<p>Three design decisions worth calling out, because they are the ones that keep the
+system honest rather than merely working:</p>
+<p><strong>Greedy decoding is refused, not silently unmarked.</strong> With no sampling there is no
+randomness to encode a signal in. Passing <code>do_sample=False</code> together with a key raises
+rather than returning confidently unmarked text.</p>
+<p><strong>The service refuses a verdict below ~40 scored tokens.</strong> Returning a
+confident-looking number on two sentences is how false accusations happen.</p>
+<p><strong>Every negative result is caveated in the response body.</strong> "No watermark detected" is
+not "a human wrote this", and the API says so in the payload rather than in
+documentation someone will not read.</p>
+<h3 id="key-management">Key management</h3>
+<p>Keys are derived, not distributed:</p>
+<pre><code class="language-python">key = derive_key(master_secret, &quot;markets-research/v1&quot;)
+</code></pre>
+<p>One escrowed master secret yields unlimited independent keys. Rotation is a new label.
+Any authorised host can reconstruct any key, so key material never travels.</p>
+<p>The critical point for a security review: <strong>the key is signing-grade material</strong>. Whoever
+holds it can detect the watermark <em>and forge it</em>. The obvious way to let a downstream team
+check text — hand them the key — also hands them the ability to fabricate text your own
+detector will confirm as yours. Run detection as a service instead. See
+<a href="docs/key-management.md"><code>docs/key-management.md</code></a>.</p>
+<hr />
+<h2 id="6-limitations">6. Limitations</h2>
+<p>Stated plainly, because a detector that is oversold is worse than no detector.</p>
+<ul>
+<li><strong>It is not proof of authorship.</strong> It answers "is this text statistically consistent
+  with this key", nothing more. It cannot distinguish text the model wrote from text the
+  model edited or a human lightly revised.</li>
+<li><strong>A negative is not evidence of human authorship.</strong> Short, edited, paraphrased, or
+  low-entropy text all produce negatives, as does any text from a different model.</li>
+<li><strong>Paraphrase defeats it.</strong> Anyone who wants to remove the watermark can, cheaply.
+  It is a provenance signal for ordinary use, not an anti-abuse control against a
+  motivated adversary.</li>
+<li><strong>It requires the matching tokenizer.</strong> Detection is defined over token sequences.</li>
+<li><strong>It is tied to the sampling configuration.</strong> Greedy or very low-temperature decoding
+  embeds little or nothing.</li>
+<li><strong>Findings here are for one model.</strong> Detection strength depends on the model's output
+  entropy; a different model needs its own measurement.</li>
+</ul>
+<hr />
+<h2 id="7-relevance-to-the-eu-ai-act-code-of-practice">7. Relevance to the EU AI Act Code of Practice</h2>
+<p>The Code of Practice commitment is to <em>mark</em> AI-generated content in a machine-readable
+way. What this evaluation supports, and what it does not:</p>
+<p><strong>Supported.</strong> Content generated through a watermarking pipeline is marked, the marking is
+machine-detectable by the key holder, the mark carries no user-identifying information
+(the key is per-deployment, not per-user or per-session), and the marking does not degrade
+output quality.</p>
+<p><strong>Not supported by watermarking alone.</strong> Detection of edited or paraphrased content;
+attribution of authorship; any claim about content the pipeline did not generate. For
+files and images the appropriate mechanism is C2PA content credentials, which is a
+different control and complementary to this one.</p>
+<p>The operationally important number for governance is not AUC but the <strong>false-positive rate
+at the deployed threshold</strong>, measured on human writing, together with the <strong>minimum text
+length</strong> below which no verdict is issued. Both are in §4.2 and §4.4.</p>
+<hr />
+<h2 id="8-reproducing">8. Reproducing</h2>
+<pre><code class="language-bash">pip install -e '.[serve,dev]'
+pytest                                   # unit tests, no model download
+
+cd experiments
+./run_all.sh                             # full evaluation
+</code></pre>
+<p>Individual studies:</p>
+<pre><code class="language-bash">python 01_generate_corpus.py --samples-per-prompt 4
+python 02_detectability.py
+python 03_quality.py --gsm8k-n 250
+python 04_robustness.py
+python 05_overhead.py
+python 06_bayesian.py
+</code></pre>
+<p>Raw results are written to <code>results/*.json</code>; the logs alongside them contain the formatted
+tables reproduced in this report.</p>
+</div></body>
+</html>

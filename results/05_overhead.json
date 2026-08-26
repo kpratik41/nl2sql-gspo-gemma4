@@ -1,0 +1,61 @@
+{
+  "meta": {
+    "model": "google/gemma-4-E4B-it",
+    "max_new_tokens": 256
+  },
+  "throughput_by_batch_size": {
+    "1": {
+      "plain_tokens_per_s": 26.893842402011398,
+      "watermarked_tokens_per_s": 25.763147462873636,
+      "relative_overhead": 0.042042893024954904
+    },
+    "4": {
+      "plain_tokens_per_s": 99.8655932484005,
+      "watermarked_tokens_per_s": 87.21369851683191,
+      "relative_overhead": 0.1266892261892334
+    },
+    "16": {
+      "plain_tokens_per_s": 398.01333246483705,
+      "watermarked_tokens_per_s": 241.37328758711683,
+      "relative_overhead": 0.3935547683985153
+    },
+    "32": {
+      "plain_tokens_per_s": 770.3970678220843,
+      "watermarked_tokens_per_s": 329.03177449254747,
+      "relative_overhead": 0.5729062476539252
+    }
+  },
+  "depth_cost": {
+    "baseline_tokens_per_s": 398.01333246483705,
+    "by_depth": {
+      "1": {
+        "tokens_per_s": 392.6656313945665,
+        "relative_overhead": 0.013435984762502885
+      },
+      "5": {
+        "tokens_per_s": 369.0606254291045,
+        "relative_overhead": 0.07274305827001512
+      },
+      "10": {
+        "tokens_per_s": 337.6604569529385,
+        "relative_overhead": 0.15163531115438325
+      },
+      "30": {
+        "tokens_per_s": 241.136771257594,
+        "relative_overhead": 0.3941490106266792
+      }
+    }
+  },
+  "detection_throughput": {
+    "cpu": {
+      "texts_per_s": 1082.6314568765163,
+      "median_tokens_scored": 252.0,
+      "seconds_for_64_texts": 0.05911522299993521
+    },
+    "cuda:0": {
+      "texts_per_s": 1241.8745747401786,
+      "median_tokens_scored": 252.0,
+      "seconds_for_64_texts": 0.05153499500011094
+    }
+  }
+}

@@ -1,0 +1,23 @@
+==============================================================================
+Learned (Bayesian) detector vs. the mean detector
+==============================================================================
+14 training prompts / 10 held-out prompts per suite
+training on 168 watermarked / 168 unwatermarked texts truncated to 200 tokens
+g-values tensor (336, 201, 30)
+  epoch    0  train 0.0878  val 0.0963  val_auc 0.9964
+  epoch   25  train 0.0310  val 0.0783  val_auc 0.9973
+  epoch   50  train 0.0180  val 0.0627  val_auc 0.9973
+  early stop at epoch 55 (best val_auc 0.9982)
+best held-out (within-train) AUC during fitting: 0.9982
+==============================================================================
+Held-out prompts: AUC by text length
+==============================================================================
+ tokens     mean  weighted  bayesian    TPR@1% mean  TPR@1% bayes
+     25   0.6798    0.7067    0.6833          0.250         0.133
+     50   0.8020    0.8563    0.8182          0.292         0.300
+    100   0.9454    0.9656    0.9475          0.525         0.558
+    200   0.9943    0.9992    0.9942          0.883         0.833
+    400   1.0000    1.0000    1.0000          1.000         1.000
+  wrote results/06_bayesian.json
+could not persist the detector (MissingCUDAException: CUDA_HOME does not exist, unable to compile CUDA op(s));
+results above are unaffected. Set CUDA_HOME to enable save_pretrained.

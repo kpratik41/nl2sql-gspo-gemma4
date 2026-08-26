@@ -1,0 +1,19 @@
+==============================================================================
+Corpus generation | google/gemma-4-E4B-it
+==============================================================================
+watermark key: eval/primary/v1  depth=30  ngram_len=5  fp=329e972801cf40f9
+loaded google/gemma-4-E4B-it
+  creative    watermarked      96 texts
+  creative    unwatermarked    96 texts
+  open_ended  watermarked      96 texts
+  open_ended  unwatermarked    96 texts
+  factual     watermarked      96 texts
+  factual     unwatermarked    96 texts
+  code        watermarked      96 texts
+  code        unwatermarked    96 texts
+  structured  watermarked      64 texts
+  structured  unwatermarked    64 texts
+  financial   watermarked      96 texts
+  financial   unwatermarked    96 texts
+  wrote data/corpus.json
+1088 texts in 16.8 min
