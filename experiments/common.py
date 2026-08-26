@@ -29,7 +29,11 @@ MODEL_ID = os.environ.get("SYNTHMARK_MODEL", "google/gemma-4-E4B-it")
 def save_json(obj, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, indent=2, default=str))
-    print(f"  wrote {path.relative_to(ROOT)}")
+    try:
+        shown = path.resolve().relative_to(ROOT)
+    except ValueError:  # caller passed a path outside the project root
+        shown = path.resolve()
+    print(f"  wrote {shown}")
     return path
 
 

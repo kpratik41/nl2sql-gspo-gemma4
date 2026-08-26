@@ -243,33 +243,35 @@
     }
   },
   "perplexity_independent_judge": {
-    "judge_model": "google/gemma-4-E2B-it",
+    "judge_model": "Qwen/Qwen3.8-27B",
+    "judge_family_independent": true,
+    "generator_model": "google/gemma-4-E4B-it",
     "by_suite": {
       "creative": {
         "n_pairs": 96,
-        "mean_a": 17.788815985123318,
-        "mean_b": 17.394524733225506,
-        "mean_diff": 0.3942912518978119,
-        "ci_low": -0.5572300046682358,
-        "ci_high": 1.3545616924762724,
+        "mean_a": 7.261126985152562,
+        "mean_b": 7.388672843575478,
+        "mean_diff": -0.12754585842291513,
+        "ci_low": -0.3940548464655876,
+        "ci_high": 0.1338401650389035,
         "contains_zero": true
       },
       "open_ended": {
         "n_pairs": 96,
-        "mean_a": 5.480182945728302,
-        "mean_b": 5.5106679648160934,
-        "mean_diff": -0.030485019087791443,
-        "ci_low": -0.2684239805365602,
-        "ci_high": 0.20309504754841323,
+        "mean_a": 3.423754314581553,
+        "mean_b": 3.3690635661284127,
+        "mean_diff": 0.05469074845314026,
+        "ci_low": -0.014926923376818496,
+        "ci_high": 0.12866250624259312,
         "contains_zero": true
       },
       "financial": {
         "n_pairs": 96,
-        "mean_a": 5.694226207832496,
-        "mean_b": 5.685806733866532,
-        "mean_diff": 0.008419473965962728,
-        "ci_low": -0.39940519096950683,
-        "ci_high": 0.44906876285870867,
+        "mean_a": 3.3023273771007857,
+        "mean_b": 3.303327222665151,
+        "mean_diff": -0.000999845564365387,
+        "ci_low": -0.10248273449639479,
+        "ci_high": 0.09923320909341173,
         "contains_zero": true
       }
     }

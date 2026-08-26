@@ -1,0 +1,39 @@
+==============================================================================
+Inference overhead | google/gemma-4-31B-it
+==============================================================================
+==============================================================================
+1. Generation throughput, watermark on vs off
+==============================================================================
+ batch  plain tok/s   wm tok/s  overhead
+     1         16.0       15.7     1.7%
+     4         61.2       56.5     7.7%
+    16        210.0      156.3    25.6%
+    32        341.5      213.7    37.4%
+==============================================================================
+2. Cost of watermarking depth (batch size 16)
+==============================================================================
+ depth   wm tok/s  overhead
+     1      208.8     0.6%
+     5      201.7     4.0%
+    10      192.0     8.6%
+    30      156.3    25.6%
+Depth is the detection-power / decoding-cost knob: more depth means more
+independent g-values per token, and more work per decoding step.
+==============================================================================
+3. Detection throughput
+==============================================================================
+cpu        1255.8 texts/s  (0.8 ms per 250-token text)
+cuda:0     1257.2 texts/s  (0.8 ms per 250-token text)
+Detection is a hash plus a mean: it needs the tokenizer, not the model,
+and runs fast enough on CPU that a detection service needs no GPU.
+Traceback (most recent call last):
+  File "/home/ec2-user/watermarking/experiments/05_overhead.py", line 119, in <module>
+    main()
+  File "/home/ec2-user/watermarking/experiments/05_overhead.py", line 115, in main
+    save_json(results, Path(args.out) if args.out else RESULTS / "05_overhead.json")
+  File "/home/ec2-user/watermarking/experiments/common.py", line 32, in save_json
+    print(f"  wrote {path.relative_to(ROOT)}")
+                     ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ec2-user/miniconda3/envs/nl2sql_sglang/lib/python3.12/pathlib.py", line 682, in relative_to
+    raise ValueError(f"{str(self)!r} is not in the subpath of {str(other)!r}")
+ValueError: '../results/05_overhead_31b.json' is not in the subpath of '/home/ec2-user/watermarking'

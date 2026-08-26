@@ -8,16 +8,21 @@
 |---|---|---|
 | The watermark is detectable with our key | ✅ | AUC 1.000, 100% detection at a 1% false-positive rate, on ~390-token free-form text |
 | It is invisible to a different key | ✅ | Wrong-key AUC 0.45–0.60 (chance); mean score 0.503 either way |
-| It does not degrade quality | ✅ | Fluency, diversity and GSM8K accuracy differences all statistically indistinguishable from zero |
+| It does not degrade quality | ✅ | On **both models**: fluency, diversity and GSM8K deltas all statistically indistinguishable from zero, and opposite-signed across the two |
 | False positives on human writing are controlled | ✅ | 1.3% observed at a nominal 1% threshold, 0% at 0.1% |
 | It works on short text | ❌ | 59% detection at 100 tokens, 18% at 25 |
 | It works on code and structured output | ❌ | AUC 0.77 on code, 0.55 on JSON — despite ample length |
 | It survives paraphrasing | ❌ | AUC collapses 1.000 → 0.607; detection rate 0% |
-| It is free at inference time | ❌ | 39% throughput cost at batch 16, 57% at batch 32 |
-| Detection needs no GPU | ✅ | 1,083 texts/s on CPU (0.9 ms/text) |
+| **Latency** is essentially unaffected | ✅ | +1.7 ms per token; 1.7% (31B) to 4.2% (E4B) of a decode step |
+| **Batched throughput** is unaffected | ⚠️ | 39–57% loss at batch 16–32 — but this is an artifact of the reference logits processor, not of the method (§4.8) |
+| Detection needs no GPU | ✅ | 1,083 texts/s on CPU (0.9 ms/text) — **but only after the fix in §4.9**; the upstream code makes CPU detection of GPU-generated text impossible |
 
-The three ❌ rows are inherent to the method, not defects in this implementation. They
+The three ❌ rows are **inherent to the method**: they follow from the fact that a watermark
+can only ride on randomness the model already had. No implementation will fix them, and they
 define what the control can and cannot be used for.
+
+The ⚠️ row is the opposite — a **fixable engineering problem** in the reference logits
+processor, quantified in §4.8. It should not be read as a cost of watermarking.
 
 ### 4.1 Detection at full length
 
@@ -78,7 +83,8 @@ well-calibrated and slightly conservative:
 
 ### 4.5 Quality and accuracy
 
-Fluency, scored by an independent model:
+Fluency, scored by **Qwen3.8-27B** — a model from an unrelated family, with its own
+architecture, tokenizer and training data, so it shares none of Gemma's idiosyncrasies:
 
 {{T7}}
 
@@ -90,18 +96,25 @@ Task accuracy on sampled chain-of-thought:
 
 {{T8}}
 
-No measure shows a degradation. Every confidence interval contains zero, and the GSM8K
-item-level flips are near-symmetric (15 vs 20), which is what temperature-1.0 sampling noise
-produces on its own.
+No measure shows a degradation, on either model. Every confidence interval contains zero.
+
+The GSM8K result is the most informative, because the two models disagree in *direction*:
+the watermarked arm is 2.0 pp **worse** on E4B and 1.2 pp **better** on the 31B. A real
+systematic cost would push the same way on both. Two opposite-signed, non-significant
+deltas, with near-symmetric item-level flips (15/20 and 8/5), are what sampling noise at
+temperature 1.0 looks like.
+
+The 31B interval is also tighter (±4.7 pp vs ±8.4 pp) despite the same 250 problems, because
+its accuracy sits near ceiling (93% vs 62%) where binomial variance is smaller.
 
 Two honest caveats about strength of evidence:
 
-- The GSM8K interval is **wide** (±8 pp). It rules out a large accuracy loss, not a small
-  one. The fluency and diversity measures are far tighter — the `open_ended` perplexity
-  interval is ±0.24 on a base of 5.5, roughly ±4% — and carry most of the weight.
-- The judge is a smaller sibling of the model under test. It has different weights and a
-  different argmax path, so it does not inherit the self-scoring bias, but an unrelated
-  architecture would be a stronger control.
+- The GSM8K intervals are **wide** (±8 pp on E4B, ±4.7 pp on the 31B). They rule out a large
+  accuracy loss, not a small one. The fluency and diversity measures are far tighter and
+  carry most of the weight.
+- Perplexity is a proxy for fluency, not a measure of usefulness. It would not detect a
+  failure mode that leaves text fluent but less helpful, and no automatic metric would.
+  Human side-by-side rating remains the stronger design.
 
 **A methodological note.** Multiple-choice benchmarks scored by comparing option
 log-probabilities — MMLU, HellaSwag, ARC — are **unaffected by watermarking by
@@ -150,35 +163,74 @@ not worth it**. The per-depth weighted mean is training-free, has a closed-form 
 the better detector. A larger training corpus might change this, but the burden of proof sits
 with the more complex method.
 
-### 4.8 Inference cost
+### 4.8 Inference cost: latency vs. throughput
+
+These are two different quantities with two different answers, and conflating them is easy.
+
+**Latency — what a single user experiences — is essentially unaffected.** At batch 1 the
+watermark adds about 1.7 ms per token: 4.2% of a decode step on E4B, 1.7% on the 31B. Nobody
+notices this.
+
+**Batched throughput is a different story**, and the raw numbers look alarming:
 
 {{T10}}
 
-**This is the finding that most contradicts the received wisdom.** "Negligible speed impact"
-does not hold here: at production batch sizes the watermark costs 39–57% of throughput.
+Overhead climbs steeply with batch size on both models, and is consistently ~35% lower on
+the 31B than on E4B. That much is a real measurement. But it does *not* mean the method is
+expensive, and the next table shows why.
 
-The reason is structural rather than a defect. The watermark's work per decoding step is
-proportional to `vocab_size × depth` and is **independent of model size**. Gemma-4-E4B has a
-262,144-token vocabulary and depth 30, so it performs 30 passes over a 262k-wide tensor per
-token. On a frontier-scale model that same absolute cost disappears into a much larger
-forward pass — which is why the claim is true for large models and does not transfer to small
-ones. The cost also grows with batch size, because the model forward parallelises across the
-batch far better than the sequential per-depth tournament does.
+#### Where the cost actually goes
 
-Depth is the lever, and it is close to linear:
+Timing the SynthID logits processor in isolation, with no model involved, accounts for
+essentially all of it:
+
+{{T15}}
+
+The overhead is **100% the logits processor**. And its scaling is the whole story:
+
+{{T14}}
+
+**The model forward is nearly flat across batch sizes (37 → 42 ms) because GPUs batch
+efficiently. The watermark processor is perfectly linear — a fixed ~1.7 ms per sequence that
+never amortises.** That is not a property of SynthID. It is a property of this
+implementation: `update_scores` runs a Python `for i in range(depth)` loop, plus `vmap`
+calls, serialised per sequence over a 262k-wide tensor.
+
+The depth sweep confirms the loop is the cost:
+
+{{T17}}
+
+Roughly 0.87 ms per depth level at batch 16 — linear in the number of Python iterations.
+
+#### What this implies
+
+If the processor amortised across a batch the way the model forward does, the overhead would
+be flat at about 4% everywhere instead of climbing to 57%:
+
+{{T16}}
+
+So the honest conclusion is:
+
+- **Latency is genuinely minimal**, and the widely-repeated claim to that effect is correct.
+- **The batched-throughput cost measured here is real but avoidable.** It is the price of an
+  unoptimised reference implementation, not of watermarking. A fused kernel that computes all
+  depths in one pass, or a serving stack (vLLM, TGI) with an optimised processor, should
+  recover most of the ~4%-vs-57% gap.
+- **Until you have that, depth is the lever.** Depth 10 costs 15.2% instead of 39.4% on E4B
+  (8.6% vs 25.6% on the 31B), and detection already saturates at AUC 1.000 by 200 tokens with
+  depth 30. Depth is part of the key, so it must be fixed before keys are issued.
+
+**Before deploying, benchmark your own serving stack.** These numbers characterise
+HuggingFace `generate()`; they are not a property of SynthID, and they should not be used to
+argue either for or against watermarking on a different stack.
 
 {{T11}}
-
-Given that detection already saturates at AUC 1.000 by 200–400 tokens with depth 30, **depth
-10 (15% overhead) or even 5 (7%) is likely the better operating point** for long-form output,
-trading headroom you are not using for throughput you are. Depth should be chosen from the
-length distribution of the text you actually need to detect. Note that depth is part of the
-key: changing it changes the watermark, so it must be fixed before keys are issued.
 
 {{T12}}
 
 Detection is a hash and a mean. It needs the tokenizer, not the model, and CPU is within 13%
-of GPU — so the detection service needs no accelerator at all.
+of GPU on E4B and indistinguishable on the 31B — so the detection service needs no
+accelerator at all.
 
 ### 4.9 A bug worth knowing about
 

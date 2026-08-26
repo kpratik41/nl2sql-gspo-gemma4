@@ -108,42 +108,57 @@ def detectability():
               f"exactly; {rt['position_agreement']:.1%} of token positions agree.")
 
 
+QUALITY_RUNS = [
+    ("03_quality.json", "Gemma-4-E4B"),
+    ("03_quality_31b.json", "Gemma-4-31B"),
+]
+
+
 def quality():
-    d = load("03_quality.json")
-    if not d:
+    runs = [(load(f), label) for f, label in QUALITY_RUNS]
+    runs = [(d, label) for d, label in runs if d]
+    if not runs:
         return
-    print("\n### T6 — Diversity and degeneracy (paired)\n")
-    print("| Suite | n pairs | distinct-2 WM | distinct-2 plain | Difference [95% CI] |")
-    print("|---|---|---|---|---|")
-    for s in SUITE_ORDER:
-        st = d.get("diversity", {}).get(s)
-        if not st:
+
+    judges = {d.get("perplexity_independent_judge", {}).get("judge_model")
+              for d, _ in runs if d.get("perplexity_independent_judge")}
+    judge = judges.pop() if len(judges) == 1 else " / ".join(sorted(filter(None, judges)))
+
+    print(f"\n### T7 — Fluency under an independent judge (`{judge}`)\n")
+    print("| Model | Suite | n pairs | PPL watermarked | PPL plain | Difference [95% CI] | Significant? |")
+    print("|---|---|---|---|---|---|---|")
+    for d, label in runs:
+        pj = d.get("perplexity_independent_judge")
+        if not pj:
             continue
-        x = st["distinct_2"]
-        print(f"| {s} | {x['n_pairs']} | {fmt(x['mean_a'],4)} | {fmt(x['mean_b'],4)} | "
-              f"{fmt(x['mean_diff'],4,True)} [{fmt(x['ci_low'],4,True)}, {fmt(x['ci_high'],4,True)}] |")
-
-    pj = d.get("perplexity_independent_judge")
-    if pj:
-        print(f"\n### T7 — Fluency under an independent judge (`{pj['judge_model']}`)\n")
-        print("| Suite | n pairs | PPL watermarked | PPL plain | Difference [95% CI] | Significant? |")
-        print("|---|---|---|---|---|---|")
-        for s, x in pj["by_suite"].items():
+        for suite, x in pj["by_suite"].items():
             sig = "no" if x["contains_zero"] else "**yes**"
-            print(f"| {s} | {x['n_pairs']} | {fmt(x['mean_a'],2)} | {fmt(x['mean_b'],2)} | "
-                  f"{fmt(x['mean_diff'],2,True)} [{fmt(x['ci_low'],2,True)}, {fmt(x['ci_high'],2,True)}] | {sig} |")
+            print(f"| {label} | {suite} | {x['n_pairs']} | {fmt(x['mean_a'],3)} | {fmt(x['mean_b'],3)} | "
+                  f"{fmt(x['mean_diff'],3,True)} [{fmt(x['ci_low'],3,True)}, {fmt(x['ci_high'],3,True)}] | {sig} |")
 
-    g = d.get("gsm8k")
-    if g:
-        print("\n### T8 — Task accuracy: GSM8K, sampled chain-of-thought at temperature 1.0\n")
-        print("| Condition | Correct | Accuracy |")
-        print("|---|---|---|")
-        print(f"| watermarked | {g['correct_watermarked']}/{g['n_problems']} | {fmt(g['acc_a'],4)} |")
-        print(f"| unwatermarked | {g['correct_unwatermarked']}/{g['n_problems']} | {fmt(g['acc_b'],4)} |")
-        print(f"\nDifference **{fmt(g['diff'],4,True)}**, 95% CI "
-              f"[{fmt(g['ci_low'],4,True)}, {fmt(g['ci_high'],4,True)}].  \n"
-              f"Item-level flips: {g['flips_watermarked_only']} correct only when watermarked, "
-              f"{g['flips_unwatermarked_only']} correct only when not.")
+    print("\n### T6 — Diversity (distinct-2), paired by prompt\n")
+    print("| Model | Suite | n pairs | distinct-2 WM | distinct-2 plain | Difference [95% CI] |")
+    print("|---|---|---|---|---|---|")
+    for d, label in runs:
+        for suite in SUITE_ORDER:
+            st = d.get("diversity", {}).get(suite)
+            if not st:
+                continue
+            x = st["distinct_2"]
+            print(f"| {label} | {suite} | {x['n_pairs']} | {fmt(x['mean_a'],4)} | {fmt(x['mean_b'],4)} | "
+                  f"{fmt(x['mean_diff'],4,True)} [{fmt(x['ci_low'],4,True)}, {fmt(x['ci_high'],4,True)}] |")
+
+    print("\n### T8 — Task accuracy: GSM8K, sampled chain-of-thought at temperature 1.0\n")
+    print("| Model | Watermarked | Unwatermarked | Difference [95% CI] | Flips WM-only / plain-only |")
+    print("|---|---|---|---|---|")
+    for d, label in runs:
+        g = d.get("gsm8k")
+        if not g:
+            continue
+        print(f"| {label} | {g['correct_watermarked']}/{g['n_problems']} ({fmt(g['acc_a'],3)}) | "
+              f"{g['correct_unwatermarked']}/{g['n_problems']} ({fmt(g['acc_b'],3)}) | "
+              f"**{fmt(g['diff'],4,True)}** [{fmt(g['ci_low'],4,True)}, {fmt(g['ci_high'],4,True)}] | "
+              f"{g['flips_watermarked_only']} / {g['flips_unwatermarked_only']} |")
 
 
 def robustness():
@@ -163,32 +178,88 @@ def robustness():
         print(f"\n*(unattacked baseline AUC = {fmt(base,4)})*")
 
 
+MODELS = [
+    ("results/05_overhead.json", "Gemma-4-E4B"),
+    ("results/05_overhead_31b.json", "Gemma-4-31B"),
+]
+
+
 def overhead():
-    d = load("05_overhead.json")
+    """Throughput cost, compared across model sizes.
+
+    Both models share the same 262k-token vocabulary, so putting them
+    side by side isolates the effect of model size on the watermark's
+    relative cost.
+    """
+    loaded = [(load(Path(p).name), label) for p, label in MODELS]
+    loaded = [(d, label) for d, label in loaded if d]
+    if not loaded:
+        return
+
+    print("\n### T10 — Generation throughput cost, by model size\n")
+    header = "| Batch size |" + "".join(
+        f" {label} plain | {label} watermarked | {label} overhead |" for _, label in loaded)
+    print(header)
+    print("|---|" + "---|" * (3 * len(loaded)))
+    batches = sorted({int(b) for d, _ in loaded for b in d.get("throughput_by_batch_size", {})})
+    for bs in batches:
+        row = f"| {bs} |"
+        for d, _ in loaded:
+            v = d.get("throughput_by_batch_size", {}).get(str(bs))
+            row += (f" {v['plain_tokens_per_s']:.1f} | {v['watermarked_tokens_per_s']:.1f} | "
+                    f"**{v['relative_overhead']:.1%}** |") if v else " — | — | — |"
+        print(row)
+
+    print("\n### T11 — Cost of watermarking depth (batch 16), by model size\n")
+    print("| Depth |" + "".join(f" {label} tok/s | {label} overhead |" for _, label in loaded))
+    print("|---|" + "---|" * (2 * len(loaded)))
+    depths = sorted({int(x) for d, _ in loaded for x in d.get("depth_cost", {}).get("by_depth", {})})
+    for depth in depths:
+        row = f"| {depth} |"
+        for d, _ in loaded:
+            v = d.get("depth_cost", {}).get("by_depth", {}).get(str(depth))
+            row += f" {v['tokens_per_s']:.1f} | **{v['relative_overhead']:.1%}** |" if v else " — | — |"
+        print(row)
+
+    print("\n### T12 — Detection throughput\n")
+    print("| Model | Device | Texts/s | ms per text |")
+    print("|---|---|---|---|")
+    for d, label in loaded:
+        for dev, v in d.get("detection_throughput", {}).items():
+            print(f"| {label} | {dev} | {v['texts_per_s']:.1f} | {1000 / v['texts_per_s']:.1f} |")
+
+
+def processor_cost():
+    """Where the watermark's inference cost goes, and whether it is inherent."""
+    d = load("08_processor_cost.json")
     if not d:
         return
-    print("\n### T10 — Generation throughput, watermark on vs off\n")
-    print("| Batch size | Plain (tok/s) | Watermarked (tok/s) | Overhead |")
-    print("|---|---|---|---|")
-    for bs, v in d.get("throughput_by_batch_size", {}).items():
-        print(f"| {bs} | {v['plain_tokens_per_s']:.1f} | {v['watermarked_tokens_per_s']:.1f} | "
-              f"{v['relative_overhead']:.1%} |")
 
-    dc = d.get("depth_cost")
-    if dc:
-        print("\n### T11 — Cost of watermarking depth (batch 16)\n")
-        print("| Depth | Throughput (tok/s) | Overhead vs. plain |")
-        print("|---|---|---|")
-        for depth, v in dc["by_depth"].items():
-            print(f"| {depth} | {v['tokens_per_s']:.1f} | {v['relative_overhead']:.1%} |")
+    print("\n### T14 — Watermark cost per decoding step, model excluded\n")
+    print("| Batch | Processor ms/step | Processor ms **per sequence** |")
+    print("|---|---|---|")
+    for b, v in sorted(d.get("processor_by_batch", {}).items(), key=lambda kv: int(kv[0])):
+        print(f"| {b} | {v['ms_per_step']:.2f} | {v['ms_per_sequence']:.2f} |")
 
-    dt = d.get("detection_throughput")
-    if dt:
-        print("\n### T12 — Detection throughput\n")
-        print("| Device | Texts/s | ms per text |")
-        print("|---|---|---|")
-        for dev, v in dt.items():
-            print(f"| {dev} | {v['texts_per_s']:.1f} | {1000 / v['texts_per_s']:.1f} |")
+    print("\n### T15 — Attribution: is the overhead the processor?\n")
+    print("| Batch | Model forward (ms) | Watermarked step (ms) | Observed Δ | Processor alone | Explained |")
+    print("|---|---|---|---|---|---|")
+    for b, v in sorted(d.get("attribution", {}).items(), key=lambda kv: int(kv[0])):
+        print(f"| {b} | {v['plain_ms_per_step']:.2f} | {v['watermarked_ms_per_step']:.2f} | "
+              f"{v['observed_delta_ms']:.2f} | {v['processor_ms']:.2f} | "
+              f"**{v['fraction_explained']:.0%}** |")
+
+    print("\n### T16 — What the cost would be if the processor amortised across the batch\n")
+    print("| Batch | Measured overhead | If it batched like the model |")
+    print("|---|---|---|")
+    for b, v in sorted(d.get("hypothetical_amortised", {}).items(), key=lambda kv: int(kv[0])):
+        print(f"| {b} | {v['actual']:.1%} | **{v['if_amortised']:.1%}** |")
+
+    print("\n### T17 — Processor cost by depth (batch 16)\n")
+    print("| Depth | Processor ms/step |")
+    print("|---|---|")
+    for dep, ms in sorted(d.get("processor_by_depth_batch16", {}).items(), key=lambda kv: int(kv[0])):
+        print(f"| {dep} | {ms:.2f} |")
 
 
 def bayesian():
@@ -207,7 +278,7 @@ def bayesian():
 
 
 if __name__ == "__main__":
-    for fn in (detectability, quality, robustness, overhead, bayesian):
+    for fn in (detectability, quality, robustness, overhead, processor_cost, bayesian):
         try:
             fn()
         except Exception as e:  # a missing study should not block the rest

@@ -23,6 +23,8 @@ import time
 
 import numpy as np
 import torch
+from pathlib import Path
+
 from common import DEMO_MASTER_SECRET, MODEL_ID, PRIMARY_KEY_ID, RESULTS, banner, save_json
 
 from synthmark import Detector, WatermarkedLM, derive_key
@@ -37,6 +39,8 @@ def main() -> None:
     ap.add_argument("--depths", nargs="*", type=int, default=[1, 5, 10, 30])
     ap.add_argument("--repeats", type=int, default=2)
     ap.add_argument("--device", default="cuda:0")
+    ap.add_argument("--out", default=None,
+                    help="Output JSON path. Defaults to results/05_overhead.json; pass a\n                          distinct path when benchmarking a second model so the first\n                          model's numbers are not overwritten.")
     args = ap.parse_args()
 
     banner(f"Inference overhead | {args.model}")
@@ -108,7 +112,7 @@ def main() -> None:
     print("\nDetection is a hash plus a mean: it needs the tokenizer, not the model,")
     print("and runs fast enough on CPU that a detection service needs no GPU.")
 
-    save_json(results, RESULTS / "05_overhead.json")
+    save_json(results, Path(args.out) if args.out else RESULTS / "05_overhead.json")
 
 
 if __name__ == "__main__":

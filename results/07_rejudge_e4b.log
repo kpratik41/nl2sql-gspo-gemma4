@@ -1,0 +1,13 @@
+==============================================================================
+Fluency re-scored | generator google/gemma-4-E4B-it | judge Qwen/Qwen3.8-27B
+==============================================================================
+Judge is from an unrelated model family: different architecture, tokenizer
+and training data, so it shares none of the generator's idiosyncrasies.
+[transformers] The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d
+judge loaded: Qwen3_5ForCausalLM
+suite            n    PPL wm  PPL plain     diff               95% CI
+creative        96     7.261      7.389   -0.128 [-0.394, +0.134]
+open_ended      96     3.424      3.369   +0.055 [-0.015, +0.129]
+financial       96     3.302      3.303   -0.001 [-0.102, +0.099]
+replaced earlier judge 'google/gemma-4-E2B-it'
+  wrote results/03_quality.json

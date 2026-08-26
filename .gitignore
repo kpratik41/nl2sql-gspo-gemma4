@@ -5,7 +5,8 @@ __pycache__/
 .pytest_cache/
 
 # Generated artefacts
-data/corpus.json
+# Regenerable corpora (large; rebuild with experiments/01_generate_corpus.py)
+data/corpus*.json
 data/human_texts.json
 # experiment logs are versioned: they carry the formatted tables the report cites
 results/bayesian_detector/

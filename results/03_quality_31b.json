@@ -1,0 +1,293 @@
+{
+  "meta": {
+    "model": "google/gemma-4-31B-it",
+    "key": {
+      "key_id": "eval/primary/v1",
+      "ngram_len": 5,
+      "context_history_size": 1024,
+      "sampling_table_size": 65536,
+      "created_at": "2026-08-26T21:09:55.299475+00:00",
+      "notes": "",
+      "depth": 30,
+      "fingerprint": "329e972801cf40f9"
+    }
+  },
+  "diversity": {
+    "code": {
+      "distinct_2": {
+        "n_pairs": 96,
+        "mean_a": 0.9249330330003304,
+        "mean_b": 0.9272122861915495,
+        "mean_diff": -0.002279253191219003,
+        "ci_low": -0.008293675797909569,
+        "ci_high": 0.0032079025315534,
+        "contains_zero": true
+      },
+      "distinct_3": {
+        "n_pairs": 96,
+        "mean_a": 0.9617062643995645,
+        "mean_b": 0.9646782308536913,
+        "mean_diff": -0.0029719664541265588,
+        "ci_low": -0.007322904594091203,
+        "ci_high": 0.0007981055302185568,
+        "contains_zero": true
+      },
+      "repetition_4gram": {
+        "n_pairs": 96,
+        "mean_a": 0.04389657025630762,
+        "mean_b": 0.03900350115735016,
+        "mean_diff": 0.00489306909895746,
+        "ci_low": -0.0009576066301498644,
+        "ci_high": 0.011910248816923784,
+        "contains_zero": true
+      },
+      "length_tokens": {
+        "n_pairs": 96,
+        "mean_a": 300.6041666666667,
+        "mean_b": 301.0520833333333,
+        "mean_diff": -0.4479166666666667,
+        "ci_low": -1.4895833333333333,
+        "ci_high": 0.5625,
+        "contains_zero": true
+      }
+    },
+    "creative": {
+      "distinct_2": {
+        "n_pairs": 96,
+        "mean_a": 0.9538793430747937,
+        "mean_b": 0.953297452174731,
+        "mean_diff": 0.0005818909000626232,
+        "ci_low": -0.002352636050123064,
+        "ci_high": 0.003620960295717381,
+        "contains_zero": true
+      },
+      "distinct_3": {
+        "n_pairs": 96,
+        "mean_a": 0.9972342494731672,
+        "mean_b": 0.9967505079204932,
+        "mean_diff": 0.00048374155267407945,
+        "ci_low": -0.00035127906595293124,
+        "ci_high": 0.0013507610008976173,
+        "contains_zero": true
+      },
+      "repetition_4gram": {
+        "n_pairs": 96,
+        "mean_a": 0.0006120204043312174,
+        "mean_b": 0.001108970224515242,
+        "mean_diff": -0.0004969498201840248,
+        "ci_low": -0.001121603142789574,
+        "ci_high": 7.387871805304138e-05,
+        "contains_zero": true
+      },
+      "length_tokens": {
+        "n_pairs": 96,
+        "mean_a": 400.0,
+        "mean_b": 400.0,
+        "mean_diff": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "contains_zero": true
+      }
+    },
+    "factual": {
+      "distinct_2": {
+        "n_pairs": 85,
+        "mean_a": 1.0,
+        "mean_b": 0.9988821796854447,
+        "mean_diff": 0.0011178203145554067,
+        "ci_low": 0.0,
+        "ci_high": 0.002896579161827271,
+        "contains_zero": true
+      },
+      "distinct_3": {
+        "n_pairs": 85,
+        "mean_a": 1.0,
+        "mean_b": 0.9993682499737863,
+        "mean_diff": 0.0006317500262136941,
+        "ci_low": 0.0,
+        "ci_high": 0.0016645695711439655,
+        "contains_zero": true
+      },
+      "repetition_4gram": {
+        "n_pairs": 85,
+        "mean_a": 0.0,
+        "mean_b": 0.0005034174817076029,
+        "mean_diff": -0.0005034174817076029,
+        "ci_low": -0.0012772879722049285,
+        "ci_high": 0.0,
+        "contains_zero": true
+      },
+      "length_tokens": {
+        "n_pairs": 96,
+        "mean_a": 17.645833333333332,
+        "mean_b": 19.1875,
+        "mean_diff": -1.5416666666666667,
+        "ci_low": -4.729166666666667,
+        "ci_high": 0.5625,
+        "contains_zero": true
+      }
+    },
+    "financial": {
+      "distinct_2": {
+        "n_pairs": 96,
+        "mean_a": 0.9436800062659568,
+        "mean_b": 0.9437001942074996,
+        "mean_diff": -2.0187941542777987e-05,
+        "ci_low": -0.004934169454412526,
+        "ci_high": 0.004590475763590218,
+        "contains_zero": true
+      },
+      "distinct_3": {
+        "n_pairs": 96,
+        "mean_a": 0.9859593417534396,
+        "mean_b": 0.9868385942659628,
+        "mean_diff": -0.0008792525125232478,
+        "ci_low": -0.003591908599421847,
+        "ci_high": 0.0016221549952795669,
+        "contains_zero": true
+      },
+      "repetition_4gram": {
+        "n_pairs": 96,
+        "mean_a": 0.010247216918428226,
+        "mean_b": 0.008544433111241749,
+        "mean_diff": 0.001702783807186476,
+        "ci_low": -0.001228327756435989,
+        "ci_high": 0.004835414279700844,
+        "contains_zero": true
+      },
+      "length_tokens": {
+        "n_pairs": 96,
+        "mean_a": 380.28125,
+        "mean_b": 380.03125,
+        "mean_diff": 0.25,
+        "ci_low": -0.2916666666666667,
+        "ci_high": 1.0,
+        "contains_zero": true
+      }
+    },
+    "open_ended": {
+      "distinct_2": {
+        "n_pairs": 96,
+        "mean_a": 0.9512811153522304,
+        "mean_b": 0.9527879300920401,
+        "mean_diff": -0.0015068147398097631,
+        "ci_low": -0.004567114510638696,
+        "ci_high": 0.0016098923381932912,
+        "contains_zero": true
+      },
+      "distinct_3": {
+        "n_pairs": 96,
+        "mean_a": 0.9910025411089297,
+        "mean_b": 0.9906570209985416,
+        "mean_diff": 0.00034552011038817043,
+        "ci_low": -0.0010430251585784665,
+        "ci_high": 0.0018003350872784368,
+        "contains_zero": true
+      },
+      "repetition_4gram": {
+        "n_pairs": 96,
+        "mean_a": 0.003965032984834058,
+        "mean_b": 0.0051362018985957845,
+        "mean_diff": -0.0011711689137617256,
+        "ci_low": -0.0027446935011925526,
+        "ci_high": 0.0003751332039009677,
+        "contains_zero": true
+      },
+      "length_tokens": {
+        "n_pairs": 96,
+        "mean_a": 400.0,
+        "mean_b": 400.0,
+        "mean_diff": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "contains_zero": true
+      }
+    },
+    "structured": {
+      "distinct_2": {
+        "n_pairs": 64,
+        "mean_a": 0.9665555735223514,
+        "mean_b": 0.9671941460209217,
+        "mean_diff": -0.000638572498570307,
+        "ci_low": -0.0022012253963983475,
+        "ci_high": 0.000580054061384392,
+        "contains_zero": true
+      },
+      "distinct_3": {
+        "n_pairs": 64,
+        "mean_a": 0.9839220053639266,
+        "mean_b": 0.9844071950190421,
+        "mean_diff": -0.00048518965511546927,
+        "ci_low": -0.001644735825951343,
+        "ci_high": 0.0004748096361959879,
+        "contains_zero": true
+      },
+      "repetition_4gram": {
+        "n_pairs": 64,
+        "mean_a": 0.011139774859287055,
+        "mean_b": 0.011573531360924937,
+        "mean_diff": -0.0004337565016378823,
+        "ci_low": -0.0017420455716384731,
+        "ci_high": 0.0007401041610482444,
+        "contains_zero": true
+      },
+      "length_tokens": {
+        "n_pairs": 64,
+        "mean_a": 66.84375,
+        "mean_b": 65.15625,
+        "mean_diff": 1.6875,
+        "ci_low": 0.53125,
+        "ci_high": 3.109375,
+        "contains_zero": false
+      }
+    }
+  },
+  "gsm8k": {
+    "acc_a": 0.932,
+    "acc_b": 0.92,
+    "diff": 0.01200000000000001,
+    "ci_low": -0.03512912866409683,
+    "ci_high": 0.059509969549578955,
+    "n_a": 250,
+    "n_b": 250,
+    "n_problems": 250,
+    "correct_watermarked": 233,
+    "correct_unwatermarked": 230,
+    "flips_watermarked_only": 8,
+    "flips_unwatermarked_only": 5
+  },
+  "perplexity_independent_judge": {
+    "judge_model": "Qwen/Qwen3.8-27B",
+    "judge_family_independent": true,
+    "generator_model": "google/gemma-4-31B-it",
+    "by_suite": {
+      "creative": {
+        "n_pairs": 96,
+        "mean_a": 5.6776117732127505,
+        "mean_b": 5.611170023679733,
+        "mean_diff": 0.06644174953301747,
+        "ci_low": -0.11391057390719651,
+        "ci_high": 0.24917494604984913,
+        "contains_zero": true
+      },
+      "open_ended": {
+        "n_pairs": 96,
+        "mean_a": 2.8075218250354133,
+        "mean_b": 2.843962294360002,
+        "mean_diff": -0.036440469324588776,
+        "ci_low": -0.08941565714776516,
+        "ci_high": 0.017832100701828744,
+        "contains_zero": true
+      },
+      "financial": {
+        "n_pairs": 96,
+        "mean_a": 2.8247854709625244,
+        "mean_b": 2.7637253428498902,
+        "mean_diff": 0.061060128112634025,
+        "ci_low": -0.0263273278872172,
+        "ci_high": 0.1543182773515582,
+        "contains_zero": true
+      }
+    }
+  }
+}

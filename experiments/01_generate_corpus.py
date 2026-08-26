@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from pathlib import Path
 
 from common import DATA, DEMO_MASTER_SECRET, MODEL_ID, PRIMARY_KEY_ID, banner, save_json
 from synthmark import WatermarkedLM, derive_key
@@ -106,7 +107,7 @@ def main() -> None:
         "total_texts": len(records),
         "total_wall_time_s": time.time() - t_start,
     }
-    save_json({"meta": meta, "records": records}, DATA / "corpus.json")
+    save_json({"meta": meta, "records": records}, Path(args.out))
     print(f"\n{len(records)} texts in {meta['total_wall_time_s'] / 60:.1f} min")
 
 

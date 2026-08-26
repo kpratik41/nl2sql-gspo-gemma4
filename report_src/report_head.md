@@ -2,7 +2,8 @@
 
 **An evaluation and a reusable toolkit**
 
-Model `google/gemma-4-E4B-it` · 2 × NVIDIA RTX PRO 6000 Blackwell (97 GB) · SynthID-Text via
+Models `google/gemma-4-E4B-it` and `google/gemma-4-31B-it` · fluency judged by
+`Qwen/Qwen3.8-27B` · 2 × NVIDIA RTX PRO 6000 Blackwell (97 GB) · SynthID-Text via
 Hugging Face Transformers 5.12.1 · package `synthmark` v0.1.0
 
 ---
@@ -56,7 +57,17 @@ Two properties follow directly from the mechanism, and they bound everything in 
 **Corpus.** 24 prompts × 4 independent samples across six prompt suites, generated twice —
 once watermarked, once not — with the *same prompts and the same seeds* under both
 conditions, so every comparison is paired. 400 new tokens per generation, sampled at
-temperature 1.0, top-k 64, top-p 0.95 (the model's own defaults).
+temperature 1.0, top-k 64, top-p 0.95 (the model's own defaults). 1,088 texts per model.
+
+**Two models.** Everything quality- and cost-related is measured on both `gemma-4-E4B-it`
+(~4B effective) and `gemma-4-31B-it`. They share a tokenizer and a 262,144-token vocabulary,
+so comparing them isolates the effect of model size. The detection, robustness and detector
+studies are reported on E4B; detection strength is a property of output entropy rather than
+of parameter count, and the E4B corpus already saturates at AUC 1.000.
+
+**Fluency judge.** `Qwen/Qwen3.8-27B` — an unrelated architecture with its own tokenizer and
+training data. A model cannot score its own output for this purpose (see §4.5), and a judge
+from the same family would share the generator's idiosyncrasies.
 
 The suites are split by **entropy**, because entropy is the variable that governs watermark
 strength. Reporting a single aggregate number over a mixed prompt set would hide the effect

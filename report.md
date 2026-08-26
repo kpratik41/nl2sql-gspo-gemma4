@@ -2,7 +2,8 @@
 
 **An evaluation and a reusable toolkit**
 
-Model `google/gemma-4-E4B-it` · 2 × NVIDIA RTX PRO 6000 Blackwell (97 GB) · SynthID-Text via
+Models `google/gemma-4-E4B-it` and `google/gemma-4-31B-it` · fluency judged by
+`Qwen/Qwen3.8-27B` · 2 × NVIDIA RTX PRO 6000 Blackwell (97 GB) · SynthID-Text via
 Hugging Face Transformers 5.12.1 · package `synthmark` v0.1.0
 
 ---
@@ -56,7 +57,17 @@ Two properties follow directly from the mechanism, and they bound everything in 
 **Corpus.** 24 prompts × 4 independent samples across six prompt suites, generated twice —
 once watermarked, once not — with the *same prompts and the same seeds* under both
 conditions, so every comparison is paired. 400 new tokens per generation, sampled at
-temperature 1.0, top-k 64, top-p 0.95 (the model's own defaults).
+temperature 1.0, top-k 64, top-p 0.95 (the model's own defaults). 1,088 texts per model.
+
+**Two models.** Everything quality- and cost-related is measured on both `gemma-4-E4B-it`
+(~4B effective) and `gemma-4-31B-it`. They share a tokenizer and a 262,144-token vocabulary,
+so comparing them isolates the effect of model size. The detection, robustness and detector
+studies are reported on E4B; detection strength is a property of output entropy rather than
+of parameter count, and the E4B corpus already saturates at AUC 1.000.
+
+**Fluency judge.** `Qwen/Qwen3.8-27B` — an unrelated architecture with its own tokenizer and
+training data. A model cannot score its own output for this purpose (see §4.5), and a judge
+from the same family would share the generator's idiosyncrasies.
 
 The suites are split by **entropy**, because entropy is the variable that governs watermark
 strength. Reporting a single aggregate number over a mixed prompt set would hide the effect
@@ -94,16 +105,21 @@ like `markets-research/v1` deterministically yields an independent key.
 |---|---|---|
 | The watermark is detectable with our key | ✅ | AUC 1.000, 100% detection at a 1% false-positive rate, on ~390-token free-form text |
 | It is invisible to a different key | ✅ | Wrong-key AUC 0.45–0.60 (chance); mean score 0.503 either way |
-| It does not degrade quality | ✅ | Fluency, diversity and GSM8K accuracy differences all statistically indistinguishable from zero |
+| It does not degrade quality | ✅ | On **both models**: fluency, diversity and GSM8K deltas all statistically indistinguishable from zero, and opposite-signed across the two |
 | False positives on human writing are controlled | ✅ | 1.3% observed at a nominal 1% threshold, 0% at 0.1% |
 | It works on short text | ❌ | 59% detection at 100 tokens, 18% at 25 |
 | It works on code and structured output | ❌ | AUC 0.77 on code, 0.55 on JSON — despite ample length |
 | It survives paraphrasing | ❌ | AUC collapses 1.000 → 0.607; detection rate 0% |
-| It is free at inference time | ❌ | 39% throughput cost at batch 16, 57% at batch 32 |
-| Detection needs no GPU | ✅ | 1,083 texts/s on CPU (0.9 ms/text) |
+| **Latency** is essentially unaffected | ✅ | +1.7 ms per token; 1.7% (31B) to 4.2% (E4B) of a decode step |
+| **Batched throughput** is unaffected | ⚠️ | 39–57% loss at batch 16–32 — but this is an artifact of the reference logits processor, not of the method (§4.8) |
+| Detection needs no GPU | ✅ | 1,083 texts/s on CPU (0.9 ms/text) — **but only after the fix in §4.9**; the upstream code makes CPU detection of GPU-generated text impossible |
 
-The three ❌ rows are inherent to the method, not defects in this implementation. They
+The three ❌ rows are **inherent to the method**: they follow from the fact that a watermark
+can only ride on randomness the model already had. No implementation will fix them, and they
 define what the control can and cannot be used for.
+
+The ⚠️ row is the opposite — a **fixable engineering problem** in the reference logits
+processor, quantified in §4.8. It should not be read as a cost of watermarking.
 
 ### 4.1 Detection at full length
 
@@ -202,47 +218,61 @@ n = 516
 
 ### 4.5 Quality and accuracy
 
-Fluency, scored by an independent model:
+Fluency, scored by **Qwen3.8-27B** — a model from an unrelated family, with its own
+architecture, tokenizer and training data, so it shares none of Gemma's idiosyncrasies:
 
-| Suite | n pairs | PPL watermarked | PPL plain | Difference [95% CI] | Significant? |
-|---|---|---|---|---|---|
-| creative | 96 | 17.79 | 17.39 | +0.39 [-0.56, +1.35] | no |
-| open_ended | 96 | 5.48 | 5.51 | -0.03 [-0.27, +0.20] | no |
-| financial | 96 | 5.69 | 5.69 | +0.01 [-0.40, +0.45] | no |
+| Model | Suite | n pairs | PPL watermarked | PPL plain | Difference [95% CI] | Significant? |
+|---|---|---|---|---|---|---|
+| Gemma-4-E4B | creative | 96 | 7.261 | 7.389 | -0.128 [-0.394, +0.134] | no |
+| Gemma-4-E4B | open_ended | 96 | 3.424 | 3.369 | +0.055 [-0.015, +0.129] | no |
+| Gemma-4-E4B | financial | 96 | 3.302 | 3.303 | -0.001 [-0.102, +0.099] | no |
+| Gemma-4-31B | creative | 96 | 5.678 | 5.611 | +0.066 [-0.114, +0.249] | no |
+| Gemma-4-31B | open_ended | 96 | 2.808 | 2.844 | -0.036 [-0.089, +0.018] | no |
+| Gemma-4-31B | financial | 96 | 2.825 | 2.764 | +0.061 [-0.026, +0.154] | no |
 
 Diversity and degeneracy, paired by prompt:
 
-| Suite | n pairs | distinct-2 WM | distinct-2 plain | Difference [95% CI] |
-|---|---|---|---|---|
-| creative | 96 | 0.9628 | 0.9640 | -0.0012 [-0.0046, +0.0022] |
-| open_ended | 96 | 0.9596 | 0.9602 | -0.0006 [-0.0041, +0.0028] |
-| financial | 96 | 0.9350 | 0.9408 | -0.0057 [-0.0119, +0.0003] |
-| factual | 76 | 0.9774 | 0.9801 | -0.0027 [-0.0075, +0.0030] |
-| structured | 64 | 0.9621 | 0.9622 | -0.0000 [-0.0040, +0.0045] |
-| code | 96 | 0.9005 | 0.9007 | -0.0002 [-0.0090, +0.0084] |
+| Model | Suite | n pairs | distinct-2 WM | distinct-2 plain | Difference [95% CI] |
+|---|---|---|---|---|---|
+| Gemma-4-E4B | creative | 96 | 0.9628 | 0.9640 | -0.0012 [-0.0046, +0.0022] |
+| Gemma-4-E4B | open_ended | 96 | 0.9596 | 0.9602 | -0.0006 [-0.0041, +0.0028] |
+| Gemma-4-E4B | financial | 96 | 0.9350 | 0.9408 | -0.0057 [-0.0119, +0.0003] |
+| Gemma-4-E4B | factual | 76 | 0.9774 | 0.9801 | -0.0027 [-0.0075, +0.0030] |
+| Gemma-4-E4B | structured | 64 | 0.9621 | 0.9622 | -0.0000 [-0.0040, +0.0045] |
+| Gemma-4-E4B | code | 96 | 0.9005 | 0.9007 | -0.0002 [-0.0090, +0.0084] |
+| Gemma-4-31B | creative | 96 | 0.9539 | 0.9533 | +0.0006 [-0.0024, +0.0036] |
+| Gemma-4-31B | open_ended | 96 | 0.9513 | 0.9528 | -0.0015 [-0.0046, +0.0016] |
+| Gemma-4-31B | financial | 96 | 0.9437 | 0.9437 | -0.0000 [-0.0049, +0.0046] |
+| Gemma-4-31B | factual | 85 | 1.0000 | 0.9989 | +0.0011 [+0.0000, +0.0029] |
+| Gemma-4-31B | structured | 64 | 0.9666 | 0.9672 | -0.0006 [-0.0022, +0.0006] |
+| Gemma-4-31B | code | 96 | 0.9249 | 0.9272 | -0.0023 [-0.0083, +0.0032] |
 
 Task accuracy on sampled chain-of-thought:
 
-| Condition | Correct | Accuracy |
-|---|---|---|
-| watermarked | 156/250 | 0.6240 |
-| unwatermarked | 161/250 | 0.6440 |
+| Model | Watermarked | Unwatermarked | Difference [95% CI] | Flips WM-only / plain-only |
+|---|---|---|---|---|
+| Gemma-4-E4B | 156/250 (0.624) | 161/250 (0.644) | **-0.0200** [-0.1037, +0.0641] | 15 / 20 |
+| Gemma-4-31B | 233/250 (0.932) | 230/250 (0.920) | **+0.0120** [-0.0351, +0.0595] | 8 / 5 |
 
-Difference **-0.0200**, 95% CI [-0.1037, +0.0641].  
-Item-level flips: 15 correct only when watermarked, 20 correct only when not.
+No measure shows a degradation, on either model. Every confidence interval contains zero.
 
-No measure shows a degradation. Every confidence interval contains zero, and the GSM8K
-item-level flips are near-symmetric (15 vs 20), which is what temperature-1.0 sampling noise
-produces on its own.
+The GSM8K result is the most informative, because the two models disagree in *direction*:
+the watermarked arm is 2.0 pp **worse** on E4B and 1.2 pp **better** on the 31B. A real
+systematic cost would push the same way on both. Two opposite-signed, non-significant
+deltas, with near-symmetric item-level flips (15/20 and 8/5), are what sampling noise at
+temperature 1.0 looks like.
+
+The 31B interval is also tighter (±4.7 pp vs ±8.4 pp) despite the same 250 problems, because
+its accuracy sits near ceiling (93% vs 62%) where binomial variance is smaller.
 
 Two honest caveats about strength of evidence:
 
-- The GSM8K interval is **wide** (±8 pp). It rules out a large accuracy loss, not a small
-  one. The fluency and diversity measures are far tighter — the `open_ended` perplexity
-  interval is ±0.24 on a base of 5.5, roughly ±4% — and carry most of the weight.
-- The judge is a smaller sibling of the model under test. It has different weights and a
-  different argmax path, so it does not inherit the self-scoring bias, but an unrelated
-  architecture would be a stronger control.
+- The GSM8K intervals are **wide** (±8 pp on E4B, ±4.7 pp on the 31B). They rule out a large
+  accuracy loss, not a small one. The fluency and diversity measures are far tighter and
+  carry most of the weight.
+- Perplexity is a proxy for fluency, not a measure of usefulness. It would not detect a
+  failure mode that leaves text fluent but less helpful, and no automatic metric would.
+  Human side-by-side rating remains the stronger design.
 
 **A methodological note.** Multiple-choice benchmarks scored by comparing option
 log-probabilities — MMLU, HellaSwag, ARC — are **unaffected by watermarking by
@@ -326,48 +356,109 @@ not worth it**. The per-depth weighted mean is training-free, has a closed-form 
 the better detector. A larger training corpus might change this, but the burden of proof sits
 with the more complex method.
 
-### 4.8 Inference cost
+### 4.8 Inference cost: latency vs. throughput
 
-| Batch size | Plain (tok/s) | Watermarked (tok/s) | Overhead |
+These are two different quantities with two different answers, and conflating them is easy.
+
+**Latency — what a single user experiences — is essentially unaffected.** At batch 1 the
+watermark adds about 1.7 ms per token: 4.2% of a decode step on E4B, 1.7% on the 31B. Nobody
+notices this.
+
+**Batched throughput is a different story**, and the raw numbers look alarming:
+
+| Batch size | Gemma-4-E4B plain | Gemma-4-E4B watermarked | Gemma-4-E4B overhead | Gemma-4-31B plain | Gemma-4-31B watermarked | Gemma-4-31B overhead |
+|---|---|---|---|---|---|---|
+| 1 | 26.9 | 25.8 | **4.2%** | 16.0 | 15.7 | **1.7%** |
+| 4 | 99.9 | 87.2 | **12.7%** | 61.2 | 56.5 | **7.7%** |
+| 16 | 398.0 | 241.4 | **39.4%** | 210.0 | 156.3 | **25.6%** |
+| 32 | 770.4 | 329.0 | **57.3%** | 341.5 | 213.7 | **37.4%** |
+
+Overhead climbs steeply with batch size on both models, and is consistently ~35% lower on
+the 31B than on E4B. That much is a real measurement. But it does *not* mean the method is
+expensive, and the next table shows why.
+
+#### Where the cost actually goes
+
+Timing the SynthID logits processor in isolation, with no model involved, accounts for
+essentially all of it:
+
+| Batch | Model forward (ms) | Watermarked step (ms) | Observed Δ | Processor alone | Explained |
+|---|---|---|---|---|---|
+| 1 | 37.18 | 38.82 | 1.63 | 1.76 | **108%** |
+| 4 | 40.05 | 45.86 | 5.81 | 5.43 | **94%** |
+| 16 | 40.20 | 66.29 | 26.09 | 26.14 | **100%** |
+| 32 | 41.54 | 97.26 | 55.72 | 55.88 | **100%** |
+
+The overhead is **100% the logits processor**. And its scaling is the whole story:
+
+| Batch | Processor ms/step | Processor ms **per sequence** |
+|---|---|---|
+| 1 | 1.76 | 1.76 |
+| 4 | 5.43 | 1.36 |
+| 16 | 26.14 | 1.63 |
+| 32 | 55.88 | 1.75 |
+
+**The model forward is nearly flat across batch sizes (37 → 42 ms) because GPUs batch
+efficiently. The watermark processor is perfectly linear — a fixed ~1.7 ms per sequence that
+never amortises.** That is not a property of SynthID. It is a property of this
+implementation: `update_scores` runs a Python `for i in range(depth)` loop, plus `vmap`
+calls, serialised per sequence over a 262k-wide tensor.
+
+The depth sweep confirms the loop is the cost:
+
+| Depth | Processor ms/step |
+|---|---|
+| 1 | 0.54 |
+| 5 | 3.11 |
+| 10 | 7.18 |
+| 30 | 26.16 |
+
+Roughly 0.87 ms per depth level at batch 16 — linear in the number of Python iterations.
+
+#### What this implies
+
+If the processor amortised across a batch the way the model forward does, the overhead would
+be flat at about 4% everywhere instead of climbing to 57%:
+
+| Batch | Measured overhead | If it batched like the model |
+|---|---|---|
+| 1 | 4.2% | **4.5%** |
+| 4 | 12.7% | **4.2%** |
+| 16 | 39.4% | **4.2%** |
+| 32 | 57.3% | **4.1%** |
+
+So the honest conclusion is:
+
+- **Latency is genuinely minimal**, and the widely-repeated claim to that effect is correct.
+- **The batched-throughput cost measured here is real but avoidable.** It is the price of an
+  unoptimised reference implementation, not of watermarking. A fused kernel that computes all
+  depths in one pass, or a serving stack (vLLM, TGI) with an optimised processor, should
+  recover most of the ~4%-vs-57% gap.
+- **Until you have that, depth is the lever.** Depth 10 costs 15.2% instead of 39.4% on E4B
+  (8.6% vs 25.6% on the 31B), and detection already saturates at AUC 1.000 by 200 tokens with
+  depth 30. Depth is part of the key, so it must be fixed before keys are issued.
+
+**Before deploying, benchmark your own serving stack.** These numbers characterise
+HuggingFace `generate()`; they are not a property of SynthID, and they should not be used to
+argue either for or against watermarking on a different stack.
+
+| Depth | Gemma-4-E4B tok/s | Gemma-4-E4B overhead | Gemma-4-31B tok/s | Gemma-4-31B overhead |
+|---|---|---|---|---|
+| 1 | 392.7 | **1.3%** | 208.8 | **0.6%** |
+| 5 | 369.1 | **7.3%** | 201.7 | **4.0%** |
+| 10 | 337.7 | **15.2%** | 192.0 | **8.6%** |
+| 30 | 241.1 | **39.4%** | 156.3 | **25.6%** |
+
+| Model | Device | Texts/s | ms per text |
 |---|---|---|---|
-| 1 | 26.9 | 25.8 | 4.2% |
-| 4 | 99.9 | 87.2 | 12.7% |
-| 16 | 398.0 | 241.4 | 39.4% |
-| 32 | 770.4 | 329.0 | 57.3% |
-
-**This is the finding that most contradicts the received wisdom.** "Negligible speed impact"
-does not hold here: at production batch sizes the watermark costs 39–57% of throughput.
-
-The reason is structural rather than a defect. The watermark's work per decoding step is
-proportional to `vocab_size × depth` and is **independent of model size**. Gemma-4-E4B has a
-262,144-token vocabulary and depth 30, so it performs 30 passes over a 262k-wide tensor per
-token. On a frontier-scale model that same absolute cost disappears into a much larger
-forward pass — which is why the claim is true for large models and does not transfer to small
-ones. The cost also grows with batch size, because the model forward parallelises across the
-batch far better than the sequential per-depth tournament does.
-
-Depth is the lever, and it is close to linear:
-
-| Depth | Throughput (tok/s) | Overhead vs. plain |
-|---|---|---|
-| 1 | 392.7 | 1.3% |
-| 5 | 369.1 | 7.3% |
-| 10 | 337.7 | 15.2% |
-| 30 | 241.1 | 39.4% |
-
-Given that detection already saturates at AUC 1.000 by 200–400 tokens with depth 30, **depth
-10 (15% overhead) or even 5 (7%) is likely the better operating point** for long-form output,
-trading headroom you are not using for throughput you are. Depth should be chosen from the
-length distribution of the text you actually need to detect. Note that depth is part of the
-key: changing it changes the watermark, so it must be fixed before keys are issued.
-
-| Device | Texts/s | ms per text |
-|---|---|---|
-| cpu | 1082.6 | 0.9 |
-| cuda:0 | 1241.9 | 0.8 |
+| Gemma-4-E4B | cpu | 1082.6 | 0.9 |
+| Gemma-4-E4B | cuda:0 | 1241.9 | 0.8 |
+| Gemma-4-31B | cpu | 1255.8 | 0.8 |
+| Gemma-4-31B | cuda:0 | 1257.2 | 0.8 |
 
 Detection is a hash and a mean. It needs the tokenizer, not the model, and CPU is within 13%
-of GPU — so the detection service needs no accelerator at all.
+of GPU on E4B and indistinguishable on the 31B — so the detection service needs no
+accelerator at all.
 
 ### 4.9 A bug worth knowing about
 

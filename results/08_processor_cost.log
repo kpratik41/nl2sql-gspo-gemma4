@@ -1,0 +1,30 @@
+==============================================================================
+Where the watermark's inference cost actually goes
+==============================================================================
+Processor cost per decoding step, model excluded:
+ batch   ms/step   ms per sequence
+     1      1.76              1.76
+     4      5.43              1.36
+    16     26.14              1.63
+    32     55.88              1.75
+Cost per sequence is flat, so the processor does not amortise across a batch.
+Processor cost by depth (batch 16):
+ depth   ms/step
+     1      0.54
+     5      3.11
+    10      7.18
+    30     26.16
+Attribution against end-to-end measurement:
+ batch   plain ms     wm ms  observed Δ  processor  explained
+     1      37.18     38.82        1.63       1.76    107.6%
+     4      40.05     45.86        5.81       5.43     93.5%
+    16      40.20     66.29       26.09      26.14    100.2%
+    32      41.54     97.26       55.72      55.88    100.3%
+Hypothetical: if the processor batched as well as the model forward does
+(i.e. cost stayed near its batch-1 value), the overhead would be:
+ batch    actual   if batched
+     1      4.2%         4.5%
+     4     12.7%         4.2%
+    16     39.4%         4.2%
+    32     57.3%         4.1%
+  wrote results/08_processor_cost.json

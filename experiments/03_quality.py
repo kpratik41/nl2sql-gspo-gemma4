@@ -28,6 +28,7 @@ import argparse
 import json
 import re
 from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 from common import DATA, DEMO_MASTER_SECRET, MODEL_ID, PRIMARY_KEY_ID, RESULTS, banner, save_json
@@ -92,10 +93,12 @@ def main() -> None:
     ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--skip-gsm8k", action="store_true")
     ap.add_argument("--device", default="cuda:0")
-    ap.add_argument("--judge-model", default="google/gemma-4-E2B-it",
+    ap.add_argument("--judge-model", default="Qwen/Qwen3.8-27B",
                     help="Independent model used to score fluency. Must not be the model under test.")
     ap.add_argument("--judge-device", default="cuda:1")
     ap.add_argument("--skip-judge", action="store_true")
+    ap.add_argument("--out", default=None,
+                    help="Results JSON path; defaults to results/03_quality.json. Pass a\n                          distinct path when evaluating a second model.")
     args = ap.parse_args()
 
     banner("Quality and accuracy under watermarking")
@@ -148,9 +151,6 @@ def main() -> None:
         print("that produced it is biased against it by construction: SynthID selects among")
         print("near-ties using the g-function rather than raw probability, so watermarked")
         print("text sits slightly off that model's own argmax path regardless of quality.")
-        print("A different-sized sibling has different weights and a different argmax path,")
-        print("so it does not inherit that bias, though it does share a tokenizer and")
-        print("training lineage -- an independent architecture would be a stronger control.")
         judge = WatermarkedLM(args.judge_model, device_map=args.judge_device)
         ppl_results = {}
         for suite in ("creative", "open_ended", "financial"):
@@ -217,10 +217,11 @@ def main() -> None:
         save_json(
             {"questions": questions[:20], "gold": golds[:20],
              "watermarked": preds["watermarked"][:20], "unwatermarked": preds["unwatermarked"][:20]},
-            RESULTS / "03_gsm8k_samples.json",
+            Path(str(args.out).replace(".json", "_gsm8k_samples.json"))
+            if args.out else RESULTS / "03_gsm8k_samples.json",
         )
 
-    save_json(results, RESULTS / "03_quality.json")
+    save_json(results, Path(args.out) if args.out else RESULTS / "03_quality.json")
 
 
 if __name__ == "__main__":

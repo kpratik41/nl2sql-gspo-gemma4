@@ -1,0 +1,79 @@
+{
+  "meta": {
+    "vocab": 262144,
+    "depth": 30,
+    "device": "cuda:1"
+  },
+  "processor_by_batch": {
+    "1": {
+      "ms_per_step": 1.7553434000092238,
+      "ms_per_sequence": 1.7553434000092238
+    },
+    "4": {
+      "ms_per_step": 5.43450482496155,
+      "ms_per_sequence": 1.3586262062403875
+    },
+    "16": {
+      "ms_per_step": 26.141918124994845,
+      "ms_per_sequence": 1.6338698828121778
+    },
+    "32": {
+      "ms_per_step": 55.87829740002235,
+      "ms_per_sequence": 1.7461967937506984
+    }
+  },
+  "processor_by_depth_batch16": {
+    "1": 0.5383477249779389,
+    "5": 3.1129918500027998,
+    "10": 7.181737874998362,
+    "30": 26.15616642497116
+  },
+  "attribution": {
+    "1": {
+      "plain_ms_per_step": 37.18323269140633,
+      "watermarked_ms_per_step": 38.81513318359353,
+      "observed_delta_ms": 1.6319004921871993,
+      "processor_ms": 1.7553434000092238,
+      "fraction_explained": 1.0756436488701444
+    },
+    "4": {
+      "plain_ms_per_step": 40.05383505859328,
+      "watermarked_ms_per_step": 45.86435466015715,
+      "observed_delta_ms": 5.810519601563868,
+      "processor_ms": 5.43450482496155,
+      "fraction_explained": 0.9352872372203829
+    },
+    "16": {
+      "plain_ms_per_step": 40.19965839062323,
+      "watermarked_ms_per_step": 66.28736824999848,
+      "observed_delta_ms": 26.087709859375252,
+      "processor_ms": 26.141918124994845,
+      "fraction_explained": 1.0020779235092616
+    },
+    "32": {
+      "plain_ms_per_step": 41.53702205859133,
+      "watermarked_ms_per_step": 97.2550448945313,
+      "observed_delta_ms": 55.71802283593996,
+      "processor_ms": 55.87829740002235,
+      "fraction_explained": 1.0028765299973819
+    }
+  },
+  "hypothetical_amortised": {
+    "1": {
+      "actual": 0.042042893024954904,
+      "if_amortised": 0.045079804559063186
+    },
+    "4": {
+      "actual": 0.1266892261892334,
+      "if_amortised": 0.04198464224182934
+    },
+    "16": {
+      "actual": 0.3935547683985153,
+      "if_amortised": 0.0418387158882484
+    },
+    "32": {
+      "actual": 0.5729062476539252,
+      "if_amortised": 0.04054625755406727
+    }
+  }
+}
