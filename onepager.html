@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Text Watermarking for LLM Output — Management Summary</title>
+<style>
+:root {
+  --bg: #ffffff; --fg: #1a1d21; --muted: #5c6570; --rule: #e3e7ec;
+  --accent: #12507b; --code-bg: #f5f7f9; --th-bg: #f0f3f6; --tr-alt: #fafbfc;
+  --good: #1a6b3c; --warn: #8a5300; --bad: #97231f; --quote-bg: #f7f9fb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171a; --fg: #e6e9ec; --muted: #99a2ac; --rule: #2b3238;
+    --accent: #7cb8e0; --code-bg: #1c2126; --th-bg: #1f252b; --tr-alt: #181c20;
+    --good: #6ed49b; --warn: #e0b063; --bad: #f08c86; --quote-bg: #1a1f24;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); margin: 0;
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 900px; margin: 0 auto; padding: 3rem 1.5rem 6rem; }
+h1, h2, h3, h4 { line-height: 1.25; font-weight: 650; margin: 2.4em 0 0.7em; }
+h1 { font-size: 2.1rem; margin-top: 0; letter-spacing: -0.02em; }
+h2 { font-size: 1.45rem; padding-bottom: 0.35rem; border-bottom: 2px solid var(--rule); }
+h3 { font-size: 1.13rem; color: var(--accent); }
+h4 { font-size: 1rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+p, li { color: var(--fg); }
+a { color: var(--accent); }
+code {
+  background: var(--code-bg); padding: 0.12em 0.38em; border-radius: 4px;
+  font: 0.87em/1.5 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--rule); border-radius: 8px;
+  padding: 1rem 1.1rem; overflow-x: auto;
+}
+pre code { background: none; padding: 0; font-size: 0.85rem; }
+blockquote {
+  margin: 1.4em 0; padding: 0.9rem 1.2rem; background: var(--quote-bg);
+  border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0;
+}
+blockquote p:first-child { margin-top: 0; } blockquote p:last-child { margin-bottom: 0; }
+.table-scroll { overflow-x: auto; margin: 1.5em 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { padding: 0.5rem 0.8rem; text-align: left; border-bottom: 1px solid var(--rule); }
+th { background: var(--th-bg); font-weight: 600; white-space: nowrap; }
+tbody tr:nth-child(even) { background: var(--tr-alt); }
+td:not(:first-child), th:not(:first-child) { font-variant-numeric: tabular-nums; }
+hr { border: none; border-top: 1px solid var(--rule); margin: 3rem 0; }
+.subtitle { color: var(--muted); font-size: 1.05rem; margin-top: -0.4rem; }
+.meta { color: var(--muted); font-size: 0.85rem; }
+strong { font-weight: 650; }
+.yes { color: var(--good); font-weight: 650; }
+.no  { color: var(--bad); font-weight: 650; }
+.part { color: var(--warn); font-weight: 650; }
+ul, ol { padding-left: 1.4rem; }
+@media print {
+  /* Fit the management summary on a single sheet and keep tables intact. */
+  @page { margin: 12mm; }
+  body { font-size: 9.4pt; line-height: 1.38; }
+  .wrap { max-width: none; padding: 0; }
+  h1 { font-size: 15pt; margin-bottom: 0.2rem; }
+  h2 { font-size: 11pt; margin: 0.75em 0 0.3em; padding-bottom: 0.15rem; }
+  h3 { font-size: 10pt; margin: 0.6em 0 0.25em; }
+  p, li { margin: 0.3em 0; }
+  table { font-size: 8.4pt; page-break-inside: avoid; }
+  th, td { padding: 0.2rem 0.4rem; }
+  hr { margin: 0.7rem 0; }
+  a { text-decoration: none; color: inherit; }
+  .table-scroll { overflow: visible; }
+}
+li { margin: 0.3em 0; }
+</style>
+</head>
+<body><div class="wrap">
+<h1 id="text-watermarking-for-llm-output-management-summary">Text Watermarking for LLM Output — Management Summary</h1>
+<p>Pratik Kakkar · Chandra Dhir · Anup Shirgaonkar</p>
+<p><em>Evaluation of SynthID-Text watermarking and a reusable internal toolkit. Method is
+model-agnostic; tested on Gemma-4 (4B and 31B). Full detail: <a href="report.md">report.md</a>.</em></p>
+<hr />
+<h2 id="why-now">Why now</h2>
+<p>The EU AI Act Article 50 requires generative AI output to be <strong>"marked in a machine-readable
+format and detectable as artificially generated."</strong> Article 50(4) has applied since
+<strong>2 August 2026</strong>; the marking duty under 50(2) carries a grace period to <strong>2 December 2026</strong>
+for systems already in market. The Act applies <strong>extraterritorially</strong> to any provider whose
+output reaches EU users, with penalties up to <strong>€15m or 3% of worldwide turnover</strong>.</p>
+<h2 id="bottom-line">Bottom line</h2>
+<p><strong>The technology works, costs nothing in quality, and is materially weaker than its
+reputation suggests.</strong> It is a provenance control — it answers <em>"did our systems produce
+this?"</em> It is not an anti-abuse control and should not be presented as one.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th></th>
+<th>Verdict</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Detects our own output</td>
+<td><span class="yes">✅</span></td>
+<td>100% detection on ~390 words of prose, at a 1% false-alarm rate</td>
+</tr>
+<tr>
+<td>No quality or accuracy cost</td>
+<td><span class="yes">✅</span></td>
+<td>No measurable difference on either model; every interval spans zero</td>
+</tr>
+<tr>
+<td>Wrongly flags human writing</td>
+<td><span class="yes">✅</span> Low</td>
+<td>1.3% against a 1% target</td>
+</tr>
+<tr>
+<td>Adds user-visible latency</td>
+<td><span class="yes">✅</span> No</td>
+<td>+1.7 ms per token (1.7–4.2%)</td>
+</tr>
+<tr>
+<td>Serving throughput cost</td>
+<td><span class="part">⚠️</span></td>
+<td>37–57% under batching today — but a fixable engineering issue, not inherent (see below)</td>
+</tr>
+<tr>
+<td>Survives paraphrasing</td>
+<td><span class="no">❌</span></td>
+<td>One rewrite pass removes it entirely: detection 100% → <strong>0%</strong></td>
+</tr>
+<tr>
+<td>Works on code / structured output</td>
+<td><span class="no">❌</span></td>
+<td>Near-useless (AUC 0.63–0.77); inherent, not fixable</td>
+</tr>
+<tr>
+<td>Detection needs a GPU</td>
+<td><span class="yes">✅</span> No</td>
+<td>1,256 documents/second on ordinary CPU</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="three-findings-that-change-how-this-should-be-planned">Three findings that change how this should be planned</h2>
+<p><strong>1. Detection gets weaker as our models get better.</strong> On the 31B model, detection falls from
+100% to <strong>51%</strong> at the same document length. Larger models are more confident, leaving less
+randomness for the watermark to use. <strong>Detection thresholds do not transfer between models
+and will silently weaken at every model upgrade.</strong> Re-calibration must be part of the
+model-promotion checklist.</p>
+<p><strong>2. The serving cost is an implementation defect, not a property of the method.</strong> We
+attributed 100% of the throughput loss to an unoptimised loop in the open-source library. A
+properly batched implementation would cost about <strong>4% instead of 57%</strong>. Do not size capacity
+off today's number, and do not reject watermarking on it.</p>
+<p><strong>3. We found and fixed a silent-failure bug in the upstream library.</strong> The same key produced
+different watermarks on CPU versus GPU, meaning GPU-generated text was undetectable by a CPU
+detector — returning a normal-looking "not watermarked" result rather than an error. Any
+other team adopting this library is exposed to it.</p>
+<h2 id="what-it-cannot-do-for-the-compliance-narrative">What it cannot do — for the compliance narrative</h2>
+<p>Not attribution — it identifies a <strong>key</strong>, never a person. Not proof — a negative result is
+not evidence of human authorship. Not robust to a motivated actor. Not applicable to voice,
+image or video: <strong>this study covers text only.</strong></p>
+<p>Article 50(2) requires marking be effective <em>"as far as this is technically feasible"</em>. The
+statute anticipates limits, so documenting them is part of a compliance argument rather than
+a weakness in one.</p>
+<h2 id="recommended-next-steps">Recommended next steps</h2>
+<ol>
+<li><strong>Confirm the 2 December 2026 exposure</strong> with Legal — systems in scope, and whether Article 50(4)'s human-editorial-review exemption covers some workflows more cheaply than a technical mark.</li>
+<li><strong>Engage model serving</strong> on a vLLM implementation. No vendor ships this, but the extension points exist; it is a contained engineering task, not research.</li>
+<li><strong>Adopt key governance now</strong> — one escrowed master secret, per-desk derived keys, detection offered as a service. Whoever holds a key can both detect <em>and forge</em> the watermark.</li>
+<li><strong>Never deploy detection without a positive control.</strong> Every failure mode here looks identical — a normal "no watermark detected". A known-watermarked test document, checked continuously, makes silent failure loud.</li>
+</ol>
+<p><em>Deliverables: <code>synthmark</code> package (generation, detection, CPU detection service, CLI), full
+evaluation across two models, 27 tests. Branch <code>watermarking</code>.</em></p>
+</div></body>
+</html>

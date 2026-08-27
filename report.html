@@ -59,6 +59,21 @@ strong { font-weight: 650; }
 .no  { color: var(--bad); font-weight: 650; }
 .part { color: var(--warn); font-weight: 650; }
 ul, ol { padding-left: 1.4rem; }
+@media print {
+  /* Fit the management summary on a single sheet and keep tables intact. */
+  @page { margin: 12mm; }
+  body { font-size: 9.4pt; line-height: 1.38; }
+  .wrap { max-width: none; padding: 0; }
+  h1 { font-size: 15pt; margin-bottom: 0.2rem; }
+  h2 { font-size: 11pt; margin: 0.75em 0 0.3em; padding-bottom: 0.15rem; }
+  h3 { font-size: 10pt; margin: 0.6em 0 0.25em; }
+  p, li { margin: 0.3em 0; }
+  table { font-size: 8.4pt; page-break-inside: avoid; }
+  th, td { padding: 0.2rem 0.4rem; }
+  hr { margin: 0.7rem 0; }
+  a { text-decoration: none; color: inherit; }
+  .table-scroll { overflow: visible; }
+}
 li { margin: 0.3em 0; }
 </style>
 </head>
