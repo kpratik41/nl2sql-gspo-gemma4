@@ -90,7 +90,7 @@ format and detectable as artificially generated."</strong> Article 50(4) has app
 for systems already in market. The Act applies <strong>extraterritorially</strong> to any provider whose
 output reaches EU users, with penalties up to <strong>€15m or 3% of worldwide turnover</strong>.</p>
 <h2 id="bottom-line">Bottom line</h2>
-<p><strong>The technology works, costs nothing in quality, and is materially weaker than its
+<p><strong>The technology works, costs nothing in output quality, and is materially weaker than its
 reputation suggests.</strong> It is a provenance control — it answers <em>"did our systems produce
 this?"</em> It is not an anti-abuse control and should not be presented as one.</p>
 <div class="table-scroll"><table>
@@ -105,7 +105,7 @@ this?"</em> It is not an anti-abuse control and should not be presented as one.<
 <tr>
 <td>Detects our own output</td>
 <td><span class="yes">✅</span></td>
-<td>100% detection on ~390 words of prose, at a 1% false-alarm rate</td>
+<td>100% detection on ~400-word prose, at a 1% false-alarm rate</td>
 </tr>
 <tr>
 <td>No quality or accuracy cost</td>
@@ -120,12 +120,12 @@ this?"</em> It is not an anti-abuse control and should not be presented as one.<
 <tr>
 <td>Adds user-visible latency</td>
 <td><span class="yes">✅</span> No</td>
-<td>+1.7 ms per token (1.7–4.2%)</td>
+<td>+1.7 ms per token (under 5% of a decode step)</td>
 </tr>
 <tr>
-<td>Serving throughput cost</td>
-<td><span class="part">⚠️</span></td>
-<td>37–57% under batching today — but a fixable engineering issue, not inherent (see below)</td>
+<td>Detection needs a GPU</td>
+<td><span class="yes">✅</span> No</td>
+<td>1,256 documents/second on ordinary CPU</td>
 </tr>
 <tr>
 <td>Survives paraphrasing</td>
@@ -137,30 +137,19 @@ this?"</em> It is not an anti-abuse control and should not be presented as one.<
 <td><span class="no">❌</span></td>
 <td>Near-useless (AUC 0.63–0.77); inherent, not fixable</td>
 </tr>
-<tr>
-<td>Detection needs a GPU</td>
-<td><span class="yes">✅</span> No</td>
-<td>1,256 documents/second on ordinary CPU</td>
-</tr>
 </tbody>
 </table></div>
-<h2 id="three-findings-that-change-how-this-should-be-planned">Three findings that change how this should be planned</h2>
-<p><strong>1. Detection gets weaker as our models get better.</strong> On the 31B model, detection falls from
+<p>Serving throughput needs an optimised implementation before production use. The cause is
+understood and the fix is a contained engineering task; detail in the full report.</p>
+<h2 id="the-finding-that-changes-how-this-should-be-planned">The finding that changes how this should be planned</h2>
+<p><strong>Detection gets weaker as our models get better.</strong> On the 31B model, detection falls from
 100% to <strong>51%</strong> at the same document length. Larger models are more confident, leaving less
 randomness for the watermark to use. Both figures are for <strong>400-token documents</strong>, which is
 all we tested; detection rises with length and the 31B was still improving sharply at that
 point (44% → 64% → 80% across 200/300/400 tokens on creative prose), so longer documents
-detect better. <strong>Detection thresholds do not transfer between models
-and will silently weaken at every model upgrade.</strong> Re-calibration must be part of the
-model-promotion checklist.</p>
-<p><strong>2. The serving cost is an implementation defect, not a property of the method.</strong> We
-attributed 100% of the throughput loss to an unoptimised loop in the open-source library. A
-properly batched implementation would cost about <strong>4% instead of 57%</strong>. Do not size capacity
-off today's number, and do not reject watermarking on it.</p>
-<p><strong>3. We found and fixed a silent-failure bug in the upstream library.</strong> The same key produced
-different watermarks on CPU versus GPU, meaning GPU-generated text was undetectable by a CPU
-detector — returning a normal-looking "not watermarked" result rather than an error. Any
-other team adopting this library is exposed to it.</p>
+detect better.</p>
+<p><strong>The consequence: detection thresholds do not transfer between models, and will silently
+weaken at every model upgrade.</strong> Re-calibration belongs on the model-promotion checklist.</p>
 <h2 id="what-it-cannot-do-for-the-compliance-narrative">What it cannot do — for the compliance narrative</h2>
 <p>Not attribution — it identifies a <strong>key</strong>, never a person. Not proof — a negative result is
 not evidence of human authorship. Not robust to a motivated actor. Not applicable to voice,
@@ -170,7 +159,6 @@ statute anticipates limits, so documenting them is part of a compliance argument
 a weakness in one.</p>
 <h2 id="recommended-next-steps">Recommended next steps</h2>
 <ol>
-<li><strong>Confirm the 2 December 2026 exposure</strong> with Legal — systems in scope, and whether Article 50(4)'s human-editorial-review exemption covers some workflows more cheaply than a technical mark.</li>
 <li><strong>Engage model serving</strong> on a vLLM implementation. No vendor ships this, but the extension points exist; it is a contained engineering task, not research.</li>
 <li><strong>Adopt key governance now</strong> — one escrowed master secret, per-desk derived keys, detection offered as a service. Whoever holds a key can both detect <em>and forge</em> the watermark.</li>
 <li><strong>Never deploy detection without a positive control.</strong> Every failure mode here looks identical — a normal "no watermark detected". A known-watermarked test document, checked continuously, makes silent failure loud.</li>
