@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from collections import defaultdict
 
 import numpy as np
@@ -70,6 +71,8 @@ def main() -> None:
     ap.add_argument("--corpus", default=str(DATA / "corpus.json"))
     ap.add_argument("--human", default=str(DATA / "human_texts.json"))
     ap.add_argument("--device", default="cuda:0")
+    ap.add_argument("--out", default=None,
+                    help="Results JSON path; defaults to results/02_detectability.json.")
     args = ap.parse_args()
 
     banner("Detectability")
@@ -198,7 +201,8 @@ def main() -> None:
         rates["median_tokens"] = float(np.median(n_h))
         rates["mean_score"] = float(np.mean(s_h))
         results["human_false_positives"][method] = rates
-        cal.save(RESULTS / f"calibration_human_{method}.json")
+        cal.save(RESULTS / f"calibration_human_{method}"
+                 f"{'_31b' if '31b' in str(args.corpus) else ''}.json")
 
         print(f"\n[{method}] {len(s_h)} human texts, median {np.median(n_h):.0f} scored tokens, "
               f"mean score {np.mean(s_h):.4f}")
@@ -266,7 +270,7 @@ def main() -> None:
         ids_scores.append(s_)
     print(f"  mean score via decoded text: {np.nanmean(np.concatenate(ids_scores)):.4f}")
 
-    save_json(results, RESULTS / "02_detectability.json")
+    save_json(results, Path(args.out) if args.out else RESULTS / "02_detectability.json")
 
 
 if __name__ == "__main__":

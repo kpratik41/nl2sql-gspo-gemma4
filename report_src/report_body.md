@@ -6,7 +6,7 @@
 
 | Claim | Verdict | Evidence |
 |---|---|---|
-| The watermark is detectable with our key | ✅ | AUC 1.000, 100% detection at a 1% false-positive rate, on ~390-token free-form text |
+| The watermark is detectable with our key | ⚠️ | **Model-dependent.** E4B: AUC 1.000, 100% detection at 1% FPR on ~390 tokens. 31B: AUC 0.946, only **51%** detection at the same length (§4.1a) |
 | It is invisible to a different key | ✅ | Wrong-key AUC 0.45–0.60 (chance); mean score 0.503 either way |
 | It does not degrade quality | ✅ | On **both models**: fluency, diversity and GSM8K deltas all statistically indistinguishable from zero, and opposite-signed across the two. Specific to SynthID — see §2, this does *not* transfer to the green-list scheme |
 | False positives on human writing are controlled | ✅ | 1.3% observed at a nominal 1% threshold, 0% at 0.1% |
@@ -37,6 +37,38 @@ low-entropy text is not that it is short, it is that there is no choice to encod
 in. Where the next token is determined, no watermark can exist. `structured` and `factual`
 are weak for both reasons at once: low entropy *and* short outputs (35 and 6 scored tokens).
 
+### 4.1a Detection is weaker on the larger model
+
+The obvious assumption is that a watermark behaves the same way on any model from the same
+family. It does not:
+
+{{T19}}
+
+At the same ~390 tokens, the 31B is caught **51%** of the time at a 1% false-positive rate
+against E4B's **100%**. The per-token signal is roughly halved — a mean g of 0.5110 against
+0.5310, over a null of 0.5000.
+
+The cause follows from §2. The watermark can only ride on randomness the sampler was already
+going to spend. A larger, better-trained model is *more confident*: its next-token
+distributions are more peaked, fewer candidates are near-tied, and there is less residual
+entropy for the tournament to steer. Higher capability means lower output entropy means a
+weaker watermark. Note this is not a length effect — both corpora are ~390 scored tokens.
+
+The length curve shifts accordingly, and the gap is widest exactly where operational
+thresholds get set:
+
+{{T20}}
+
+**The uncomfortable implication: watermark strength degrades as models improve.** Detection
+thresholds calibrated on one model do not transfer to a stronger one, and a policy tuned
+today will silently weaken when the serving model is upgraded. Any deployment should
+re-measure detection power per model, and treat the minimum-length rule as model-specific
+rather than a property of the scheme.
+
+What does *not* change with model size: key isolation still sits at chance (wrong-key AUC
+0.37–0.51), and false positives on human text are identical, because both depend on the key
+and the human corpus rather than on the generator.
+
 ### 4.2 How much text is needed
 
 {{T2}}
@@ -44,9 +76,13 @@ are weak for both reasons at once: low entropy *and* short outputs (35 and 6 sco
 This is the table that should govern a deployment. At a 1% false-positive rate the detector
 finds fewer than 6 in 10 watermarked documents at 100 tokens, and fewer than 2 in 10 at 25.
 
-**Recommended policy: issue no verdict below ~100 scored tokens, and treat 200+ as the range
-where a negative result carries real weight.** The service enforces a hard floor at 40 tokens
-and returns `text_too_short` rather than a number.
+**Recommended policy, for E4B: issue no verdict below ~100 scored tokens, and treat 200+ as
+the range where a negative result carries real weight.** The service enforces a hard floor at
+40 tokens and returns `text_too_short` rather than a number.
+
+**These thresholds are model-specific and must be re-derived per model.** On the 31B the same
+100-token point yields only 22% detection rather than 95% (§4.1a); no length in the range
+tested reaches E4B's performance.
 
 The weighted-mean detector is consistently stronger than the flat mean at exactly the lengths
 where it matters — at 25 tokens on `open_ended`, AUC 0.710 vs 0.627 — and identical once text

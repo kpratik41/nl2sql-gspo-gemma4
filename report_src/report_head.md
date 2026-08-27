@@ -115,11 +115,11 @@ once watermarked, once not — with the *same prompts and the same seeds* under 
 conditions, so every comparison is paired. 400 new tokens per generation, sampled at
 temperature 1.0, top-k 64, top-p 0.95 (the model's own defaults). 1,088 texts per model.
 
-**Two models.** Everything quality- and cost-related is measured on both `gemma-4-E4B-it`
-(~4B effective) and `gemma-4-31B-it`. They share a tokenizer and a 262,144-token vocabulary,
-so comparing them isolates the effect of model size. The detection, robustness and detector
-studies are reported on E4B; detection strength is a property of output entropy rather than
-of parameter count, and the E4B corpus already saturates at AUC 1.000.
+**Two models.** Everything is measured on both `gemma-4-E4B-it` (~4B effective) and
+`gemma-4-31B-it`. They share a tokenizer and a 262,144-token vocabulary, so comparing them
+isolates the effect of model size. Robustness and the learned-detector comparison are
+reported on E4B only; those measure how a *given* watermark signal degrades, and the E4B
+corpus provides the strongest starting signal to degrade from.
 
 **Fluency judge.** `Qwen/Qwen3.8-27B` — an unrelated architecture with its own tokenizer and
 training data. A model cannot score its own output for this purpose (see §4.5), and a judge

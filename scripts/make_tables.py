@@ -38,6 +38,50 @@ SUITE_LABEL = {
 }
 
 
+DETECT_RUNS = [
+    ("02_detectability.json", "Gemma-4-E4B"),
+    ("02_detectability_31b.json", "Gemma-4-31B"),
+]
+
+
+def detectability_by_model():
+    """Detection strength on both models, at full length and by length."""
+    runs = [(load(f), label) for f, label in DETECT_RUNS]
+    runs = [(x, label) for x, label in runs if x]
+    if len(runs) < 2:
+        return
+
+    print("\n### T19 — Detection strength by model, at full length (method: mean)\n")
+    print("| Suite | E4B AUC | E4B TPR@1% | E4B mean g | 31B AUC | 31B TPR@1% | 31B mean g |")
+    print("|---|---|---|---|---|---|---|")
+    for suite in SUITE_ORDER + ["HIGH_ENTROPY_POOLED"]:
+        cells, ok = [], True
+        for x, _ in runs:
+            m = x["full_length"].get(f"{suite}/mean")
+            if not m:
+                ok = False
+                break
+            cells += [fmt(m["auc"], 4), fmt(m["tpr_at_fpr_1pct"], 3), fmt(m["mean_positive"], 4)]
+        if ok:
+            print(f"| {SUITE_LABEL.get(suite, suite)} | " + " | ".join(cells) + " |")
+
+    print("\n### T20 — Detection power vs. length, by model (creative suite, method: mean)\n")
+    print("| Target tokens | E4B AUC | E4B TPR@1% | 31B AUC | 31B TPR@1% |")
+    print("|---|---|---|---|---|")
+    lengths = sorted({int(k.rsplit("/", 1)[1]) for x, _ in runs
+                      for k in x.get("length_sweep", {}) if k.startswith("creative/mean/")})
+    for L in lengths:
+        cells, ok = [], True
+        for x, _ in runs:
+            v = x.get("length_sweep", {}).get(f"creative/mean/{L}")
+            if not v:
+                ok = False
+                break
+            cells += [fmt(v["auc"], 4), fmt(v["tpr_at_fpr_1pct"], 3)]
+        if ok:
+            print(f"| {L} | " + " | ".join(cells) + " |")
+
+
 def detectability():
     d = load("02_detectability.json")
     if not d:
@@ -295,7 +339,7 @@ def bayesian():
 
 
 if __name__ == "__main__":
-    for fn in (detectability, quality, robustness, overhead, processor_cost, walkthrough, bayesian):
+    for fn in (detectability_by_model, detectability, quality, robustness, overhead, processor_cost, walkthrough, bayesian):
         try:
             fn()
         except Exception as e:  # a missing study should not block the rest
