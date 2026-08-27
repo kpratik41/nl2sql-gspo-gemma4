@@ -1,6 +1,7 @@
-# Watermarking Gemma-4 with SynthID-Text
+# Watermarking LLM Text Output with SynthID-Text
 
-**An evaluation and a reusable toolkit**
+**An evaluation and a reusable toolkit. The method is model-agnostic; it was tested here on
+Gemma-4.**
 
 Pratik Kakkar · Chandra Dhir · Anup Shirgaonkar
 
@@ -30,14 +31,10 @@ Three details make this operationally urgent rather than theoretical:
   outputs reach EU users, regardless of where the firm is headquartered.
 - **Penalties are turnover-scaled** — up to €15 million or 3% of worldwide annual turnover.
 
-The Commission and AI Board have confirmed the Code of Practice on Transparency of
-AI-Generated Content as an adequate route to demonstrating compliance.
-
-One phrase in Article 50(2) does most of the work for a technical reader: marking solutions
-must be *"effective, interoperable, robust and reliable **as far as this is technically
-feasible**,"* accounting for costs and the state of the art. The statute anticipates that
-marking has limits. That makes an honest measurement of those limits — which is what this
-report is — the substance of a compliance argument rather than an embarrassment to it.
+The Code of Practice on Transparency of AI-Generated Content is a Commission-confirmed route
+to demonstrating compliance. Note that Article 50(2) requires marking to be effective *"as far
+as this is technically feasible"* — the statute anticipates limits, so measuring them honestly
+is part of a compliance argument rather than a weakness in one.
 
 ### What watermarking actually helps with
 
@@ -48,10 +45,14 @@ dollars now cost tens of dollars and under an hour. The Arup case — deepfaked
 video-conference participants authorising $25 million in transfers — is the canonical
 example of what synthetic media enables against a large organisation.
 
-**But it is important not to oversell what text watermarking contributes to that picture.**
-Most headline incidents are voice and video deepfakes; this control marks *text*, and §6
-shows a single paraphrase pass removes it. It is not an anti-fraud control and will not stop
-a motivated attacker.
+**Scope: this report studies text watermarking only.** Nothing here was tested on, or
+applies to, audio, image or video output — those need different controls entirely (C2PA
+content credentials for files, audio watermarking for speech). Most of the incidents above in
+fact involve voice and video, which this work does not address.
+
+Within text, the control is also narrower than it first appears: §6 shows a single paraphrase
+pass removes the mark. It is not an anti-fraud control and will not stop a motivated
+attacker.
 
 What it does deliver:
 
@@ -94,7 +95,7 @@ One substantive bug was found and fixed along the way; see §5.
 ### Two schemes ship with Transformers. This is the one we evaluated, and why
 
 Transformers ships **two unrelated watermarking schemes**, and they behave very differently.
-Everything in this report concerns the second one.
+Everything in this report concerns the second approach.
 
 | | Green-list (Kirchenbauer et al.) | SynthID-Text (used here) |
 |---|---|---|
@@ -106,27 +107,27 @@ Everything in this report concerns the second one.
 | Source | [arXiv 2306.04634](https://huggingface.co/papers/2306.04634) | [Nature 634 (2024)](https://www.nature.com/articles/s41586-024-08025-4) |
 
 The green-list scheme partitions the vocabulary into green and red tokens at each step and
-adds a constant `bias` (default 2.0, over a green fraction of 0.25) to the green logits. That
-**does** push the model towards tokens it would not otherwise have picked: it is
-distortionary, and it trades quality for detectability through that bias knob. Upstream says
+adds a constant `bias` (default 2.0, over a green fraction of 0.25) to the green logits. **That
+does push the model towards tokens it would not otherwise have picked: it is distortionary,
+and it trades quality for detectability through that bias knob.** Upstream says
 so itself — the parameter's own documentation reads *"Consider lowering the `bias` if the
 text generation quality degrades."*
 
-SynthID's tournament is built the other way round. It reweights *among* the candidates the
+SynthID's tournament is built the other way round. **It reweights *among* the candidates the
 model already found plausible while preserving total probability mass, so a token the model
-gave near-zero probability stays near zero. That is precisely why §5.5 finds no quality cost,
+gave near-zero probability stays near zero.** That is precisely why §5.5 finds no quality cost,
 and why there is no quality/detectability dial to tune.
 
-**Why we chose SynthID.** The requirement driving this work (§1) is machine-readable
-provenance that does not degrade a production service. Only a non-distortionary scheme can
+**Why we chose SynthID.** The requirement driving this work (§1) is **machine-readable
+provenance that does not degrade a production service**. Only a non-distortionary scheme can
 satisfy both halves of that: the green-list approach makes quality the currency it pays for
 detectability with, so any deployment of it must argue about where to set `bias`, and that
 argument has no good answer for a bank shipping client-facing text. SynthID removes the
 question. It is also the scheme behind the EU Code of Practice signatories' deployments and
 the one with a published, peer-reviewed evaluation at scale.
 
-**The consequence for reading this report: the "no quality degradation" result is specific to
-SynthID and would not transfer to the green-list implementation.** Anyone benchmarking the
+**Scope of the headline result: "no quality degradation" is specific to SynthID and does not
+transfer to the green-list approach.** Anyone benchmarking the
 other scheme should expect a real quality/detectability trade-off, and should not cite these
 numbers in support of it.
 
@@ -140,8 +141,8 @@ green-list path.
 
 At each decoding step the model produces a distribution over next tokens. Where several
 tokens are near-equally good — after *"the weather was cold and…"*, both *"grey"* and
-*"overcast"* work — an ordinary sampler picks between them with a random number. SynthID
-replaces that random number with a pseudorandom function ("g-function") seeded by a secret
+*"overcast"* work — an ordinary sampler picks between them with a random number. **SynthID
+replaces that random number with a pseudorandom function** ("g-function") seeded by a secret
 key and a sliding window of the preceding tokens, then runs a small tournament among the
 candidates that biases the outcome towards tokens with high g-values.
 
@@ -181,7 +182,7 @@ This is the whole idea in one table. **No individual token is a tell.** Token 8 
 one. Reading any single row, you could not say which key produced the text — which is
 precisely why a reader sees nothing unusual and why the watermark costs no quality.
 
-The signal lives only in the average. Watch the two running means: they are
+**The signal lives only in the average.** Watch the two running means: they are
 indistinguishable for the first dozen tokens, and only over hundreds of tokens does the
 correct key's average settle above 0.5 while the wrong key's stays at chance. That single
 observation explains most of §5 — why detection needs length, why one key cannot read
