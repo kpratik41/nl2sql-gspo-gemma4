@@ -199,3 +199,137 @@ def test_detector_scores_match_across_devices():
     gpu_scores, gpu_n = Detector(key, StubTokenizer(), device="cuda:0").score(texts)
     assert (cpu_n == gpu_n).all()
     np.testing.assert_allclose(cpu_scores, gpu_scores, atol=1e-6)
+
+
+# ------------------------------------------- candidate-only fast path
+
+
+def _topk_filter(scores, k):
+    """Mimic what top-k filtering leaves on the table before the watermark runs."""
+    import torch
+
+    kth = scores.topk(k, dim=1).values[:, -1:]
+    return scores.masked_fill(scores < kth, float("-inf"))
+
+
+def _fast_and_reference(key, batch, vocab, top_k, steps=3, seed=0):
+    """Run both processors over identical inputs and return their outputs."""
+    import torch
+
+    from synthmark.config import build_processor
+
+    ref = build_processor(key, "cpu", fast=False)
+    fast = build_processor(key, "cpu", fast=True)
+    ref._init_state(batch)
+    fast._init_state(batch)
+
+    g = torch.Generator().manual_seed(seed)
+    out_ref, out_fast = [], []
+    for _ in range(steps):
+        ids = torch.randint(1, vocab, (batch, 8), generator=g)
+        scores = torch.randn(batch, vocab, generator=g)
+        if top_k:
+            scores = _topk_filter(scores, top_k)
+        out_ref.append(ref(ids, scores.clone()))
+        out_fast.append(fast(ids, scores.clone()))
+    return out_ref, out_fast
+
+
+#: Divergence permitted between the two paths, measured in probability space.
+#: They differ only by floating-point summation order -- upstream sums over the
+#: whole vocabulary, the fast path over the candidates -- so the gap is float32
+#: rounding, not algorithmic.
+#:
+#: Probability space is the correct place to assert. Log-probabilities of tokens
+#: the tournament has driven to ~1e-19 can differ by ~0.3 simply because ``log``
+#: is ill conditioned there, while the probabilities themselves differ by ~1e-19
+#: and nothing downstream can observe it.
+FAST_PATH_PROB_TOL = 1e-5
+
+
+def _assert_equivalent(a, b, context=""):
+    """Both paths must induce the same sampling distribution."""
+    import torch
+
+    pa, pb = torch.softmax(a, dim=1), torch.softmax(b, dim=1)
+    max_dp = float((pa - pb).abs().max())
+    tv = float(0.5 * (pa - pb).abs().sum(dim=1).max())
+    assert max_dp < FAST_PATH_PROB_TOL, f"probability gap {max_dp:.2e} {context}"
+    assert tv < FAST_PATH_PROB_TOL, f"total-variation {tv:.2e} {context}"
+    assert torch.equal(pa.argmax(dim=1), pb.argmax(dim=1)), f"argmax changed {context}"
+
+
+def test_fast_processor_matches_reference_with_topk():
+    """The candidate-only path must reproduce upstream scores to float precision.
+
+    This is the whole justification for the optimisation: tokens eliminated by
+    top-k carry zero probability, so excluding them from the g-function cannot
+    change the tournament's result.
+    """
+    import torch
+
+    key = derive_key(MASTER, "fast/v1", depth=8)
+    ref, fast = _fast_and_reference(key, batch=4, vocab=4096, top_k=32)
+    for a, b in zip(ref, fast):
+        _assert_equivalent(a, b)
+        # Filtered-out tokens must land on exactly the same floor value.
+        filtered = a == torch.finfo(a.dtype).min
+        assert torch.equal(a[filtered], b[filtered])
+
+
+def test_fast_processor_preserves_the_sampling_distribution():
+    """What actually matters downstream is the distribution the sampler sees."""
+    import torch
+
+    # Production-scale depth, where the tournament drives some candidates to
+    # ~1e-19 and log-space comparisons stop being meaningful.
+    key = derive_key(MASTER, "fast/v1", depth=30)
+    ref, fast = _fast_and_reference(key, batch=4, vocab=8192, top_k=64)
+    for a, b in zip(ref, fast):
+        _assert_equivalent(a, b, "at depth 30")
+
+
+def test_fast_processor_matches_across_batch_sizes():
+    """Reduction must hold however many sequences share the batch."""
+    import torch
+
+    key = derive_key(MASTER, "fast/v1", depth=8)
+    for batch in (1, 2, 8):
+        ref, fast = _fast_and_reference(key, batch=batch, vocab=2048, top_k=16, seed=batch)
+        for a, b in zip(ref, fast):
+            _assert_equivalent(a, b, f"at batch={batch}")
+
+
+def test_fast_processor_falls_back_when_nothing_is_filtered():
+    """With no top-k/top-p applied there is nothing to skip; results must still match."""
+    import torch
+
+    key = derive_key(MASTER, "fast/v1", depth=8)
+    ref, fast = _fast_and_reference(key, batch=2, vocab=1024, top_k=None, seed=7)
+    for a, b in zip(ref, fast):
+        # Nothing was filtered, so this took the parent path: exactly equal.
+        assert torch.equal(a, b), "fallback path diverged from the reference"
+
+
+def test_fast_processor_handles_ragged_candidate_counts():
+    """top-p leaves different numbers of survivors per row; padding must not leak signal."""
+    import torch
+
+    from synthmark.config import build_processor
+
+    key = derive_key(MASTER, "fast/v1", depth=8)
+    vocab, batch = 2048, 3
+    ref = build_processor(key, "cpu", fast=False)
+    fast = build_processor(key, "cpu", fast=True)
+    ref._init_state(batch)
+    fast._init_state(batch)
+
+    g = torch.Generator().manual_seed(11)
+    for _ in range(3):
+        ids = torch.randint(1, vocab, (batch, 8), generator=g)
+        scores = torch.randn(batch, vocab, generator=g)
+        # Deliberately uneven: 4, 16 and 64 survivors.
+        for row, k in enumerate((4, 16, 64)):
+            kth = scores[row].topk(k).values[-1]
+            scores[row] = scores[row].masked_fill(scores[row] < kth, float("-inf"))
+        _assert_equivalent(ref(ids, scores.clone()), fast(ids, scores.clone()), "ragged rows")

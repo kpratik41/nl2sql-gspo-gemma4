@@ -1,0 +1,42 @@
+{
+  "meta": {
+    "device": "cpu",
+    "vocab": 262144,
+    "depth": 30,
+    "top_k": 64
+  },
+  "equivalence": {
+    "max_prob_diff": 3.8743019104003906e-07,
+    "max_total_variation": 4.2622912133083446e-07,
+    "max_logprob_diff": 0.3365020751953125,
+    "argmax_changed": false
+  },
+  "cost_by_batch": {
+    "1": {
+      "upstream_ms": 69.46031066668941,
+      "fast_ms": 3.7759196666987314,
+      "speedup": 18.395600753714717
+    },
+    "2": {
+      "upstream_ms": 136.88832266666395,
+      "fast_ms": 4.181806666679222,
+      "speedup": 32.73425425364467
+    },
+    "4": {
+      "upstream_ms": 282.45841133332306,
+      "fast_ms": 4.900022000015269,
+      "speedup": 57.644314930104976
+    },
+    "8": {
+      "upstream_ms": 581.0797280000012,
+      "fast_ms": 6.2986769999800645,
+      "speedup": 92.25425085328877
+    }
+  },
+  "scaling": {
+    "upstream_growth": 8.36563675605133,
+    "fast_growth": 1.6681173213324658,
+    "from_batch": 1,
+    "to_batch": 8
+  }
+}
