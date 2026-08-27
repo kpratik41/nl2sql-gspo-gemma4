@@ -9,17 +9,23 @@ model-agnostic; tested on Gemma-4 (4B and 31B). Full detail: [report.md](report.
 
 ## Why now
 
-The EU AI Act Article 50 requires generative AI output to be **"marked in a machine-readable
-format and detectable as artificially generated."** Article 50(4) has applied since
-**2 August 2026**; the marking duty under 50(2) carries a grace period to **2 December 2026**
-for systems already in market. The Act applies **extraterritorially** to any provider whose
-output reaches EU users, with penalties up to **€15m or 3% of worldwide turnover**.
+EU AI Act Article 50 requires generative AI output to be **"marked in a machine-readable
+format and detectable as artificially generated."** Article 50(4) applied from **2 August
+2026**; the 50(2) marking duty has a grace period to **2 December 2026** for systems already
+in market. The Act applies **extraterritorially** to any provider whose output reaches EU
+users, with penalties up to **€15m or 3% of worldwide turnover**.
 
 ## Bottom line
 
 **The technology works, costs nothing in output quality, and is materially weaker than its
-reputation suggests.** It is a provenance control — it answers *"did our systems produce
-this?"* It is not an anti-abuse control and should not be presented as one.
+reputation suggests.** It is a provenance control answering *"did our systems produce this?"*
+— not an anti-abuse control, and it should not be presented as one.
+
+**Two approaches exist, and the trade-off does not disappear — it moves.** The *green-list*
+approach nudges the model toward marked words: easier to detect, but it degrades output
+quality. *SynthID*, which we used, never overrides the model's own judgement, so quality is
+untouched — paying for that with a weaker, more fragile mark. The choice is which cost you
+accept; for client-facing text, degrading quality is not one we can take.
 
 | | Verdict | Evidence |
 |---|---|---|
@@ -29,7 +35,7 @@ this?"* It is not an anti-abuse control and should not be presented as one.
 | Adds user-visible latency | ✅ No | +1.7 ms per token (under 5% of a decode step) |
 | Detection needs a GPU | ✅ No | 1,256 documents/second on ordinary CPU |
 | Survives paraphrasing | ❌ | One rewrite pass removes it entirely: detection 100% → **0%** |
-| Works on code / structured output | ❌ | Near-useless (AUC 0.63–0.77); inherent, not fixable |
+| Works on code / structured output | ❌ | Near-useless; inherent to the method, not fixable |
 
 Serving throughput needs an optimised implementation before production use. The cause is
 understood and the fix is a contained engineering task; detail in the full report.
@@ -46,11 +52,15 @@ detect better.
 **The consequence: detection thresholds do not transfer between models, and will silently
 weaken at every model upgrade.** Re-calibration belongs on the model-promotion checklist.
 
-## What it cannot do — for the compliance narrative
+## What it can and cannot be used for
 
-Not attribution — it identifies a **key**, never a person. Not proof — a negative result is
-not evidence of human authorship. Not robust to a motivated actor. Not applicable to voice,
-image or video: **this study covers text only.**
+| Can | Cannot |
+|---|---|
+| Regulatory marking under Article 50(2) | Prove **who** wrote something — it identifies a key, not a person |
+| "Did our own systems generate this?" on unmodified text | Catch anyone who paraphrases to hide it |
+| Keep model output out of training corpora | Judge short text, code, or structured output |
+| Internal audit — was this memo or filing machine-drafted? | Prove text *is* human-written; a negative proves nothing |
+| Separate desks or units via independent keys | Voice, image or video — **this study covers text only** |
 
 Article 50(2) requires marking be effective *"as far as this is technically feasible"*. The
 statute anticipates limits, so documenting them is part of a compliance argument rather than

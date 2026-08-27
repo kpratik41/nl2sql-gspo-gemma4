@@ -84,15 +84,20 @@ li { margin: 0.3em 0; }
 model-agnostic; tested on Gemma-4 (4B and 31B). Full detail: <a href="report.md">report.md</a>.</em></p>
 <hr />
 <h2 id="why-now">Why now</h2>
-<p>The EU AI Act Article 50 requires generative AI output to be <strong>"marked in a machine-readable
-format and detectable as artificially generated."</strong> Article 50(4) has applied since
-<strong>2 August 2026</strong>; the marking duty under 50(2) carries a grace period to <strong>2 December 2026</strong>
-for systems already in market. The Act applies <strong>extraterritorially</strong> to any provider whose
-output reaches EU users, with penalties up to <strong>€15m or 3% of worldwide turnover</strong>.</p>
+<p>EU AI Act Article 50 requires generative AI output to be <strong>"marked in a machine-readable
+format and detectable as artificially generated."</strong> Article 50(4) applied from <strong>2 August
+2026</strong>; the 50(2) marking duty has a grace period to <strong>2 December 2026</strong> for systems already
+in market. The Act applies <strong>extraterritorially</strong> to any provider whose output reaches EU
+users, with penalties up to <strong>€15m or 3% of worldwide turnover</strong>.</p>
 <h2 id="bottom-line">Bottom line</h2>
 <p><strong>The technology works, costs nothing in output quality, and is materially weaker than its
-reputation suggests.</strong> It is a provenance control — it answers <em>"did our systems produce
-this?"</em> It is not an anti-abuse control and should not be presented as one.</p>
+reputation suggests.</strong> It is a provenance control answering <em>"did our systems produce this?"</em>
+— not an anti-abuse control, and it should not be presented as one.</p>
+<p><strong>Two approaches exist, and the trade-off does not disappear — it moves.</strong> The <em>green-list</em>
+approach nudges the model toward marked words: easier to detect, but it degrades output
+quality. <em>SynthID</em>, which we used, never overrides the model's own judgement, so quality is
+untouched — paying for that with a weaker, more fragile mark. The choice is which cost you
+accept; for client-facing text, degrading quality is not one we can take.</p>
 <div class="table-scroll"><table>
 <thead>
 <tr>
@@ -135,7 +140,7 @@ this?"</em> It is not an anti-abuse control and should not be presented as one.<
 <tr>
 <td>Works on code / structured output</td>
 <td><span class="no">❌</span></td>
-<td>Near-useless (AUC 0.63–0.77); inherent, not fixable</td>
+<td>Near-useless; inherent to the method, not fixable</td>
 </tr>
 </tbody>
 </table></div>
@@ -150,10 +155,37 @@ point (44% → 64% → 80% across 200/300/400 tokens on creative prose), so long
 detect better.</p>
 <p><strong>The consequence: detection thresholds do not transfer between models, and will silently
 weaken at every model upgrade.</strong> Re-calibration belongs on the model-promotion checklist.</p>
-<h2 id="what-it-cannot-do-for-the-compliance-narrative">What it cannot do — for the compliance narrative</h2>
-<p>Not attribution — it identifies a <strong>key</strong>, never a person. Not proof — a negative result is
-not evidence of human authorship. Not robust to a motivated actor. Not applicable to voice,
-image or video: <strong>this study covers text only.</strong></p>
+<h2 id="what-it-can-and-cannot-be-used-for">What it can and cannot be used for</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Can</th>
+<th>Cannot</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Regulatory marking under Article 50(2)</td>
+<td>Prove <strong>who</strong> wrote something — it identifies a key, not a person</td>
+</tr>
+<tr>
+<td>"Did our own systems generate this?" on unmodified text</td>
+<td>Catch anyone who paraphrases to hide it</td>
+</tr>
+<tr>
+<td>Keep model output out of training corpora</td>
+<td>Judge short text, code, or structured output</td>
+</tr>
+<tr>
+<td>Internal audit — was this memo or filing machine-drafted?</td>
+<td>Prove text <em>is</em> human-written; a negative proves nothing</td>
+</tr>
+<tr>
+<td>Separate desks or units via independent keys</td>
+<td>Voice, image or video — <strong>this study covers text only</strong></td>
+</tr>
+</tbody>
+</table></div>
 <p>Article 50(2) requires marking be effective <em>"as far as this is technically feasible"</em>. The
 statute anticipates limits, so documenting them is part of a compliance argument rather than
 a weakness in one.</p>
