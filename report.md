@@ -562,26 +562,7 @@ similar phrasing and therefore similar token sequences; a paraphrase prompt expl
 for different ones. The practical implication: the watermark survives ordinary round-tripping
 through tools, and fails against anyone actively trying to remove it.
 
-### 5.7 The learned detector
-
-| Tokens | AUC mean | AUC weighted | AUC Bayesian | TPR@1% mean | TPR@1% Bayesian |
-|---|---|---|---|---|---|
-| 25 | 0.6798 | 0.7067 | 0.6833 | 0.250 | 0.133 |
-| 50 | 0.8020 | 0.8563 | 0.8182 | 0.292 | 0.300 |
-| 100 | 0.9454 | 0.9656 | 0.9475 | 0.525 | 0.558 |
-| 200 | 0.9943 | 0.9992 | 0.9942 | 0.883 | 0.833 |
-| 400 | 1.0000 | 1.0000 | 1.0000 | 1.000 | 1.000 |
-
-The Bayesian detector from the paper was trained on the existing corpus and evaluated on
-**disjoint prompts**. It gives no meaningful improvement over the flat mean, and the simple
-weighted mean beats both at every length below saturation.
-
-This is a negative result and it is worth stating: on this model, **the extra machinery is
-not worth it**. The per-depth weighted mean is training-free, has a closed-form null, and is
-the better detector. A larger training corpus might change this, but the burden of proof sits
-with the more complex method.
-
-### 5.8 Inference cost: latency vs. throughput
+### 5.7 Inference cost: latency vs. throughput
 
 These are two different quantities with two different answers, and conflating them is easy.
 
@@ -591,12 +572,19 @@ notices this.
 
 **Batched throughput is a different story**, and the raw numbers look alarming:
 
-| Batch size | Gemma-4-E4B plain | Gemma-4-E4B watermarked | Gemma-4-E4B overhead | Gemma-4-31B plain | Gemma-4-31B watermarked | Gemma-4-31B overhead |
+*Throughput in tokens per second — higher is faster.*
+
+| Batch size | Gemma-4-E4B plain (tok/s) | Gemma-4-E4B watermarked (tok/s) | Gemma-4-E4B overhead | Gemma-4-31B plain (tok/s) | Gemma-4-31B watermarked (tok/s) | Gemma-4-31B overhead |
 |---|---|---|---|---|---|---|
 | 1 | 26.9 | 25.8 | **4.2%** | 16.0 | 15.7 | **1.7%** |
 | 4 | 99.9 | 87.2 | **12.7%** | 61.2 | 56.5 | **7.7%** |
 | 16 | 398.0 | 241.4 | **39.4%** | 210.0 | 156.3 | **25.6%** |
 | 32 | 770.4 | 329.0 | **57.3%** | 341.5 | 213.7 | **37.4%** |
+
+Read the plain and watermarked columns as speeds: the plain figure is higher because it is
+*faster*. Watermarking adds work at every decoding step, so fewer tokens come out per second,
+and the overhead column is that shortfall as a percentage. At batch 32 on E4B, 770 tok/s
+becomes 329 tok/s — the same GPU produces well under half as much text per second.
 
 Overhead climbs steeply with batch size on both models, and is consistently ~35% lower on
 the 31B than on E4B. That much is a real measurement. But it does *not* mean the method is
@@ -663,16 +651,22 @@ So the honest conclusion is:
   (8.6% vs 25.6% on the 31B), and detection already saturates at AUC 1.000 by 200 tokens with
   depth 30. Depth is part of the key, so it must be fixed before keys are issued.
 
-**Before deploying, benchmark your own serving stack.** These numbers characterise
-HuggingFace `generate()`; they are not a property of SynthID, and they should not be used to
-argue either for or against watermarking on a different stack.
+Measured end to end on both models, the depth lever looks like this:
 
-| Depth | Gemma-4-E4B tok/s | Gemma-4-E4B overhead | Gemma-4-31B tok/s | Gemma-4-31B overhead |
+*Watermarked throughput at each depth, tokens per second — higher is faster.*
+
+| Depth | Gemma-4-E4B (tok/s) | Gemma-4-E4B overhead | Gemma-4-31B (tok/s) | Gemma-4-31B overhead |
 |---|---|---|---|---|
 | 1 | 392.7 | **1.3%** | 208.8 | **0.6%** |
 | 5 | 369.1 | **7.3%** | 201.7 | **4.0%** |
 | 10 | 337.7 | **15.2%** | 192.0 | **8.6%** |
 | 30 | 241.1 | **39.4%** | 156.3 | **25.6%** |
+
+**Before deploying, benchmark your own serving stack.** These numbers characterise
+HuggingFace `generate()`; they are not a property of SynthID, and they should not be used to
+argue either for or against watermarking on a different stack.
+
+#### Detection costs almost nothing
 
 | Model | Device | Texts/s | ms per text |
 |---|---|---|---|
@@ -685,7 +679,7 @@ Detection is a hash and a mean. It needs the tokenizer, not the model, and CPU i
 of GPU on E4B and indistinguishable on the 31B — so the detection service needs no
 accelerator at all.
 
-### 5.9 A bug worth knowing about
+### 5.8 A bug worth knowing about
 
 Upstream Transformers builds the watermark's g-value sampling table with a **device-local
 RNG**:
@@ -714,7 +708,7 @@ upstream.
 Anyone deploying SynthID via Transformers should check this. It would not show up in a
 single-machine test, and it silently breaks CPU detection services and mixed-hardware fleets.
 
-### 5.10 Worked example
+### 5.9 Worked example
 
 Generated on GPU with key `markets-research/v1`, detected on **CPU** — which only works
 because of the fix above.
@@ -733,7 +727,7 @@ because of the fix above.
 The watermarked and unwatermarked outputs read identically well; the difference lives
 entirely in the statistics of which near-equivalent words were chosen.
 
-### 5.11 Token round-trip
+### 5.10 Token round-trip
 
 The watermark lives in *token* choices, but a detector is handed *text* and must re-tokenise
 it. Of 400 watermarked texts, only **66.8% re-tokenise to exactly the original ids** — but
@@ -754,7 +748,7 @@ implementation and adds what a deployment needs.
 | `config.py` | Bridge to the HF API, plus the device-portability fix |
 | `generate.py` | Watermarked / unwatermarked generation, perplexity scoring |
 | `detect.py` | g-values, masking, three scoring methods, empirical calibration |
-| `bayesian.py` | Training and use of the learned detector |
+| `bayesian.py` | Training and use of the learned detector (optional; not used by default) |
 | `attacks.py` | Truncation, editing, paraphrase, translation, dilution |
 | `metrics.py` | AUC, TPR@FPR, bootstrap and Newcombe confidence intervals |
 | `serve.py` | FastAPI detection service, multi-key |

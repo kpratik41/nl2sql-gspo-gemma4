@@ -241,8 +241,10 @@ def overhead():
         return
 
     print("\n### T10 — Generation throughput cost, by model size\n")
+    print("*Throughput in tokens per second — higher is faster.*\n")
     header = "| Batch size |" + "".join(
-        f" {label} plain | {label} watermarked | {label} overhead |" for _, label in loaded)
+        f" {label} plain (tok/s) | {label} watermarked (tok/s) | {label} overhead |"
+        for _, label in loaded)
     print(header)
     print("|---|" + "---|" * (3 * len(loaded)))
     batches = sorted({int(b) for d, _ in loaded for b in d.get("throughput_by_batch_size", {})})
@@ -255,7 +257,8 @@ def overhead():
         print(row)
 
     print("\n### T11 — Cost of watermarking depth (batch 16), by model size\n")
-    print("| Depth |" + "".join(f" {label} tok/s | {label} overhead |" for _, label in loaded))
+    print("*Watermarked throughput at each depth, tokens per second — higher is faster.*\n")
+    print("| Depth |" + "".join(f" {label} (tok/s) | {label} overhead |" for _, label in loaded))
     print("|---|" + "---|" * (2 * len(loaded)))
     depths = sorted({int(x) for d, _ in loaded for x in d.get("depth_cost", {}).get("by_depth", {})})
     for depth in depths:
@@ -299,7 +302,7 @@ def processor_cost():
     for b, v in sorted(d.get("hypothetical_amortised", {}).items(), key=lambda kv: int(kv[0])):
         print(f"| {b} | {v['actual']:.1%} | **{v['if_amortised']:.1%}** |")
 
-    print("\n### T17 — Processor cost by depth (batch 16)\n")
+    print("\n### T17 — Processor cost by depth (batch 16), model excluded\n")
     print("| Depth | Processor ms/step |")
     print("|---|---|")
     for dep, ms in sorted(d.get("processor_by_depth_batch16", {}).items(), key=lambda kv: int(kv[0])):

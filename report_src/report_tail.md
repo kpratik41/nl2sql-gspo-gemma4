@@ -11,7 +11,7 @@ implementation and adds what a deployment needs.
 | `config.py` | Bridge to the HF API, plus the device-portability fix |
 | `generate.py` | Watermarked / unwatermarked generation, perplexity scoring |
 | `detect.py` | g-values, masking, three scoring methods, empirical calibration |
-| `bayesian.py` | Training and use of the learned detector |
+| `bayesian.py` | Training and use of the learned detector (optional; not used by default) |
 | `attacks.py` | Truncation, editing, paraphrase, translation, dilution |
 | `metrics.py` | AUC, TPR@FPR, bootstrap and Newcombe confidence intervals |
 | `serve.py` | FastAPI detection service, multi-key |
