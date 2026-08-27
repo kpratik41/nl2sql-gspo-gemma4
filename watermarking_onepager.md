@@ -3,7 +3,7 @@
 Pratik Kakkar · Chandra Dhir · Anup Shirgaonkar
 
 *Evaluation of SynthID-Text watermarking and a reusable internal toolkit. Method is
-model-agnostic; tested on Gemma-4 (4B and 31B). Full detail: [report.md](report.md).*
+model-agnostic; tested on Gemma-4 (4B and 31B). Full detail: [watermarking_report.md](watermarking_report.md).*
 
 ---
 

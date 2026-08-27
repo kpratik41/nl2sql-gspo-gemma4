@@ -1,4 +1,4 @@
-"""Worked end-to-end example reproduced in report.md.
+"""Worked end-to-end example reproduced in watermarking_report.md.
 
 Generates on GPU, then detects on **CPU** -- which only works because synthmark
 makes the watermark device-independent.

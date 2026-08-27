@@ -1,4 +1,4 @@
-"""Emit the markdown result tables used in report.md from results/*.json.
+"""Emit the markdown result tables used in watermarking_report.md from results/*.json.
 
 Generating the tables rather than transcribing them means the report cannot
 drift from the data it describes.

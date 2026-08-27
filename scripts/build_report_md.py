@@ -1,4 +1,4 @@
-"""Assemble report.md from prose sections plus generated result tables.
+"""Assemble watermarking_report.md from prose sections plus generated result tables.
 
 The prose lives in ``report_src/`` with ``{{T<n>}}`` placeholders; the tables come
 from ``scripts/make_tables.py``, which reads ``results/*.json``. Keeping the two
@@ -48,5 +48,5 @@ left = re.findall(r"\{\{T\d+\}\}", head + body + tail)
 if left:
     print(f"WARNING: unreplaced placeholders: {left}", file=sys.stderr)
 
-(ROOT/"report.md").write_text(head.rstrip() + "\n\n" + body.strip() + "\n\n" + tail.lstrip())
-print(f"wrote report.md with tables: {sorted(blocks, key=lambda x: int(x[1:]))}")
+(ROOT/"watermarking_report.md").write_text(head.rstrip() + "\n\n" + body.strip() + "\n\n" + tail.lstrip())
+print(f"wrote watermarking_report.md with tables: {sorted(blocks, key=lambda x: int(x[1:]))}")

@@ -1,4 +1,4 @@
-"""Render report.md to a self-contained, theme-aware report.html.
+"""Render watermarking_report.md to a self-contained, theme-aware watermarking_report.html.
 
 The HTML is a shadow of the Markdown: same content, styled for reading and for
 handing to someone who will not open a repository.  Everything is inlined, so
@@ -112,8 +112,8 @@ def to_html(md_text: str, title: str) -> str:
 
 
 def main() -> None:
-    src = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "report.md"
-    dst = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "report.html"
+    src = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "watermarking_report.md"
+    dst = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "watermarking_report.html"
     md_text = src.read_text()
     m = re.search(r"^#\s+(.+)$", md_text, re.M)
     title = m.group(1).strip() if m else "Report"

@@ -140,7 +140,7 @@ src/synthmark/
   metrics.py    AUC, TPR@FPR, bootstrap and Newcombe intervals
   serve.py      FastAPI detection service
   cli.py        synthmark keygen | generate | detect | calibrate | serve
-experiments/    the evaluation described in report.md
+experiments/    the evaluation described in watermarking_report.md
 tests/          unit tests (no model download required)
 ```
 
@@ -155,7 +155,8 @@ python 04_robustness.py                               # edits, paraphrase, dilut
 python 05_overhead.py                                 # throughput cost
 ```
 
-Findings are written to `results/` and summarised in [report.md](report.md).
+Findings are written to `results/` and summarised in [watermarking_report.md](watermarking_report.md), with a one-page
+brief in [watermarking_onepager.md](watermarking_onepager.md).
 
 ## Limits
 
