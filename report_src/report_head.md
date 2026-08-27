@@ -2,6 +2,8 @@
 
 **An evaluation and a reusable toolkit**
 
+Pratik Kakkar · Chandra Dhir · Anup Shirgaonkar
+
 Models `google/gemma-4-E4B-it` and `google/gemma-4-31B-it` · fluency judged by
 `Qwen/Qwen3.8-27B` · 2 × NVIDIA RTX PRO 6000 Blackwell (97 GB) · SynthID-Text via
 Hugging Face Transformers 5.12.1 · package `synthmark` v0.1.0
@@ -89,6 +91,53 @@ One substantive bug was found and fixed along the way; see §5.
 
 ## 3. How the watermark works
 
+### Two schemes ship with Transformers. This is the one we evaluated, and why
+
+Transformers ships **two unrelated watermarking schemes**, and they behave very differently.
+Everything in this report concerns the second one.
+
+| | Green-list (Kirchenbauer et al.) | SynthID-Text (used here) |
+|---|---|---|
+| Logits processor | `WatermarkLogitsProcessor` | `SynthIDTextWatermarkLogitsProcessor` |
+| Config | `WatermarkingConfig` | `SynthIDTextWatermarkingConfig` |
+| Detector | `WatermarkDetector` (z-score on green-token count) | `SynthIDTextWatermarkDetector`, `BayesianDetectorModel` |
+| Mechanism | Splits the vocabulary into "green" and "red" each step, adds a constant `bias` to green logits | Tournament among candidates, reweighting by g-value |
+| Distortionary? | **Yes** | **No, by design** |
+| Source | [arXiv 2306.04634](https://huggingface.co/papers/2306.04634) | [Nature 634 (2024)](https://www.nature.com/articles/s41586-024-08025-4) |
+
+The green-list scheme partitions the vocabulary into green and red tokens at each step and
+adds a constant `bias` (default 2.0, over a green fraction of 0.25) to the green logits. That
+**does** push the model towards tokens it would not otherwise have picked: it is
+distortionary, and it trades quality for detectability through that bias knob. Upstream says
+so itself — the parameter's own documentation reads *"Consider lowering the `bias` if the
+text generation quality degrades."*
+
+SynthID's tournament is built the other way round. It reweights *among* the candidates the
+model already found plausible while preserving total probability mass, so a token the model
+gave near-zero probability stays near zero. That is precisely why §5.5 finds no quality cost,
+and why there is no quality/detectability dial to tune.
+
+**Why we chose SynthID.** The requirement driving this work (§1) is machine-readable
+provenance that does not degrade a production service. Only a non-distortionary scheme can
+satisfy both halves of that: the green-list approach makes quality the currency it pays for
+detectability with, so any deployment of it must argue about where to set `bias`, and that
+argument has no good answer for a bank shipping client-facing text. SynthID removes the
+question. It is also the scheme behind the EU Code of Practice signatories' deployments and
+the one with a published, peer-reviewed evaluation at scale.
+
+**The consequence for reading this report: the "no quality degradation" result is specific to
+SynthID and would not transfer to the green-list implementation.** Anyone benchmarking the
+other scheme should expect a real quality/detectability trade-off, and should not cite these
+numbers in support of it.
+
+A naming trap worth flagging: the *unprefixed* classes — `WatermarkingConfig`,
+`WatermarkDetector` — are the green-list scheme. `WatermarkDetector` will accept
+SynthID-generated text without error and report nothing, which looks identical to genuinely
+unwatermarked text. `synthmark` imports only the `SynthID*` classes and never reaches the
+green-list path.
+
+---
+
 At each decoding step the model produces a distribution over next tokens. Where several
 tokens are near-equally good — after *"the weather was cold and…"*, both *"grey"* and
 *"overcast"* work — an ordinary sampler picks between them with a random number. SynthID
@@ -129,45 +178,6 @@ Two properties follow directly from the mechanism, and they bound everything in 
 - **It cannot make the output worse.** It never introduces a token the model would not
   otherwise have sampled. Quality is preserved *at the expense of* watermark strength, not
   the other way around.
-
-### Which watermark this is, and why the distinction matters
-
-Transformers ships **two unrelated watermarking schemes**, and they behave very differently.
-Everything in this report concerns the second one.
-
-| | Green-list (Kirchenbauer et al.) | SynthID-Text (used here) |
-|---|---|---|
-| Logits processor | `WatermarkLogitsProcessor` | `SynthIDTextWatermarkLogitsProcessor` |
-| Config | `WatermarkingConfig` | `SynthIDTextWatermarkingConfig` |
-| Detector | `WatermarkDetector` (z-score on green-token count) | `SynthIDTextWatermarkDetector`, `BayesianDetectorModel` |
-| Mechanism | Splits the vocabulary into "green" and "red" each step, adds a constant `bias` to green logits | Tournament among candidates, reweighting by g-value |
-| Distortionary? | **Yes** | **No, by design** |
-| Source | [arXiv 2306.04634](https://huggingface.co/papers/2306.04634) | [Nature 634 (2024)](https://www.nature.com/articles/s41586-024-08025-4) |
-
-The green-list scheme partitions the vocabulary into green and red tokens at each step and
-adds a constant `bias` (default 2.0, over a green fraction of 0.25) to the green logits. That
-**does** push the model towards tokens it would not otherwise have picked: it is
-distortionary, and it trades quality for detectability through that bias knob. Upstream says
-so itself — the parameter's own documentation reads *"Consider lowering the `bias` if the
-text generation quality degrades."*
-
-SynthID's tournament is built the other way round. It reweights *among* the candidates the
-model already found plausible while preserving total probability mass, so a token the model
-gave near-zero probability stays near zero. That is precisely why §5.5 finds no quality cost,
-and why there is no quality/detectability dial to tune.
-
-**The consequence for reading this report: the "no quality degradation" result is specific to
-SynthID and would not transfer to the green-list implementation.** Anyone benchmarking the
-other scheme should expect a real quality/detectability trade-off, and should not cite these
-numbers in support of it.
-
-A naming trap worth flagging: the *unprefixed* classes — `WatermarkingConfig`,
-`WatermarkDetector` — are the green-list scheme. `WatermarkDetector` will accept
-SynthID-generated text without error and report nothing, which looks identical to genuinely
-unwatermarked text. `synthmark` imports only the `SynthID*` classes and never reaches the
-green-list path.
-
----
 
 ## 4. Experimental setup
 

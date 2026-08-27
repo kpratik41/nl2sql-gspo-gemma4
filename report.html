@@ -65,6 +65,7 @@ li { margin: 0.3em 0; }
 <body><div class="wrap">
 <h1 id="watermarking-gemma-4-with-synthid-text">Watermarking Gemma-4 with SynthID-Text</h1>
 <p><strong>An evaluation and a reusable toolkit</strong></p>
+<p>Pratik Kakkar · Chandra Dhir · Anup Shirgaonkar</p>
 <p>Models <code>google/gemma-4-E4B-it</code> and <code>google/gemma-4-31B-it</code> · fluency judged by
 <code>Qwen/Qwen3.8-27B</code> · 2 × NVIDIA RTX PRO 6000 Blackwell (97 GB) · SynthID-Text via
 Hugging Face Transformers 5.12.1 · package <code>synthmark</code> v0.1.0</p>
@@ -153,6 +154,77 @@ and what it costs — with the limitations stated rather than glossed.</p>
 <p>One substantive bug was found and fixed along the way; see §5.</p>
 <hr />
 <h2 id="3-how-the-watermark-works">3. How the watermark works</h2>
+<h3 id="two-schemes-ship-with-transformers-this-is-the-one-we-evaluated-and-why">Two schemes ship with Transformers. This is the one we evaluated, and why</h3>
+<p>Transformers ships <strong>two unrelated watermarking schemes</strong>, and they behave very differently.
+Everything in this report concerns the second one.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th></th>
+<th>Green-list (Kirchenbauer et al.)</th>
+<th>SynthID-Text (used here)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Logits processor</td>
+<td><code>WatermarkLogitsProcessor</code></td>
+<td><code>SynthIDTextWatermarkLogitsProcessor</code></td>
+</tr>
+<tr>
+<td>Config</td>
+<td><code>WatermarkingConfig</code></td>
+<td><code>SynthIDTextWatermarkingConfig</code></td>
+</tr>
+<tr>
+<td>Detector</td>
+<td><code>WatermarkDetector</code> (z-score on green-token count)</td>
+<td><code>SynthIDTextWatermarkDetector</code>, <code>BayesianDetectorModel</code></td>
+</tr>
+<tr>
+<td>Mechanism</td>
+<td>Splits the vocabulary into "green" and "red" each step, adds a constant <code>bias</code> to green logits</td>
+<td>Tournament among candidates, reweighting by g-value</td>
+</tr>
+<tr>
+<td>Distortionary?</td>
+<td><strong>Yes</strong></td>
+<td><strong>No, by design</strong></td>
+</tr>
+<tr>
+<td>Source</td>
+<td><a href="https://huggingface.co/papers/2306.04634">arXiv 2306.04634</a></td>
+<td><a href="https://www.nature.com/articles/s41586-024-08025-4">Nature 634 (2024)</a></td>
+</tr>
+</tbody>
+</table></div>
+<p>The green-list scheme partitions the vocabulary into green and red tokens at each step and
+adds a constant <code>bias</code> (default 2.0, over a green fraction of 0.25) to the green logits. That
+<strong>does</strong> push the model towards tokens it would not otherwise have picked: it is
+distortionary, and it trades quality for detectability through that bias knob. Upstream says
+so itself — the parameter's own documentation reads <em>"Consider lowering the <code>bias</code> if the
+text generation quality degrades."</em></p>
+<p>SynthID's tournament is built the other way round. It reweights <em>among</em> the candidates the
+model already found plausible while preserving total probability mass, so a token the model
+gave near-zero probability stays near zero. That is precisely why §5.5 finds no quality cost,
+and why there is no quality/detectability dial to tune.</p>
+<p><strong>Why we chose SynthID.</strong> The requirement driving this work (§1) is machine-readable
+provenance that does not degrade a production service. Only a non-distortionary scheme can
+satisfy both halves of that: the green-list approach makes quality the currency it pays for
+detectability with, so any deployment of it must argue about where to set <code>bias</code>, and that
+argument has no good answer for a bank shipping client-facing text. SynthID removes the
+question. It is also the scheme behind the EU Code of Practice signatories' deployments and
+the one with a published, peer-reviewed evaluation at scale.</p>
+<p><strong>The consequence for reading this report: the "no quality degradation" result is specific to
+SynthID and would not transfer to the green-list implementation.</strong> Anyone benchmarking the
+other scheme should expect a real quality/detectability trade-off, and should not cite these
+numbers in support of it.</p>
+<p>A naming trap worth flagging: the <em>unprefixed</em> classes — <code>WatermarkingConfig</code>,
+<code>WatermarkDetector</code> — are the green-list scheme. <code>WatermarkDetector</code> will accept
+SynthID-generated text without error and report nothing, which looks identical to genuinely
+unwatermarked text. <code>synthmark</code> imports only the <code>SynthID*</code> classes and never reaches the
+green-list path.</p>
+<hr />
 <p>At each decoding step the model produces a distribution over next tokens. Where several
 tokens are near-equally good — after <em>"the weather was cold and…"</em>, both <em>"grey"</em> and
 <em>"overcast"</em> work — an ordinary sampler picks between them with a random number. SynthID
@@ -328,70 +400,6 @@ another's traffic, and why an edit that changes tokens costs signal.</p>
   otherwise have sampled. Quality is preserved <em>at the expense of</em> watermark strength, not
   the other way around.</li>
 </ul>
-<h3 id="which-watermark-this-is-and-why-the-distinction-matters">Which watermark this is, and why the distinction matters</h3>
-<p>Transformers ships <strong>two unrelated watermarking schemes</strong>, and they behave very differently.
-Everything in this report concerns the second one.</p>
-<div class="table-scroll"><table>
-<thead>
-<tr>
-<th></th>
-<th>Green-list (Kirchenbauer et al.)</th>
-<th>SynthID-Text (used here)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Logits processor</td>
-<td><code>WatermarkLogitsProcessor</code></td>
-<td><code>SynthIDTextWatermarkLogitsProcessor</code></td>
-</tr>
-<tr>
-<td>Config</td>
-<td><code>WatermarkingConfig</code></td>
-<td><code>SynthIDTextWatermarkingConfig</code></td>
-</tr>
-<tr>
-<td>Detector</td>
-<td><code>WatermarkDetector</code> (z-score on green-token count)</td>
-<td><code>SynthIDTextWatermarkDetector</code>, <code>BayesianDetectorModel</code></td>
-</tr>
-<tr>
-<td>Mechanism</td>
-<td>Splits the vocabulary into "green" and "red" each step, adds a constant <code>bias</code> to green logits</td>
-<td>Tournament among candidates, reweighting by g-value</td>
-</tr>
-<tr>
-<td>Distortionary?</td>
-<td><strong>Yes</strong></td>
-<td><strong>No, by design</strong></td>
-</tr>
-<tr>
-<td>Source</td>
-<td><a href="https://huggingface.co/papers/2306.04634">arXiv 2306.04634</a></td>
-<td><a href="https://www.nature.com/articles/s41586-024-08025-4">Nature 634 (2024)</a></td>
-</tr>
-</tbody>
-</table></div>
-<p>The green-list scheme partitions the vocabulary into green and red tokens at each step and
-adds a constant <code>bias</code> (default 2.0, over a green fraction of 0.25) to the green logits. That
-<strong>does</strong> push the model towards tokens it would not otherwise have picked: it is
-distortionary, and it trades quality for detectability through that bias knob. Upstream says
-so itself — the parameter's own documentation reads <em>"Consider lowering the <code>bias</code> if the
-text generation quality degrades."</em></p>
-<p>SynthID's tournament is built the other way round. It reweights <em>among</em> the candidates the
-model already found plausible while preserving total probability mass, so a token the model
-gave near-zero probability stays near zero. That is precisely why §5.5 finds no quality cost,
-and why there is no quality/detectability dial to tune.</p>
-<p><strong>The consequence for reading this report: the "no quality degradation" result is specific to
-SynthID and would not transfer to the green-list implementation.</strong> Anyone benchmarking the
-other scheme should expect a real quality/detectability trade-off, and should not cite these
-numbers in support of it.</p>
-<p>A naming trap worth flagging: the <em>unprefixed</em> classes — <code>WatermarkingConfig</code>,
-<code>WatermarkDetector</code> — are the green-list scheme. <code>WatermarkDetector</code> will accept
-SynthID-generated text without error and report nothing, which looks identical to genuinely
-unwatermarked text. <code>synthmark</code> imports only the <code>SynthID*</code> classes and never reaches the
-green-list path.</p>
-<hr />
 <h2 id="4-experimental-setup">4. Experimental setup</h2>
 <p><strong>Corpus.</strong> 24 prompts × 4 independent samples across six prompt suites, generated twice —
 once watermarked, once not — with the <em>same prompts and the same seeds</em> under both
