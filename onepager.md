@@ -36,7 +36,10 @@ this?"* It is not an anti-abuse control and should not be presented as one.
 
 **1. Detection gets weaker as our models get better.** On the 31B model, detection falls from
 100% to **51%** at the same document length. Larger models are more confident, leaving less
-randomness for the watermark to use. **Detection thresholds do not transfer between models
+randomness for the watermark to use. Both figures are for **400-token documents**, which is
+all we tested; detection rises with length and the 31B was still improving sharply at that
+point (44% → 64% → 80% across 200/300/400 tokens on creative prose), so longer documents
+detect better. **Detection thresholds do not transfer between models
 and will silently weaken at every model upgrade.** Re-calibration must be part of the
 model-promotion checklist.
 

@@ -6,7 +6,7 @@
 
 | Claim | Verdict | Evidence |
 |---|---|---|
-| The watermark is detectable with our key | ⚠️ | **Model-dependent.** E4B: AUC 1.000, 100% detection at 1% FPR on ~390 tokens. 31B: AUC 0.946, only **51%** detection at the same length (§5.1a) |
+| The watermark is detectable with our key | ⚠️ | **Model-dependent, and length-dependent.** At ~390 scored tokens: E4B 100% detection at 1% FPR; 31B only **51%**. Both measured on 400-token generations, where the 31B curve is still rising steeply — longer documents detect better (§5.1a) |
 | It is invisible to a different key | ✅ | Wrong-key AUC 0.45–0.60 (chance); mean score 0.503 either way |
 | It does not degrade quality | ✅ | On **both models**: fluency, diversity and GSM8K deltas all statistically indistinguishable from zero, and opposite-signed across the two. Specific to SynthID — see §3, this does *not* transfer to the green-list scheme |
 | False positives on human writing are controlled | ✅ | 1.3% observed at a nominal 1% threshold, 0% at 0.1% |
@@ -47,6 +47,13 @@ family. It does not:
 At the same ~390 tokens, the 31B is caught **51%** of the time at a 1% false-positive rate
 against E4B's **100%**. The per-token signal is roughly halved — a mean g of 0.5110 against
 0.5310, over a null of 0.5000.
+
+**Read 51% as a value at one length, not a ceiling.** Every figure here comes from 400-token
+generations (~390 scored tokens), and at that point the 31B curve has not flattened: on the
+creative suite, detection runs 44% → 64% → **80%** across 200, 300 and 400 tokens. Longer
+documents would do better, and we did not test beyond 400 tokens, so where the 31B eventually
+plateaus is unmeasured. The comparison with E4B is like-for-like — same lengths, same
+prompts, same key — but neither model's asymptote is established here.
 
 The cause follows from §3. The watermark can only ride on randomness the sampler was already
 going to spend. A larger, better-trained model is *more confident*: its next-token

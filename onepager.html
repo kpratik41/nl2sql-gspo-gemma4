@@ -147,7 +147,10 @@ this?"</em> It is not an anti-abuse control and should not be presented as one.<
 <h2 id="three-findings-that-change-how-this-should-be-planned">Three findings that change how this should be planned</h2>
 <p><strong>1. Detection gets weaker as our models get better.</strong> On the 31B model, detection falls from
 100% to <strong>51%</strong> at the same document length. Larger models are more confident, leaving less
-randomness for the watermark to use. <strong>Detection thresholds do not transfer between models
+randomness for the watermark to use. Both figures are for <strong>400-token documents</strong>, which is
+all we tested; detection rises with length and the 31B was still improving sharply at that
+point (44% → 64% → 80% across 200/300/400 tokens on creative prose), so longer documents
+detect better. <strong>Detection thresholds do not transfer between models
 and will silently weaken at every model upgrade.</strong> Re-calibration must be part of the
 model-promotion checklist.</p>
 <p><strong>2. The serving cost is an implementation defect, not a property of the method.</strong> We

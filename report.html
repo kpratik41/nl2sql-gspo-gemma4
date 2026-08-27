@@ -526,7 +526,7 @@ like <code>markets-research/v1</code> deterministically yields an independent ke
 <tr>
 <td>The watermark is detectable with our key</td>
 <td><span class="part">⚠️</span></td>
-<td><strong>Model-dependent.</strong> E4B: AUC 1.000, 100% detection at 1% FPR on ~390 tokens. 31B: AUC 0.946, only <strong>51%</strong> detection at the same length (§5.1a)</td>
+<td><strong>Model-dependent, and length-dependent.</strong> At ~390 scored tokens: E4B 100% detection at 1% FPR; 31B only <strong>51%</strong>. Both measured on 400-token generations, where the 31B curve is still rising steeply — longer documents detect better (§5.1a)</td>
 </tr>
 <tr>
 <td>It is invisible to a different key</td>
@@ -750,6 +750,12 @@ family. It does not:</p>
 <p>At the same ~390 tokens, the 31B is caught <strong>51%</strong> of the time at a 1% false-positive rate
 against E4B's <strong>100%</strong>. The per-token signal is roughly halved — a mean g of 0.5110 against
 0.5310, over a null of 0.5000.</p>
+<p><strong>Read 51% as a value at one length, not a ceiling.</strong> Every figure here comes from 400-token
+generations (~390 scored tokens), and at that point the 31B curve has not flattened: on the
+creative suite, detection runs 44% → 64% → <strong>80%</strong> across 200, 300 and 400 tokens. Longer
+documents would do better, and we did not test beyond 400 tokens, so where the 31B eventually
+plateaus is unmeasured. The comparison with E4B is like-for-like — same lengths, same
+prompts, same key — but neither model's asymptote is established here.</p>
 <p>The cause follows from §3. The watermark can only ride on randomness the sampler was already
 going to spend. A larger, better-trained model is <em>more confident</em>: its next-token
 distributions are more peaked, fewer candidates are near-tied, and there is less residual
@@ -1971,7 +1977,7 @@ obligation, so a compliance reader can see which claims the evidence supports.</
 <tr>
 <td>"Detectable as artificially generated"</td>
 <td><strong>Met, with conditions</strong></td>
-<td>AUC 1.000 / 100% detection on E4B long-form prose; <strong>0.946 / 51% on the 31B</strong> (§5.1a)</td>
+<td>On 400-token generations: E4B AUC 1.000 / 100% detection; 31B <strong>0.946 / 51%</strong>, still rising with length at that point (§5.1a)</td>
 </tr>
 <tr>
 <td>"Effective… as far as technically feasible"</td>

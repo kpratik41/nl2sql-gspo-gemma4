@@ -85,7 +85,7 @@ obligation, so a compliance reader can see which claims the evidence supports.
 | Art. 50(2) requirement | Status | Evidence |
 |---|---|---|
 | Output "marked in a machine-readable format" | **Met** | The mark is embedded at generation; no side-channel or metadata needed |
-| "Detectable as artificially generated" | **Met, with conditions** | AUC 1.000 / 100% detection on E4B long-form prose; **0.946 / 51% on the 31B** (§5.1a) |
+| "Detectable as artificially generated" | **Met, with conditions** | On 400-token generations: E4B AUC 1.000 / 100% detection; 31B **0.946 / 51%**, still rising with length at that point (§5.1a) |
 | "Effective… as far as technically feasible" | **Bounded, and quantified** | Limits measured and stated: length (§5.2), entropy (§5.1), paraphrase (§5.6) |
 | "Robust and reliable" | **Partially** | Survives editing, formatting, translation; **not** paraphrase (§5.6) |
 | Marking carries no personal data | **Met by design** | The key is per-deployment, not per-user or per-session (§5.3) |
