@@ -8,7 +8,68 @@ Hugging Face Transformers 5.12.1 · package `synthmark` v0.1.0
 
 ---
 
-## 1. What was done
+## 1. Why this exists
+
+### The legal driver
+
+The EU AI Act (Regulation 2024/1689) Article 50(2) requires providers of generative AI to
+ensure outputs are **"marked in a machine-readable format and detectable as artificially
+generated or manipulated."** Article 50(4) separately requires *deployers* to disclose when
+AI-generated text is published to inform the public on matters of public interest — with an
+exemption where the text underwent human editorial review and a person holds editorial
+responsibility.
+
+Three details make this operationally urgent rather than theoretical:
+
+- **The obligation is already live.** Article 50(4) applied from 2 August 2026. The
+  machine-readable marking duty under 50(2) carries an AI Omnibus grace period to
+  **2 December 2026** for systems already on the market before August.
+- **It reaches outside the EU.** The Act applies extraterritorially to providers whose
+  outputs reach EU users, regardless of where the firm is headquartered.
+- **Penalties are turnover-scaled** — up to €15 million or 3% of worldwide annual turnover.
+
+The Commission and AI Board have confirmed the Code of Practice on Transparency of
+AI-Generated Content as an adequate route to demonstrating compliance.
+
+One phrase in Article 50(2) does most of the work for a technical reader: marking solutions
+must be *"effective, interoperable, robust and reliable **as far as this is technically
+feasible**,"* accounting for costs and the state of the art. The statute anticipates that
+marking has limits. That makes an honest measurement of those limits — which is what this
+report is — the substance of a compliance argument rather than an embarrassment to it.
+
+### What watermarking actually helps with
+
+The wider harm picture is real. The FTC's Consumer Sentinel Network logged over 330,000
+fraud reports involving AI-generated content or AI-assisted social engineering in 2025, and
+the economics have collapsed: attacks that once needed a team and tens of thousands of
+dollars now cost tens of dollars and under an hour. The Arup case — deepfaked
+video-conference participants authorising $25 million in transfers — is the canonical
+example of what synthetic media enables against a large organisation.
+
+**But it is important not to oversell what text watermarking contributes to that picture.**
+Most headline incidents are voice and video deepfakes; this control marks *text*, and §6
+shows a single paraphrase pass removes it. It is not an anti-fraud control and will not stop
+a motivated attacker.
+
+What it does deliver:
+
+| Genuinely helps | Does not help |
+|---|---|
+| Regulatory provenance — machine-readable marking under Art. 50(2) | Determined adversaries — one paraphrase pass defeats it (§6) |
+| Distinguishing model output from human writing in unmodified reuse | Attribution — it identifies a *key*, never a person |
+| Keeping model output out of training corpora (model-collapse hygiene) | Short text, code, structured output (§5.1) |
+| Internal audit: was this filing, memo or client note machine-drafted? | Proving a human *didn't* write something — a negative is not evidence |
+| Per-desk keys so one unit's detector cannot read another's traffic (§5.3) | Content the pipeline did not generate |
+
+The realistic framing is **provenance for honest use, not enforcement against dishonest
+use.** It answers "did our own systems produce this?" reliably, and "did someone
+adversarially pass off AI text as human?" not at all.
+
+§8 maps these findings to the compliance obligations in detail.
+
+---
+
+## 2. What was done
 
 Two deliverables.
 
@@ -22,11 +83,11 @@ is the model it was validated on.
 how detectable it is, how much text it needs, whether it degrades output, what destroys it,
 and what it costs — with the limitations stated rather than glossed.
 
-One substantive bug was found and fixed along the way; see §4.
+One substantive bug was found and fixed along the way; see §5.
 
 ---
 
-## 2. How the watermark works
+## 3. How the watermark works
 
 At each decoding step the model produces a distribution over next tokens. Where several
 tokens are near-equally good — after *"the weather was cold and…"*, both *"grey"* and
@@ -74,10 +135,10 @@ precisely why a reader sees nothing unusual and why the watermark costs no quali
 The signal lives only in the average. Watch the two running means: they are
 indistinguishable for the first dozen tokens, and only over hundreds of tokens does the
 correct key's average settle above 0.5 while the wrong key's stays at chance. That single
-observation explains most of §4 — why detection needs length, why one key cannot read
+observation explains most of §5 — why detection needs length, why one key cannot read
 another's traffic, and why an edit that changes tokens costs signal.
 
-Two properties follow directly from the mechanism, and they bound everything in §4:
+Two properties follow directly from the mechanism, and they bound everything in §5:
 
 - **It can only use randomness that already exists.** Where the model is nearly certain of
   the next token — arithmetic, code, fixed schemas, terse factual answers — there is no
@@ -109,7 +170,7 @@ text generation quality degrades."*
 
 SynthID's tournament is built the other way round. It reweights *among* the candidates the
 model already found plausible while preserving total probability mass, so a token the model
-gave near-zero probability stays near zero. That is precisely why §4.5 finds no quality cost,
+gave near-zero probability stays near zero. That is precisely why §5.5 finds no quality cost,
 and why there is no quality/detectability dial to tune.
 
 **The consequence for reading this report: the "no quality degradation" result is specific to
@@ -125,7 +186,7 @@ green-list path.
 
 ---
 
-## 3. Experimental setup
+## 4. Experimental setup
 
 **Corpus.** 24 prompts × 4 independent samples across six prompt suites, generated twice —
 once watermarked, once not — with the *same prompts and the same seeds* under both
@@ -145,7 +206,7 @@ distribution is:
 SynthID works by replacing the sampler's random draw with a key-derived one, so it can only
 encode signal where a draw actually happens. Where the model is certain, the watermark has
 nothing to steer and embeds nothing — however long the text runs. This single fact predicts
-most of §4: which prompt suites are detectable, why length helps only up to a point, and why
+most of §5: which prompt suites are detectable, why length helps only up to a point, and why
 a stronger model is harder to watermark.
 
 **Reading AUC.** Detection results are reported as AUC and as TPR at a fixed false-positive
@@ -168,7 +229,7 @@ reported on E4B only; those measure how a *given* watermark signal degrades, and
 corpus provides the strongest starting signal to degrade from.
 
 **Fluency judge.** `Qwen/Qwen3.8-27B` — an unrelated architecture with its own tokenizer and
-training data. A model cannot score its own output for this purpose (see §4.5), and a judge
+training data. A model cannot score its own output for this purpose (see §5.5), and a judge
 from the same family would share the generator's idiosyncrasies.
 
 The suites are split by **entropy**, because entropy is the variable that governs watermark
@@ -199,31 +260,31 @@ like `markets-research/v1` deterministically yields an independent key.
 
 ---
 
-## 4. Results
+## 5. Results
 
-### 4.0 Summary of claims
+### 5.0 Summary of claims
 
 | Claim | Verdict | Evidence |
 |---|---|---|
-| The watermark is detectable with our key | ⚠️ | **Model-dependent.** E4B: AUC 1.000, 100% detection at 1% FPR on ~390 tokens. 31B: AUC 0.946, only **51%** detection at the same length (§4.1a) |
+| The watermark is detectable with our key | ⚠️ | **Model-dependent.** E4B: AUC 1.000, 100% detection at 1% FPR on ~390 tokens. 31B: AUC 0.946, only **51%** detection at the same length (§5.1a) |
 | It is invisible to a different key | ✅ | Wrong-key AUC 0.45–0.60 (chance); mean score 0.503 either way |
-| It does not degrade quality | ✅ | On **both models**: fluency, diversity and GSM8K deltas all statistically indistinguishable from zero, and opposite-signed across the two. Specific to SynthID — see §2, this does *not* transfer to the green-list scheme |
+| It does not degrade quality | ✅ | On **both models**: fluency, diversity and GSM8K deltas all statistically indistinguishable from zero, and opposite-signed across the two. Specific to SynthID — see §3, this does *not* transfer to the green-list scheme |
 | False positives on human writing are controlled | ✅ | 1.3% observed at a nominal 1% threshold, 0% at 0.1% |
 | It works on short text | ❌ | 59% detection at 100 tokens, 18% at 25 |
 | It works on code and structured output | ❌ | AUC 0.77 on code, 0.55 on JSON — despite ample length |
 | It survives paraphrasing | ❌ | AUC collapses 1.000 → 0.607; detection rate 0% |
 | **Latency** is essentially unaffected | ✅ | +1.7 ms per token; 1.7% (31B) to 4.2% (E4B) of a decode step |
-| **Batched throughput** is unaffected | ⚠️ | 39–57% loss at batch 16–32 — but this is an artifact of the reference logits processor, not of the method (§4.8) |
-| Detection needs no GPU | ✅ | 1,083 texts/s on CPU (0.9 ms/text) — **but only after the fix in §4.9**; the upstream code makes CPU detection of GPU-generated text impossible |
+| **Batched throughput** is unaffected | ⚠️ | 39–57% loss at batch 16–32 — but this is an artifact of the reference logits processor, not of the method (§5.8) |
+| Detection needs no GPU | ✅ | 1,083 texts/s on CPU (0.9 ms/text) — **but only after the fix in §5.9**; the upstream code makes CPU detection of GPU-generated text impossible |
 
 The three ❌ rows are **inherent to the method**: they follow from the fact that a watermark
 can only ride on randomness the model already had. No implementation will fix them, and they
 define what the control can and cannot be used for.
 
 The ⚠️ row is the opposite — a **fixable engineering problem** in the reference logits
-processor, quantified in §4.8. It should not be read as a cost of watermarking.
+processor, quantified in §5.8. It should not be read as a cost of watermarking.
 
-### 4.1 Detection at full length
+### 5.1 Detection at full length
 
 | Suite | Median tokens scored | AUC | 95% CI | TPR @1% FPR | Mean score (WM) | Mean score (plain) |
 |---|---|---|---|---|---|---|
@@ -244,7 +305,7 @@ low-entropy text is not that it is short, it is that there is no choice to encod
 in. Where the next token is determined, no watermark can exist. `structured` and `factual`
 are weak for both reasons at once: low entropy *and* short outputs (35 and 6 scored tokens).
 
-### 4.1a Detection is weaker on the larger model
+### 5.1a Detection is weaker on the larger model
 
 The obvious assumption is that a watermark behaves the same way on any model from the same
 family. It does not:
@@ -263,7 +324,7 @@ At the same ~390 tokens, the 31B is caught **51%** of the time at a 1% false-pos
 against E4B's **100%**. The per-token signal is roughly halved — a mean g of 0.5110 against
 0.5310, over a null of 0.5000.
 
-The cause follows from §2. The watermark can only ride on randomness the sampler was already
+The cause follows from §3. The watermark can only ride on randomness the sampler was already
 going to spend. A larger, better-trained model is *more confident*: its next-token
 distributions are more peaked, fewer candidates are near-tied, and there is less residual
 entropy for the tournament to steer. Higher capability means lower output entropy means a
@@ -291,7 +352,7 @@ What does *not* change with model size: key isolation still sits at chance (wron
 0.37–0.51), and false positives on human text are identical, because both depend on the key
 and the human corpus rather than on the generator.
 
-### 4.2 How much text is needed
+### 5.2 How much text is needed
 
 | Target tokens | Median scored | AUC | TPR @1% FPR |
 |---|---|---|---|
@@ -312,14 +373,14 @@ the range where a negative result carries real weight.** The service enforces a 
 40 tokens and returns `text_too_short` rather than a number.
 
 **These thresholds are model-specific and must be re-derived per model.** On the 31B the same
-100-token point yields only 22% detection rather than 95% (§4.1a); no length in the range
+100-token point yields only 22% detection rather than 95% (§5.1a); no length in the range
 tested reaches E4B's performance.
 
 The weighted-mean detector is consistently stronger than the flat mean at exactly the lengths
 where it matters — at 25 tokens on `open_ended`, AUC 0.710 vs 0.627 — and identical once text
 is long enough for both to saturate.
 
-### 4.3 Key isolation
+### 5.3 Key isolation
 
 | Suite | AUC (wrong key) | Mean score (WM text) | Mean score (plain) |
 |---|---|---|---|
@@ -334,7 +395,7 @@ A detector holding the wrong key sees nothing: AUC scatters around 0.5, and wate
 unwatermarked text score identically (0.503 vs 0.503). Different desks or business units can
 hold different keys, and a detection result is scoped strictly to the key that produced it.
 
-### 4.4 False positives on human writing
+### 5.4 False positives on human writing
 
 300 WikiText-103 passages, median 132 scored tokens, mean score 0.4985 (null expectation 0.5).
 
@@ -369,7 +430,7 @@ n = 516
 
 **Use the analytic p-value unless you can calibrate at scale.**
 
-### 4.5 Quality and accuracy
+### 5.5 Quality and accuracy
 
 Fluency, scored by **Qwen3.8-27B** — a model from an unrelated family, with its own
 architecture, tokenizer and training data, so it shares none of Gemma's idiosyncrasies:
@@ -433,7 +494,7 @@ construction**, because no sampling occurs and the logits processor is never inv
 Reporting "no MMLU delta" would be measuring nothing at all. Only sampled, free-form
 generation can be affected, which is why GSM8K with sampled chain-of-thought was used.
 
-### 4.6 Robustness
+### 5.6 Robustness
 
 | Attack | Level | Median tokens | AUC | TPR @1% FPR | Mean score (WM) |
 |---|---|---|---|---|---|
@@ -490,7 +551,7 @@ similar phrasing and therefore similar token sequences; a paraphrase prompt expl
 for different ones. The practical implication: the watermark survives ordinary round-tripping
 through tools, and fails against anyone actively trying to remove it.
 
-### 4.7 The learned detector
+### 5.7 The learned detector
 
 | Tokens | AUC mean | AUC weighted | AUC Bayesian | TPR@1% mean | TPR@1% Bayesian |
 |---|---|---|---|---|---|
@@ -509,7 +570,7 @@ not worth it**. The per-depth weighted mean is training-free, has a closed-form 
 the better detector. A larger training corpus might change this, but the burden of proof sits
 with the more complex method.
 
-### 4.8 Inference cost: latency vs. throughput
+### 5.8 Inference cost: latency vs. throughput
 
 These are two different quantities with two different answers, and conflating them is easy.
 
@@ -613,7 +674,7 @@ Detection is a hash and a mean. It needs the tokenizer, not the model, and CPU i
 of GPU on E4B and indistinguishable on the 31B — so the detection service needs no
 accelerator at all.
 
-### 4.9 A bug worth knowing about
+### 5.9 A bug worth knowing about
 
 Upstream Transformers builds the watermark's g-value sampling table with a **device-local
 RNG**:
@@ -642,7 +703,7 @@ upstream.
 Anyone deploying SynthID via Transformers should check this. It would not show up in a
 single-machine test, and it silently breaks CPU detection services and mixed-hardware fleets.
 
-### 4.10 Worked example
+### 5.10 Worked example
 
 Generated on GPU with key `markets-research/v1`, detected on **CPU** — which only works
 because of the fix above.
@@ -661,7 +722,7 @@ because of the fix above.
 The watermarked and unwatermarked outputs read identically well; the difference lives
 entirely in the statistics of which near-equivalent words were chosen.
 
-### 4.11 Token round-trip
+### 5.11 Token round-trip
 
 The watermark lives in *token* choices, but a detector is handed *text* and must re-tokenise
 it. Of 400 watermarked texts, only **66.8% re-tokenise to exactly the original ids** — but
@@ -671,7 +732,7 @@ around.
 
 ---
 
-## 5. The package
+## 6. The package
 
 `synthmark` is the reusable half of this work. It wraps the Transformers SynthID
 implementation and adds what a deployment needs.
@@ -728,7 +789,7 @@ detector will confirm as yours. Run detection as a service instead. See
 
 ---
 
-## 6. Limitations
+## 7. Limitations
 
 Stated plainly, because a detector that is oversold is worse than no detector.
 
@@ -748,28 +809,44 @@ Stated plainly, because a detector that is oversold is worse than no detector.
 
 ---
 
-## 7. Relevance to the EU AI Act Code of Practice
+## 8. Mapping the findings to the obligations
 
-The Code of Practice commitment is to *mark* AI-generated content in a machine-readable
-way. What this evaluation supports, and what it does not:
+§1 states the legal requirement. This section maps what was measured onto it, obligation by
+obligation, so a compliance reader can see which claims the evidence supports.
 
-**Supported.** Content generated through a watermarking pipeline is marked, the marking is
-machine-detectable by the key holder, the mark carries no user-identifying information
-(the key is per-deployment, not per-user or per-session), and the marking does not degrade
-output quality.
+| Art. 50(2) requirement | Status | Evidence |
+|---|---|---|
+| Output "marked in a machine-readable format" | **Met** | The mark is embedded at generation; no side-channel or metadata needed |
+| "Detectable as artificially generated" | **Met, with conditions** | AUC 1.000 / 100% detection on E4B long-form prose; **0.946 / 51% on the 31B** (§5.1a) |
+| "Effective… as far as technically feasible" | **Bounded, and quantified** | Limits measured and stated: length (§5.2), entropy (§5.1), paraphrase (§5.6) |
+| "Robust and reliable" | **Partially** | Survives editing, formatting, translation; **not** paraphrase (§5.6) |
+| Marking carries no personal data | **Met by design** | The key is per-deployment, not per-user or per-session (§5.3) |
+| Marking does not degrade the service | **Met** | No quality cost on either model (§5.5); latency +1.7 ms/token (§5.8) |
 
-**Not supported by watermarking alone.** Detection of edited or paraphrased content;
-attribution of authorship; any claim about content the pipeline did not generate. For
-files and images the appropriate mechanism is C2PA content credentials, which is a
-different control and complementary to this one.
+**The three numbers a governance owner should actually sign off on** — not AUC, which
+averages over operating points nobody would deploy:
 
-The operationally important number for governance is not AUC but the **false-positive rate
-at the deployed threshold**, measured on human writing, together with the **minimum text
-length** below which no verdict is issued. Both are in §4.2 and §4.4.
+1. **False-positive rate at the deployed threshold**, measured on human writing — 1.3% at a
+   nominal 1% target (§5.4). This is the rate at which a person's own writing gets flagged.
+2. **Minimum text length below which no verdict is issued** — the service refuses under 40
+   scored tokens; §5.2 argues for ~100 as a policy floor on E4B.
+3. **Per-model detection power**, because it does not transfer between models (§5.1a) and
+   will weaken silently when the serving model is upgraded.
+
+**Explicitly outside what this control can support:** detection of paraphrased content,
+attribution to a person, and any claim about content the pipeline did not generate. For
+images and files the appropriate mechanism is C2PA content credentials — a different,
+complementary control.
+
+A closing caution for anyone drafting the compliance narrative. Article 50(4)'s exemption
+for human-edited text with a named editorial owner is a *process* control, and for many
+internal workflows it is both cheaper and more defensible than a technical mark. Watermarking
+is the right answer for machine-readable provenance at scale; it is not automatically the
+right answer to every transparency obligation.
 
 ---
 
-## 8. Reproducing
+## 9. Reproducing
 
 ```bash
 pip install -e '.[serve,dev]'

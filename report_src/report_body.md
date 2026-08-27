@@ -1,30 +1,30 @@
 ---
 
-## 4. Results
+## 5. Results
 
-### 4.0 Summary of claims
+### 5.0 Summary of claims
 
 | Claim | Verdict | Evidence |
 |---|---|---|
-| The watermark is detectable with our key | ⚠️ | **Model-dependent.** E4B: AUC 1.000, 100% detection at 1% FPR on ~390 tokens. 31B: AUC 0.946, only **51%** detection at the same length (§4.1a) |
+| The watermark is detectable with our key | ⚠️ | **Model-dependent.** E4B: AUC 1.000, 100% detection at 1% FPR on ~390 tokens. 31B: AUC 0.946, only **51%** detection at the same length (§5.1a) |
 | It is invisible to a different key | ✅ | Wrong-key AUC 0.45–0.60 (chance); mean score 0.503 either way |
-| It does not degrade quality | ✅ | On **both models**: fluency, diversity and GSM8K deltas all statistically indistinguishable from zero, and opposite-signed across the two. Specific to SynthID — see §2, this does *not* transfer to the green-list scheme |
+| It does not degrade quality | ✅ | On **both models**: fluency, diversity and GSM8K deltas all statistically indistinguishable from zero, and opposite-signed across the two. Specific to SynthID — see §3, this does *not* transfer to the green-list scheme |
 | False positives on human writing are controlled | ✅ | 1.3% observed at a nominal 1% threshold, 0% at 0.1% |
 | It works on short text | ❌ | 59% detection at 100 tokens, 18% at 25 |
 | It works on code and structured output | ❌ | AUC 0.77 on code, 0.55 on JSON — despite ample length |
 | It survives paraphrasing | ❌ | AUC collapses 1.000 → 0.607; detection rate 0% |
 | **Latency** is essentially unaffected | ✅ | +1.7 ms per token; 1.7% (31B) to 4.2% (E4B) of a decode step |
-| **Batched throughput** is unaffected | ⚠️ | 39–57% loss at batch 16–32 — but this is an artifact of the reference logits processor, not of the method (§4.8) |
-| Detection needs no GPU | ✅ | 1,083 texts/s on CPU (0.9 ms/text) — **but only after the fix in §4.9**; the upstream code makes CPU detection of GPU-generated text impossible |
+| **Batched throughput** is unaffected | ⚠️ | 39–57% loss at batch 16–32 — but this is an artifact of the reference logits processor, not of the method (§5.8) |
+| Detection needs no GPU | ✅ | 1,083 texts/s on CPU (0.9 ms/text) — **but only after the fix in §5.9**; the upstream code makes CPU detection of GPU-generated text impossible |
 
 The three ❌ rows are **inherent to the method**: they follow from the fact that a watermark
 can only ride on randomness the model already had. No implementation will fix them, and they
 define what the control can and cannot be used for.
 
 The ⚠️ row is the opposite — a **fixable engineering problem** in the reference logits
-processor, quantified in §4.8. It should not be read as a cost of watermarking.
+processor, quantified in §5.8. It should not be read as a cost of watermarking.
 
-### 4.1 Detection at full length
+### 5.1 Detection at full length
 
 {{T1}}
 
@@ -37,7 +37,7 @@ low-entropy text is not that it is short, it is that there is no choice to encod
 in. Where the next token is determined, no watermark can exist. `structured` and `factual`
 are weak for both reasons at once: low entropy *and* short outputs (35 and 6 scored tokens).
 
-### 4.1a Detection is weaker on the larger model
+### 5.1a Detection is weaker on the larger model
 
 The obvious assumption is that a watermark behaves the same way on any model from the same
 family. It does not:
@@ -48,7 +48,7 @@ At the same ~390 tokens, the 31B is caught **51%** of the time at a 1% false-pos
 against E4B's **100%**. The per-token signal is roughly halved — a mean g of 0.5110 against
 0.5310, over a null of 0.5000.
 
-The cause follows from §2. The watermark can only ride on randomness the sampler was already
+The cause follows from §3. The watermark can only ride on randomness the sampler was already
 going to spend. A larger, better-trained model is *more confident*: its next-token
 distributions are more peaked, fewer candidates are near-tied, and there is less residual
 entropy for the tournament to steer. Higher capability means lower output entropy means a
@@ -69,7 +69,7 @@ What does *not* change with model size: key isolation still sits at chance (wron
 0.37–0.51), and false positives on human text are identical, because both depend on the key
 and the human corpus rather than on the generator.
 
-### 4.2 How much text is needed
+### 5.2 How much text is needed
 
 {{T2}}
 
@@ -81,14 +81,14 @@ the range where a negative result carries real weight.** The service enforces a 
 40 tokens and returns `text_too_short` rather than a number.
 
 **These thresholds are model-specific and must be re-derived per model.** On the 31B the same
-100-token point yields only 22% detection rather than 95% (§4.1a); no length in the range
+100-token point yields only 22% detection rather than 95% (§5.1a); no length in the range
 tested reaches E4B's performance.
 
 The weighted-mean detector is consistently stronger than the flat mean at exactly the lengths
 where it matters — at 25 tokens on `open_ended`, AUC 0.710 vs 0.627 — and identical once text
 is long enough for both to saturate.
 
-### 4.3 Key isolation
+### 5.3 Key isolation
 
 {{T3}}
 
@@ -96,7 +96,7 @@ A detector holding the wrong key sees nothing: AUC scatters around 0.5, and wate
 unwatermarked text score identically (0.503 vs 0.503). Different desks or business units can
 hold different keys, and a detection result is scoped strictly to the key that produced it.
 
-### 4.4 False positives on human writing
+### 5.4 False positives on human writing
 
 {{T4}}
 
@@ -117,7 +117,7 @@ well-calibrated and slightly conservative:
 
 **Use the analytic p-value unless you can calibrate at scale.**
 
-### 4.5 Quality and accuracy
+### 5.5 Quality and accuracy
 
 Fluency, scored by **Qwen3.8-27B** — a model from an unrelated family, with its own
 architecture, tokenizer and training data, so it shares none of Gemma's idiosyncrasies:
@@ -158,7 +158,7 @@ construction**, because no sampling occurs and the logits processor is never inv
 Reporting "no MMLU delta" would be measuring nothing at all. Only sampled, free-form
 generation can be affected, which is why GSM8K with sampled chain-of-thought was used.
 
-### 4.6 Robustness
+### 5.6 Robustness
 
 {{T9}}
 
@@ -186,7 +186,7 @@ similar phrasing and therefore similar token sequences; a paraphrase prompt expl
 for different ones. The practical implication: the watermark survives ordinary round-tripping
 through tools, and fails against anyone actively trying to remove it.
 
-### 4.7 The learned detector
+### 5.7 The learned detector
 
 {{T13}}
 
@@ -199,7 +199,7 @@ not worth it**. The per-depth weighted mean is training-free, has a closed-form 
 the better detector. A larger training corpus might change this, but the burden of proof sits
 with the more complex method.
 
-### 4.8 Inference cost: latency vs. throughput
+### 5.8 Inference cost: latency vs. throughput
 
 These are two different quantities with two different answers, and conflating them is easy.
 
@@ -268,7 +268,7 @@ Detection is a hash and a mean. It needs the tokenizer, not the model, and CPU i
 of GPU on E4B and indistinguishable on the 31B — so the detection service needs no
 accelerator at all.
 
-### 4.9 A bug worth knowing about
+### 5.9 A bug worth knowing about
 
 Upstream Transformers builds the watermark's g-value sampling table with a **device-local
 RNG**:
@@ -297,7 +297,7 @@ upstream.
 Anyone deploying SynthID via Transformers should check this. It would not show up in a
 single-machine test, and it silently breaks CPU detection services and mixed-hardware fleets.
 
-### 4.10 Worked example
+### 5.10 Worked example
 
 Generated on GPU with key `markets-research/v1`, detected on **CPU** — which only works
 because of the fix above.
@@ -316,7 +316,7 @@ because of the fix above.
 The watermarked and unwatermarked outputs read identically well; the difference lives
 entirely in the statistics of which near-equivalent words were chosen.
 
-### 4.11 Token round-trip
+### 5.11 Token round-trip
 
 The watermark lives in *token* choices, but a detector is handed *text* and must re-tokenise
 it. Of 400 watermarked texts, only **66.8% re-tokenise to exactly the original ids** — but

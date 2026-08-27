@@ -8,7 +8,68 @@ Hugging Face Transformers 5.12.1 · package `synthmark` v0.1.0
 
 ---
 
-## 1. What was done
+## 1. Why this exists
+
+### The legal driver
+
+The EU AI Act (Regulation 2024/1689) Article 50(2) requires providers of generative AI to
+ensure outputs are **"marked in a machine-readable format and detectable as artificially
+generated or manipulated."** Article 50(4) separately requires *deployers* to disclose when
+AI-generated text is published to inform the public on matters of public interest — with an
+exemption where the text underwent human editorial review and a person holds editorial
+responsibility.
+
+Three details make this operationally urgent rather than theoretical:
+
+- **The obligation is already live.** Article 50(4) applied from 2 August 2026. The
+  machine-readable marking duty under 50(2) carries an AI Omnibus grace period to
+  **2 December 2026** for systems already on the market before August.
+- **It reaches outside the EU.** The Act applies extraterritorially to providers whose
+  outputs reach EU users, regardless of where the firm is headquartered.
+- **Penalties are turnover-scaled** — up to €15 million or 3% of worldwide annual turnover.
+
+The Commission and AI Board have confirmed the Code of Practice on Transparency of
+AI-Generated Content as an adequate route to demonstrating compliance.
+
+One phrase in Article 50(2) does most of the work for a technical reader: marking solutions
+must be *"effective, interoperable, robust and reliable **as far as this is technically
+feasible**,"* accounting for costs and the state of the art. The statute anticipates that
+marking has limits. That makes an honest measurement of those limits — which is what this
+report is — the substance of a compliance argument rather than an embarrassment to it.
+
+### What watermarking actually helps with
+
+The wider harm picture is real. The FTC's Consumer Sentinel Network logged over 330,000
+fraud reports involving AI-generated content or AI-assisted social engineering in 2025, and
+the economics have collapsed: attacks that once needed a team and tens of thousands of
+dollars now cost tens of dollars and under an hour. The Arup case — deepfaked
+video-conference participants authorising $25 million in transfers — is the canonical
+example of what synthetic media enables against a large organisation.
+
+**But it is important not to oversell what text watermarking contributes to that picture.**
+Most headline incidents are voice and video deepfakes; this control marks *text*, and §6
+shows a single paraphrase pass removes it. It is not an anti-fraud control and will not stop
+a motivated attacker.
+
+What it does deliver:
+
+| Genuinely helps | Does not help |
+|---|---|
+| Regulatory provenance — machine-readable marking under Art. 50(2) | Determined adversaries — one paraphrase pass defeats it (§6) |
+| Distinguishing model output from human writing in unmodified reuse | Attribution — it identifies a *key*, never a person |
+| Keeping model output out of training corpora (model-collapse hygiene) | Short text, code, structured output (§5.1) |
+| Internal audit: was this filing, memo or client note machine-drafted? | Proving a human *didn't* write something — a negative is not evidence |
+| Per-desk keys so one unit's detector cannot read another's traffic (§5.3) | Content the pipeline did not generate |
+
+The realistic framing is **provenance for honest use, not enforcement against dishonest
+use.** It answers "did our own systems produce this?" reliably, and "did someone
+adversarially pass off AI text as human?" not at all.
+
+§8 maps these findings to the compliance obligations in detail.
+
+---
+
+## 2. What was done
 
 Two deliverables.
 
@@ -22,11 +83,11 @@ is the model it was validated on.
 how detectable it is, how much text it needs, whether it degrades output, what destroys it,
 and what it costs — with the limitations stated rather than glossed.
 
-One substantive bug was found and fixed along the way; see §4.
+One substantive bug was found and fixed along the way; see §5.
 
 ---
 
-## 2. How the watermark works
+## 3. How the watermark works
 
 At each decoding step the model produces a distribution over next tokens. Where several
 tokens are near-equally good — after *"the weather was cold and…"*, both *"grey"* and
@@ -57,10 +118,10 @@ precisely why a reader sees nothing unusual and why the watermark costs no quali
 The signal lives only in the average. Watch the two running means: they are
 indistinguishable for the first dozen tokens, and only over hundreds of tokens does the
 correct key's average settle above 0.5 while the wrong key's stays at chance. That single
-observation explains most of §4 — why detection needs length, why one key cannot read
+observation explains most of §5 — why detection needs length, why one key cannot read
 another's traffic, and why an edit that changes tokens costs signal.
 
-Two properties follow directly from the mechanism, and they bound everything in §4:
+Two properties follow directly from the mechanism, and they bound everything in §5:
 
 - **It can only use randomness that already exists.** Where the model is nearly certain of
   the next token — arithmetic, code, fixed schemas, terse factual answers — there is no
@@ -92,7 +153,7 @@ text generation quality degrades."*
 
 SynthID's tournament is built the other way round. It reweights *among* the candidates the
 model already found plausible while preserving total probability mass, so a token the model
-gave near-zero probability stays near zero. That is precisely why §4.5 finds no quality cost,
+gave near-zero probability stays near zero. That is precisely why §5.5 finds no quality cost,
 and why there is no quality/detectability dial to tune.
 
 **The consequence for reading this report: the "no quality degradation" result is specific to
@@ -108,7 +169,7 @@ green-list path.
 
 ---
 
-## 3. Experimental setup
+## 4. Experimental setup
 
 **Corpus.** 24 prompts × 4 independent samples across six prompt suites, generated twice —
 once watermarked, once not — with the *same prompts and the same seeds* under both
@@ -128,7 +189,7 @@ distribution is:
 SynthID works by replacing the sampler's random draw with a key-derived one, so it can only
 encode signal where a draw actually happens. Where the model is certain, the watermark has
 nothing to steer and embeds nothing — however long the text runs. This single fact predicts
-most of §4: which prompt suites are detectable, why length helps only up to a point, and why
+most of §5: which prompt suites are detectable, why length helps only up to a point, and why
 a stronger model is harder to watermark.
 
 **Reading AUC.** Detection results are reported as AUC and as TPR at a fixed false-positive
@@ -151,7 +212,7 @@ reported on E4B only; those measure how a *given* watermark signal degrades, and
 corpus provides the strongest starting signal to degrade from.
 
 **Fluency judge.** `Qwen/Qwen3.8-27B` — an unrelated architecture with its own tokenizer and
-training data. A model cannot score its own output for this purpose (see §4.5), and a judge
+training data. A model cannot score its own output for this purpose (see §5.5), and a judge
 from the same family would share the generator's idiosyncrasies.
 
 The suites are split by **entropy**, because entropy is the variable that governs watermark

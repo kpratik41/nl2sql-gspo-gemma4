@@ -1,6 +1,6 @@
 ---
 
-## 5. The package
+## 6. The package
 
 `synthmark` is the reusable half of this work. It wraps the Transformers SynthID
 implementation and adds what a deployment needs.
@@ -57,7 +57,7 @@ detector will confirm as yours. Run detection as a service instead. See
 
 ---
 
-## 6. Limitations
+## 7. Limitations
 
 Stated plainly, because a detector that is oversold is worse than no detector.
 
@@ -77,28 +77,44 @@ Stated plainly, because a detector that is oversold is worse than no detector.
 
 ---
 
-## 7. Relevance to the EU AI Act Code of Practice
+## 8. Mapping the findings to the obligations
 
-The Code of Practice commitment is to *mark* AI-generated content in a machine-readable
-way. What this evaluation supports, and what it does not:
+§1 states the legal requirement. This section maps what was measured onto it, obligation by
+obligation, so a compliance reader can see which claims the evidence supports.
 
-**Supported.** Content generated through a watermarking pipeline is marked, the marking is
-machine-detectable by the key holder, the mark carries no user-identifying information
-(the key is per-deployment, not per-user or per-session), and the marking does not degrade
-output quality.
+| Art. 50(2) requirement | Status | Evidence |
+|---|---|---|
+| Output "marked in a machine-readable format" | **Met** | The mark is embedded at generation; no side-channel or metadata needed |
+| "Detectable as artificially generated" | **Met, with conditions** | AUC 1.000 / 100% detection on E4B long-form prose; **0.946 / 51% on the 31B** (§5.1a) |
+| "Effective… as far as technically feasible" | **Bounded, and quantified** | Limits measured and stated: length (§5.2), entropy (§5.1), paraphrase (§5.6) |
+| "Robust and reliable" | **Partially** | Survives editing, formatting, translation; **not** paraphrase (§5.6) |
+| Marking carries no personal data | **Met by design** | The key is per-deployment, not per-user or per-session (§5.3) |
+| Marking does not degrade the service | **Met** | No quality cost on either model (§5.5); latency +1.7 ms/token (§5.8) |
 
-**Not supported by watermarking alone.** Detection of edited or paraphrased content;
-attribution of authorship; any claim about content the pipeline did not generate. For
-files and images the appropriate mechanism is C2PA content credentials, which is a
-different control and complementary to this one.
+**The three numbers a governance owner should actually sign off on** — not AUC, which
+averages over operating points nobody would deploy:
 
-The operationally important number for governance is not AUC but the **false-positive rate
-at the deployed threshold**, measured on human writing, together with the **minimum text
-length** below which no verdict is issued. Both are in §4.2 and §4.4.
+1. **False-positive rate at the deployed threshold**, measured on human writing — 1.3% at a
+   nominal 1% target (§5.4). This is the rate at which a person's own writing gets flagged.
+2. **Minimum text length below which no verdict is issued** — the service refuses under 40
+   scored tokens; §5.2 argues for ~100 as a policy floor on E4B.
+3. **Per-model detection power**, because it does not transfer between models (§5.1a) and
+   will weaken silently when the serving model is upgraded.
+
+**Explicitly outside what this control can support:** detection of paraphrased content,
+attribution to a person, and any claim about content the pipeline did not generate. For
+images and files the appropriate mechanism is C2PA content credentials — a different,
+complementary control.
+
+A closing caution for anyone drafting the compliance narrative. Article 50(4)'s exemption
+for human-edited text with a named editorial owner is a *process* control, and for many
+internal workflows it is both cheaper and more defensible than a technical mark. Watermarking
+is the right answer for machine-readable provenance at scale; it is not automatically the
+right answer to every transparency obligation.
 
 ---
 
-## 8. Reproducing
+## 9. Reproducing
 
 ```bash
 pip install -e '.[serve,dev]'
