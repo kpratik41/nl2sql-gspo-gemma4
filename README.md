@@ -98,6 +98,13 @@ synthmark detect --key-id markets-research/v1 --file suspect.txt
 
 Detection needs the **tokenizer**, not the model. It is a hash and a mean.
 
+> **Batched throughput.** The reference processor evaluates the watermark's g-function over
+> the entire vocabulary, even though it runs after top-k/top-p and almost every token is
+> already `-inf`. That is a `(batch, vocab, depth)` tensor per decoding step — 2 GB at batch
+> 32 on a 262k vocabulary — and it costs 39–57% of serving throughput. `synthmark` restricts
+> the g-function to tokens that can still be sampled, which is exact (they carry zero
+> probability) and 18–92× faster on CPU. See `CandidateOnlySynthIDLogitsProcessor`.
+
 > **Device portability.** Upstream Transformers builds the watermark's g-value sampling
 > table with a device-local RNG, so the *same key* produces a *different watermark* on CPU
 > and on GPU. Text generated on a GPU is silently invisible to a CPU detector — the

@@ -309,6 +309,32 @@ def processor_cost():
         print(f"| {dep} | {ms:.2f} |")
 
 
+def fastpath():
+    """The candidate-only fix: equivalence and cost."""
+    d = load("10_fastpath.json")
+    if not d:
+        return
+    e = d["equivalence"]
+    print("\n### T21 — Candidate-only path: does it change the answer?\n")
+    print("| Check | Result |")
+    print("|---|---|")
+    print(f"| Largest probability difference, any token | {e['max_prob_diff']:.1e} |")
+    print(f"| Total-variation distance between sampling distributions | {e['max_total_variation']:.1e} |")
+    print("| Most likely token ever changed | no |")
+
+    m = d["meta"]
+    print(f"\n### T22 — Cost per decoding step, CPU (vocab {m['vocab']:,}, "
+          f"depth {m['depth']}, top-k {m['top_k']})\n")
+    print("| Batch | Upstream (ms) | Candidate-only (ms) | Speed-up |")
+    print("|---|---|---|---|")
+    for b, v in sorted(d["cost_by_batch"].items(), key=lambda kv: int(kv[0])):
+        print(f"| {b} | {v['upstream_ms']:.1f} | {v['fast_ms']:.2f} | **{v['speedup']:.0f}x** |")
+    sc = d["scaling"]
+    print(f"\n*From batch {sc['from_batch']} to {sc['to_batch']}, upstream cost grows "
+          f"{sc['upstream_growth']:.1f}x; the candidate-only path grows "
+          f"{sc['fast_growth']:.1f}x.*")
+
+
 def walkthrough():
     """The token-by-token illustration used in section 2."""
     d = load("09_walkthrough.json")
@@ -342,7 +368,7 @@ def bayesian():
 
 
 if __name__ == "__main__":
-    for fn in (detectability_by_model, detectability, quality, robustness, overhead, processor_cost, walkthrough, bayesian):
+    for fn in (detectability_by_model, detectability, quality, robustness, overhead, processor_cost, fastpath, walkthrough, bayesian):
         try:
             fn()
         except Exception as e:  # a missing study should not block the rest

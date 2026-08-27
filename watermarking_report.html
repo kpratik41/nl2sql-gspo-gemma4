@@ -565,8 +565,8 @@ like <code>markets-research/v1</code> deterministically yields an independent ke
 </tr>
 <tr>
 <td><strong>Batched throughput</strong> is unaffected</td>
-<td><span class="part">⚠️</span></td>
-<td>39–57% loss at batch 16–32 — but this is an artifact of the reference logits processor, not of the method (§5.8)</td>
+<td><span class="yes">✅</span> Fixed</td>
+<td>The reference implementation loses 39–57% at batch 16–32. Cause identified and fixed in this package — 18–92× faster on CPU; GPU re-measurement pending (§5.7)</td>
 </tr>
 <tr>
 <td>Detection needs no GPU</td>
@@ -1481,12 +1481,13 @@ what destroys the watermark — <em>deliberate rewording</em> is. Back-translati
 similar phrasing and therefore similar token sequences; a paraphrase prompt explicitly asks
 for different ones. The practical implication: the watermark survives ordinary round-tripping
 through tools, and fails against anyone actively trying to remove it.</p>
-<h3 id="57-inference-cost-latency-vs-throughput">5.7 Inference cost: latency vs. throughput</h3>
-<p>These are two different quantities with two different answers, and conflating them is easy.</p>
+<h3 id="57-inference-cost-and-a-fix">5.7 Inference cost, and a fix</h3>
+<p>Latency and batched throughput are different quantities with different answers, and
+conflating them is easy.</p>
 <p><strong>Latency — what a single user experiences — is essentially unaffected.</strong> At batch 1 the
 watermark adds about 1.7 ms per token: 4.2% of a decode step on E4B, 1.7% on the 31B. Nobody
 notices this.</p>
-<p><strong>Batched throughput is a different story</strong>, and the raw numbers look alarming:</p>
+<p><strong>Batched throughput, using the reference implementation, is a different story:</strong></p>
 <p><em>Throughput in tokens per second — higher is faster.</em></p>
 <div class="table-scroll"><table>
 <thead>
@@ -1539,16 +1540,14 @@ notices this.</p>
 </tr>
 </tbody>
 </table></div>
-<p>Read the plain and watermarked columns as speeds: the plain figure is higher because it is
-<em>faster</em>. Watermarking adds work at every decoding step, so fewer tokens come out per second,
-and the overhead column is that shortfall as a percentage. At batch 32 on E4B, 770 tok/s
-becomes 329 tok/s — the same GPU produces well under half as much text per second.</p>
-<p>Overhead climbs steeply with batch size on both models, and is consistently ~35% lower on
-the 31B than on E4B. That much is a real measurement. But it does <em>not</em> mean the method is
-expensive, and the next table shows why.</p>
-<h4 id="where-the-cost-actually-goes">Where the cost actually goes</h4>
-<p>Timing the SynthID logits processor in isolation, with no model involved, accounts for
-essentially all of it:</p>
+<p>Read the plain and watermarked columns as speeds — higher is faster. At batch 32 on E4B,
+770 tok/s becomes 329 tok/s, so the same GPU produces well under half as much text. Overhead
+climbs steeply with batch on both models and is consistently ~35% lower on the 31B.</p>
+<p><strong>This is a defect in the reference implementation, not a property of the method.</strong> The rest
+of this section establishes that, and fixes it.</p>
+<h4 id="where-the-cost-goes">Where the cost goes</h4>
+<p>Timing the logits processor in isolation, with no model involved, accounts for essentially
+all of the gap:</p>
 <div class="table-scroll"><table>
 <thead>
 <tr>
@@ -1595,7 +1594,8 @@ essentially all of it:</p>
 </tr>
 </tbody>
 </table></div>
-<p>The overhead is <strong>100% the logits processor</strong>. And its scaling is the whole story:</p>
+<p>So the overhead is <strong>100% the logits processor</strong>. Profiling inside it puts roughly 60% in
+computing g-values and 40% in the tournament loop — and both scale linearly with batch:</p>
 <div class="table-scroll"><table>
 <thead>
 <tr>
@@ -1627,85 +1627,96 @@ essentially all of it:</p>
 </tr>
 </tbody>
 </table></div>
-<p><strong>The model forward is nearly flat across batch sizes (37 → 42 ms) because GPUs batch
-efficiently. The watermark processor is perfectly linear — a fixed ~1.7 ms per sequence that
-never amortises.</strong> That is not a property of SynthID. It is a property of this
-implementation: <code>update_scores</code> runs a Python <code>for i in range(depth)</code> loop, plus <code>vmap</code>
-calls, serialised per sequence over a 262k-wide tensor.</p>
-<p>The depth sweep confirms the loop is the cost:</p>
+<p>The reason is visible in the source. The processor evaluates the g-function over
+<code>arange(vocab_size)</code>, so at every decoding step it materialises a
+<code>(batch, vocab_size, depth)</code> int64 tensor — <strong>2 GB at batch 32</strong> with a 262k vocabulary and
+depth 30 — and makes several passes over it. Upstream's own comments still read
+<code>[batch_size, top_k, depth]</code>, inherited from the DeepMind reference, which passes only the
+surviving candidates.</p>
+<p>That work is genuinely proportional to <code>batch × vocab × depth</code>: about 250 million hash
+computations per generated token at batch 32. <strong>It was never going to amortise across a
+batch, because it is real work per (sequence, token, depth).</strong> Organising it better cannot
+help. Not doing it can.</p>
+<h4 id="the-fix">The fix</h4>
+<p>The watermark processor runs <strong>after</strong> top-k/top-p, so when it sees the scores roughly
+262,080 of the 262,144 entries are already <code>-inf</code> with zero probability. Restricting the
+g-function to the tokens that can still be sampled cuts the work by three to four orders of
+magnitude — 61 thousand hashes instead of 250 million at batch 32.</p>
+<p>This is exact rather than approximate. Softmax over the full vocabulary equals softmax over
+the finite entries; the tournament's <code>g_mass</code> is unchanged because excluded tokens carry zero
+probability; and the update maps zero to zero. Measured against the reference:</p>
 <div class="table-scroll"><table>
 <thead>
 <tr>
-<th>Depth</th>
-<th>Processor ms/step</th>
+<th>Check</th>
+<th>Result</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>1</td>
-<td>0.54</td>
+<td>Largest probability difference, any token</td>
+<td>3.9e-07</td>
 </tr>
 <tr>
-<td>5</td>
-<td>3.11</td>
+<td>Total-variation distance between sampling distributions</td>
+<td>4.3e-07</td>
 </tr>
 <tr>
-<td>10</td>
-<td>7.18</td>
-</tr>
-<tr>
-<td>30</td>
-<td>26.16</td>
+<td>Most likely token ever changed</td>
+<td>no</td>
 </tr>
 </tbody>
 </table></div>
-<p>Roughly 0.87 ms per depth level at batch 16 — linear in the number of Python iterations.</p>
-<h4 id="what-this-implies">What this implies</h4>
-<p>If the processor amortised across a batch the way the model forward does, the overhead would
-be flat at about 4% everywhere instead of climbing to 57%:</p>
 <div class="table-scroll"><table>
 <thead>
 <tr>
 <th>Batch</th>
-<th>Measured overhead</th>
-<th>If it batched like the model</th>
+<th>Upstream (ms)</th>
+<th>Candidate-only (ms)</th>
+<th>Speed-up</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>1</td>
-<td>4.2%</td>
-<td><strong>4.5%</strong></td>
+<td>69.5</td>
+<td>3.78</td>
+<td><strong>18x</strong></td>
+</tr>
+<tr>
+<td>2</td>
+<td>136.9</td>
+<td>4.18</td>
+<td><strong>33x</strong></td>
 </tr>
 <tr>
 <td>4</td>
-<td>12.7%</td>
-<td><strong>4.2%</strong></td>
+<td>282.5</td>
+<td>4.90</td>
+<td><strong>58x</strong></td>
 </tr>
 <tr>
-<td>16</td>
-<td>39.4%</td>
-<td><strong>4.2%</strong></td>
-</tr>
-<tr>
-<td>32</td>
-<td>57.3%</td>
-<td><strong>4.1%</strong></td>
+<td>8</td>
+<td>581.1</td>
+<td>6.30</td>
+<td><strong>92x</strong></td>
 </tr>
 </tbody>
 </table></div>
-<p>So the honest conclusion is:</p>
-<ul>
-<li><strong>Latency is genuinely minimal</strong>, and the widely-repeated claim to that effect is correct.</li>
-<li><strong>The batched-throughput cost measured here is real but avoidable.</strong> It is the price of an
-  unoptimised reference implementation, not of watermarking. A fused kernel that computes all
-  depths in one pass, or a serving stack (vLLM, TGI) with an optimised processor, should
-  recover most of the ~4%-vs-57% gap.</li>
-<li><strong>Until you have that, depth is the lever.</strong> Depth 10 costs 15.2% instead of 39.4% on E4B
-  (8.6% vs 25.6% on the 31B), and detection already saturates at AUC 1.000 by 200 tokens with
-  depth 30. Depth is part of the key, so it must be fixed before keys are issued.</li>
-</ul>
-<p>Measured end to end on both models, the depth lever looks like this:</p>
+<p><em>From batch 1 to 8, upstream cost grows 8.4x; the candidate-only path grows 1.7x.</em></p>
+<p>Upstream's cost grows 8.4× going from batch 1 to 8; the fixed path grows 1.7×. That flatness
+is the point.</p>
+<p><code>synthmark</code> uses this path by default for generation
+(<code>CandidateOnlySynthIDLogitsProcessor</code>), falling back to the full-vocabulary path when little
+was filtered, so unfiltered sampling still behaves correctly. Detection is untouched — it
+calls the g-function directly and never went through this code.</p>
+<p><strong>Status and honest caveat.</strong> Equivalence and the speed-up above are measured on CPU; the
+39–57% figures in the first table are GPU measurements of the <em>unfixed</em> path. The GPU numbers
+for the fixed path have not been re-measured, so no claim is made about them here. The
+scaling behaviour — whether cost grows with batch — is a property of the algorithm rather
+than the device, and it is what the fix changes.</p>
+<h4 id="depth-remains-a-lever">Depth remains a lever</h4>
+<p>Independently of the above, watermarking depth trades detection power against cost:</p>
 <p><em>Watermarked throughput at each depth, tokens per second — higher is faster.</em></p>
 <div class="table-scroll"><table>
 <thead>
@@ -1748,9 +1759,37 @@ be flat at about 4% everywhere instead of climbing to 57%:</p>
 </tr>
 </tbody>
 </table></div>
-<p><strong>Before deploying, benchmark your own serving stack.</strong> These numbers characterise
-HuggingFace <code>generate()</code>; they are not a property of SynthID, and they should not be used to
-argue either for or against watermarking on a different stack.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Depth</th>
+<th>Processor ms/step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0.54</td>
+</tr>
+<tr>
+<td>5</td>
+<td>3.11</td>
+</tr>
+<tr>
+<td>10</td>
+<td>7.18</td>
+</tr>
+<tr>
+<td>30</td>
+<td>26.16</td>
+</tr>
+</tbody>
+</table></div>
+<p>Detection already saturates by 200–400 tokens at depth 30, so depth 10 is likely the better
+operating point for long-form output. Depth is part of the key, so it must be fixed before
+keys are issued.</p>
+<p><strong>Benchmark your own serving stack before deploying.</strong> These numbers characterise HuggingFace
+<code>generate()</code>; a different stack will differ.</p>
 <h4 id="detection-costs-almost-nothing">Detection costs almost nothing</h4>
 <div class="table-scroll"><table>
 <thead>

@@ -30,8 +30,8 @@ accept; for client-facing text, degrading quality is not one we can take.
 **We are not first movers — this is what the major providers ship.** Google deployed
 SynthID-Text across Gemini, the first production text watermark at scale, reporting no
 significant quality difference over ~20 million responses. Anthropic states Claude's watermark
-is *"a version of the SynthID-Text approach"*, implemented for EU AI Act compliance. Our
-quality findings reproduce theirs independently.
+is *"a version of the SynthID-Text approach"*. Our quality findings reproduce theirs
+independently.
 
 | | Verdict | Evidence |
 |---|---|---|
@@ -43,8 +43,10 @@ quality findings reproduce theirs independently.
 | Survives paraphrasing | ❌ | One rewrite pass removes it entirely: detection 100% → **0%** |
 | Works on code / structured output | ❌ | Near-useless; inherent to the method, not fixable |
 
-Serving throughput needs an optimised implementation before production use; the cause is
-understood and the fix is a contained engineering task.
+The reference open-source implementation loses 39–57% of batched serving throughput. We
+traced the cause and fixed it — it hashed the whole vocabulary when only ~64 tokens can be
+sampled — making the corrected path 18–92× faster on CPU, with GPU re-measurement
+outstanding.
 
 ## The finding that changes how this should be planned
 
@@ -54,8 +56,8 @@ randomness for the watermark to use. Both figures are for **400-token documents*
 tested; detection rises with length and was still climbing sharply there (44% → 64% → 80% at
 200/300/400 tokens), so longer documents detect better.
 
-**The consequence: detection thresholds do not transfer between models, and will silently
-weaken at every model upgrade.** Re-calibration belongs on the model-promotion checklist.
+**Detection thresholds therefore do not transfer between models and will silently weaken at
+every model upgrade.** Re-calibration belongs on the model-promotion checklist.
 
 ## What it can and cannot be used for
 

@@ -101,8 +101,8 @@ accept; for client-facing text, degrading quality is not one we can take.</p>
 <p><strong>We are not first movers — this is what the major providers ship.</strong> Google deployed
 SynthID-Text across Gemini, the first production text watermark at scale, reporting no
 significant quality difference over ~20 million responses. Anthropic states Claude's watermark
-is <em>"a version of the SynthID-Text approach"</em>, implemented for EU AI Act compliance. Our
-quality findings reproduce theirs independently.</p>
+is <em>"a version of the SynthID-Text approach"</em>. Our quality findings reproduce theirs
+independently.</p>
 <div class="table-scroll"><table>
 <thead>
 <tr>
@@ -149,16 +149,18 @@ quality findings reproduce theirs independently.</p>
 </tr>
 </tbody>
 </table></div>
-<p>Serving throughput needs an optimised implementation before production use; the cause is
-understood and the fix is a contained engineering task.</p>
+<p>The reference open-source implementation loses 39–57% of batched serving throughput. We
+traced the cause and fixed it — it hashed the whole vocabulary when only ~64 tokens can be
+sampled — making the corrected path 18–92× faster on CPU, with GPU re-measurement
+outstanding.</p>
 <h2 id="the-finding-that-changes-how-this-should-be-planned">The finding that changes how this should be planned</h2>
 <p><strong>Detection gets weaker as our models get better.</strong> On the 31B model, detection falls from
 100% to <strong>51%</strong> at the same document length. Larger models are more confident, leaving less
 randomness for the watermark to use. Both figures are for <strong>400-token documents</strong>, all we
 tested; detection rises with length and was still climbing sharply there (44% → 64% → 80% at
 200/300/400 tokens), so longer documents detect better.</p>
-<p><strong>The consequence: detection thresholds do not transfer between models, and will silently
-weaken at every model upgrade.</strong> Re-calibration belongs on the model-promotion checklist.</p>
+<p><strong>Detection thresholds therefore do not transfer between models and will silently weaken at
+every model upgrade.</strong> Re-calibration belongs on the model-promotion checklist.</p>
 <h2 id="what-it-can-and-cannot-be-used-for">What it can and cannot be used for</h2>
 <div class="table-scroll"><table>
 <thead>
