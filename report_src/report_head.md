@@ -115,6 +115,35 @@ once watermarked, once not — with the *same prompts and the same seeds* under 
 conditions, so every comparison is paired. 400 new tokens per generation, sampled at
 temperature 1.0, top-k 64, top-p 0.95 (the model's own defaults). 1,088 texts per model.
 
+**Entropy, and why it governs everything.** At each decoding step the model produces a
+probability distribution over all 262,144 tokens. *Entropy* measures how spread out that
+distribution is:
+
+- **High entropy** — after *"the weather was cold and…"*, perhaps twenty tokens are all
+  plausible (`grey`, `overcast`, `damp`, `windy`). The sampler faces a genuine choice and
+  must resolve it with a random draw.
+- **Low entropy** — after *"2 + 2 ="*, essentially one token carries all the mass. There is
+  no choice to make.
+
+SynthID works by replacing the sampler's random draw with a key-derived one, so it can only
+encode signal where a draw actually happens. Where the model is certain, the watermark has
+nothing to steer and embeds nothing — however long the text runs. This single fact predicts
+most of §4: which prompt suites are detectable, why length helps only up to a point, and why
+a stronger model is harder to watermark.
+
+**Reading AUC.** Detection results are reported as AUC and as TPR at a fixed false-positive
+rate. AUC is the probability that a randomly chosen watermarked text scores higher than a
+randomly chosen unwatermarked one: 0.5 is chance, 1.0 means the two score distributions do
+not overlap at all.
+
+AUC alone is the wrong number to govern a deployment with, because it is **threshold-free** —
+it averages over every operating point, including ones with a false-positive rate nobody
+would accept. The `code` suite makes the gap concrete: AUC 0.77 sounds workable, but at a
+threshold that wrongly flags only 1 document in 100, it catches **1%** of watermarked code.
+TPR at a fixed FPR answers the question that actually arises — *at a false-accusation rate we
+can defend, what fraction do we catch?* — and it is the number quoted whenever a decision
+depends on it.
+
 **Two models.** Everything is measured on both `gemma-4-E4B-it` (~4B effective) and
 `gemma-4-31B-it`. They share a tokenizer and a 262,144-token vocabulary, so comparing them
 isolates the effect of model size. Robustness and the learned-detector comparison are
