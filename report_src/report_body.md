@@ -8,7 +8,7 @@
 |---|---|---|
 | The watermark is detectable with our key | ✅ | AUC 1.000, 100% detection at a 1% false-positive rate, on ~390-token free-form text |
 | It is invisible to a different key | ✅ | Wrong-key AUC 0.45–0.60 (chance); mean score 0.503 either way |
-| It does not degrade quality | ✅ | On **both models**: fluency, diversity and GSM8K deltas all statistically indistinguishable from zero, and opposite-signed across the two |
+| It does not degrade quality | ✅ | On **both models**: fluency, diversity and GSM8K deltas all statistically indistinguishable from zero, and opposite-signed across the two. Specific to SynthID — see §2, this does *not* transfer to the green-list scheme |
 | False positives on human writing are controlled | ✅ | 1.3% observed at a nominal 1% threshold, 0% at 0.1% |
 | It works on short text | ❌ | 59% detection at 100 tokens, 18% at 25 |
 | It works on code and structured output | ❌ | AUC 0.77 on code, 0.55 on JSON — despite ample length |
