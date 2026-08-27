@@ -3,7 +3,7 @@
 Pratik Kakkar · Chandra Dhir · Anup Shirgaonkar
 
 *Evaluation of SynthID-Text watermarking and a reusable internal toolkit. Method is
-model-agnostic; tested on Gemma-4 (4B and 31B). Full detail: [watermarking_report.md](watermarking_report.md).*
+model-agnostic; tested on Gemma-4 (4B and 31B). Detail: [watermarking_report.md](watermarking_report.md).*
 
 ---
 
@@ -23,9 +23,15 @@ reputation suggests.** It is a provenance control answering *"did our systems pr
 
 **Two approaches exist, and the trade-off does not disappear — it moves.** The *green-list*
 approach nudges the model toward marked words: easier to detect, but it degrades output
-quality. *SynthID*, which we used, never overrides the model's own judgement, so quality is
-untouched — paying for that with a weaker, more fragile mark. The choice is which cost you
+quality. *SynthID-Text*, which we used, never overrides the model's own judgement, so quality
+is untouched — paying for that with a weaker, more fragile mark. The choice is which cost you
 accept; for client-facing text, degrading quality is not one we can take.
+
+**We are not first movers — this is what the major providers ship.** Google deployed
+SynthID-Text across Gemini, the first production text watermark at scale, reporting no
+significant quality difference over ~20 million responses. Anthropic states Claude's watermark
+is *"a version of the SynthID-Text approach"*, implemented for EU AI Act compliance. Our
+quality findings reproduce theirs independently.
 
 | | Verdict | Evidence |
 |---|---|---|
@@ -37,17 +43,16 @@ accept; for client-facing text, degrading quality is not one we can take.
 | Survives paraphrasing | ❌ | One rewrite pass removes it entirely: detection 100% → **0%** |
 | Works on code / structured output | ❌ | Near-useless; inherent to the method, not fixable |
 
-Serving throughput needs an optimised implementation before production use. The cause is
-understood and the fix is a contained engineering task; detail in the full report.
+Serving throughput needs an optimised implementation before production use; the cause is
+understood and the fix is a contained engineering task.
 
 ## The finding that changes how this should be planned
 
 **Detection gets weaker as our models get better.** On the 31B model, detection falls from
 100% to **51%** at the same document length. Larger models are more confident, leaving less
-randomness for the watermark to use. Both figures are for **400-token documents**, which is
-all we tested; detection rises with length and the 31B was still improving sharply at that
-point (44% → 64% → 80% across 200/300/400 tokens on creative prose), so longer documents
-detect better.
+randomness for the watermark to use. Both figures are for **400-token documents**, all we
+tested; detection rises with length and was still climbing sharply there (44% → 64% → 80% at
+200/300/400 tokens), so longer documents detect better.
 
 **The consequence: detection thresholds do not transfer between models, and will silently
 weaken at every model upgrade.** Re-calibration belongs on the model-promotion checklist.
@@ -62,9 +67,9 @@ weaken at every model upgrade.** Re-calibration belongs on the model-promotion c
 | Internal audit — was this memo or filing machine-drafted? | Prove text *is* human-written; a negative proves nothing |
 | Separate desks or units via independent keys | Voice, image or video — **this study covers text only** |
 
-Article 50(2) requires marking be effective *"as far as this is technically feasible"*. The
-statute anticipates limits, so documenting them is part of a compliance argument rather than
-a weakness in one.
+Article 50(2) requires marking be effective *"as far as this is technically feasible"* — the
+statute anticipates limits, so documenting them strengthens a compliance argument rather than
+weakening it.
 
 ## Recommended next steps
 
@@ -74,3 +79,8 @@ a weakness in one.
 
 *Deliverables: `synthmark` package (generation, detection, CPU detection service, CLI), full
 evaluation across two models, 27 tests. Branch `watermarking`.*
+
+*Method: Dathathri et al., "Scalable watermarking for identifying large language model
+outputs", [Nature 634 (2024)](https://www.nature.com/articles/s41586-024-08025-4) ·
+reference implementation [google-deepmind/synthid-text](https://github.com/google-deepmind/synthid-text) ·
+[Anthropic on Claude's text watermark](https://www.anthropic.com/news/claude-text-watermark).*

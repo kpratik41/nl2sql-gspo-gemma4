@@ -81,7 +81,7 @@ li { margin: 0.3em 0; }
 <h1 id="text-watermarking-for-llm-output-management-summary">Text Watermarking for LLM Output — Management Summary</h1>
 <p>Pratik Kakkar · Chandra Dhir · Anup Shirgaonkar</p>
 <p><em>Evaluation of SynthID-Text watermarking and a reusable internal toolkit. Method is
-model-agnostic; tested on Gemma-4 (4B and 31B). Full detail: <a href="watermarking_report.md">watermarking_report.md</a>.</em></p>
+model-agnostic; tested on Gemma-4 (4B and 31B). Detail: <a href="watermarking_report.md">watermarking_report.md</a>.</em></p>
 <hr />
 <h2 id="why-now">Why now</h2>
 <p>EU AI Act Article 50 requires generative AI output to be <strong>"marked in a machine-readable
@@ -95,9 +95,14 @@ reputation suggests.</strong> It is a provenance control answering <em>"did our 
 — not an anti-abuse control, and it should not be presented as one.</p>
 <p><strong>Two approaches exist, and the trade-off does not disappear — it moves.</strong> The <em>green-list</em>
 approach nudges the model toward marked words: easier to detect, but it degrades output
-quality. <em>SynthID</em>, which we used, never overrides the model's own judgement, so quality is
-untouched — paying for that with a weaker, more fragile mark. The choice is which cost you
+quality. <em>SynthID-Text</em>, which we used, never overrides the model's own judgement, so quality
+is untouched — paying for that with a weaker, more fragile mark. The choice is which cost you
 accept; for client-facing text, degrading quality is not one we can take.</p>
+<p><strong>We are not first movers — this is what the major providers ship.</strong> Google deployed
+SynthID-Text across Gemini, the first production text watermark at scale, reporting no
+significant quality difference over ~20 million responses. Anthropic states Claude's watermark
+is <em>"a version of the SynthID-Text approach"</em>, implemented for EU AI Act compliance. Our
+quality findings reproduce theirs independently.</p>
 <div class="table-scroll"><table>
 <thead>
 <tr>
@@ -144,15 +149,14 @@ accept; for client-facing text, degrading quality is not one we can take.</p>
 </tr>
 </tbody>
 </table></div>
-<p>Serving throughput needs an optimised implementation before production use. The cause is
-understood and the fix is a contained engineering task; detail in the full report.</p>
+<p>Serving throughput needs an optimised implementation before production use; the cause is
+understood and the fix is a contained engineering task.</p>
 <h2 id="the-finding-that-changes-how-this-should-be-planned">The finding that changes how this should be planned</h2>
 <p><strong>Detection gets weaker as our models get better.</strong> On the 31B model, detection falls from
 100% to <strong>51%</strong> at the same document length. Larger models are more confident, leaving less
-randomness for the watermark to use. Both figures are for <strong>400-token documents</strong>, which is
-all we tested; detection rises with length and the 31B was still improving sharply at that
-point (44% → 64% → 80% across 200/300/400 tokens on creative prose), so longer documents
-detect better.</p>
+randomness for the watermark to use. Both figures are for <strong>400-token documents</strong>, all we
+tested; detection rises with length and was still climbing sharply there (44% → 64% → 80% at
+200/300/400 tokens), so longer documents detect better.</p>
 <p><strong>The consequence: detection thresholds do not transfer between models, and will silently
 weaken at every model upgrade.</strong> Re-calibration belongs on the model-promotion checklist.</p>
 <h2 id="what-it-can-and-cannot-be-used-for">What it can and cannot be used for</h2>
@@ -186,9 +190,9 @@ weaken at every model upgrade.</strong> Re-calibration belongs on the model-prom
 </tr>
 </tbody>
 </table></div>
-<p>Article 50(2) requires marking be effective <em>"as far as this is technically feasible"</em>. The
-statute anticipates limits, so documenting them is part of a compliance argument rather than
-a weakness in one.</p>
+<p>Article 50(2) requires marking be effective <em>"as far as this is technically feasible"</em> — the
+statute anticipates limits, so documenting them strengthens a compliance argument rather than
+weakening it.</p>
 <h2 id="recommended-next-steps">Recommended next steps</h2>
 <ol>
 <li><strong>Engage model serving</strong> on a vLLM implementation. No vendor ships this, but the extension points exist; it is a contained engineering task, not research.</li>
@@ -197,5 +201,9 @@ a weakness in one.</p>
 </ol>
 <p><em>Deliverables: <code>synthmark</code> package (generation, detection, CPU detection service, CLI), full
 evaluation across two models, 27 tests. Branch <code>watermarking</code>.</em></p>
+<p><em>Method: Dathathri et al., "Scalable watermarking for identifying large language model
+outputs", <a href="https://www.nature.com/articles/s41586-024-08025-4">Nature 634 (2024)</a> ·
+reference implementation <a href="https://github.com/google-deepmind/synthid-text">google-deepmind/synthid-text</a> ·
+<a href="https://www.anthropic.com/news/claude-text-watermark">Anthropic on Claude's text watermark</a>.</em></p>
 </div></body>
 </html>
