@@ -860,3 +860,73 @@ about 50% over the 11.5 min actually taken. At concurrency 16 a 20-example
 sample is one full wave plus a 4-example tail, so ramp-up and drain dominate it;
 the steady-state rate observed 3 minutes into the full run projected 10.6 min
 and was close.
+
+## Qwen3.8-Flash-Next with thinking enabled
+
+Same dataset, same server path, a fresh container at `max_model_len` 65536 and
+`max_new_tokens` 16000 (that setting is a server-launch flag, so it cannot be
+raised on a running container). Smoke gate returned 24 tool calls, confirming
+`qwen3_xml` again.
+
+- Output: `outputs/inference/arcwise_plat_full/Qwen3.8-Flash-Next/vllm_server_tp8_ctx65k_o16k_r8_qwen3_xml_temp0_think_20260828_070405`
+- **Correct: 438 / 498**
+- **Accuracy: 87.95%** -- *identical* to thinking-off
+
+The aggregate is unchanged to the question. That is not because thinking did
+nothing: per question, 422 were correct both ways, **16 flipped to correct and
+16 flipped to wrong**, so 32 answers changed and the two effects cancelled
+exactly.
+
+| | Flash-Next OFF | Flash-Next ON |
+| --- | ---: | ---: |
+| EX | 87.95% (438) | 87.95% (438) |
+| Tool calls total | 1175 | 848 |
+| Avg calls/example | 2.359 | **1.703** |
+| `forced_final` | **62** | **3** |
+| Avg completion tokens | 576 | 1009 |
+| Pred SQL execution failures | 0 | 3 |
+| Generation time | 689s | 924s |
+
+**This corrects something I suggested when recording the thinking-off run.**
+There I flagged the 62 `forced_final` examples (12.4%) as a plausible cause of
+the gap to Gemma, on the reasoning that the tool loop was cutting off a model
+that wanted ~2.4 calls. Thinking-on drops `forced_final` from 62 to 3 and cuts
+tool calls by 28% -- the loop is no longer truncating anything -- and the score
+does not move at all. Tool-loop truncation was therefore **not** the limiting
+factor, and a `max_tool_rounds=12` run is not worth doing on that basis.
+
+What thinking actually bought here was decisiveness, not accuracy: the model
+investigates less and commits earlier, at 1.75x the generated tokens and 34%
+more wall clock, for the same result.
+
+| Database | Flash-Next ON | Flash-Next OFF | Delta |
+| --- | ---: | ---: | ---: |
+| `student_club` | 97.92% | 95.83% | +2.09 |
+| `codebase_community` | 95.92% | 93.88% | +2.04 |
+| `formula_1` | 92.42% | 90.91% | +1.51 |
+| `european_football_2` | 90.20% | 90.20% | 0.00 |
+| `toxicology` | 90.00% | 90.00% | 0.00 |
+| `financial` | 90.00% | 93.33% | -3.33 |
+| `superhero` | 88.46% | 86.54% | +1.92 |
+| `card_games` | 84.62% | 84.62% | 0.00 |
+| `thrombosis_prediction` | 82.00% | 86.00% | -4.00 |
+| `debit_card_specializing` | 80.00% | 83.33% | -3.33 |
+| `california_schools` | 63.33% | 63.33% | 0.00 |
+
+`california_schools` is 19/30 for the fifth configuration running.
+
+Timing: generation `923.71s`, evaluation `66.54s`, total `990.83s`.
+
+## Plat-Full standings so far
+
+| Model | Params | Thinking | EX |
+| --- | --- | --- | ---: |
+| Qwen3.8-27B | 27B dense | on | **89.56%** |
+| gemma-4-31B-it | 31B dense | off | 88.96% |
+| Qwen3.8-Flash-Next | 180B MoE | off | 87.95% |
+| Qwen3.8-Flash-Next | 180B MoE | on | 87.95% |
+| Qwen3.8-27B | 27B dense | off | 87.55% |
+
+Thinking on a 27B dense model beats a 180B MoE by 1.6 points on this set, and
+thinking buys the MoE nothing at all. gemma-4-31B-it has not yet been measured
+with thinking on; that sweep is queued.
