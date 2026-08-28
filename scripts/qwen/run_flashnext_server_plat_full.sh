@@ -74,6 +74,8 @@ CONCURRENCY="${CONCURRENCY:-16}"
 MAX_TOOL_ROUNDS="${MAX_TOOL_ROUNDS:-8}"
 REQUEST_TIMEOUT="${REQUEST_TIMEOUT:-900}"
 SMOKE="${SMOKE:--1}"
+SMOKE_FIRST="${SMOKE_FIRST:-1}"   # gate the full run on a small sample first
+SMOKE_N="${SMOKE_N:-20}"
 SERVER_READY_TIMEOUT="${SERVER_READY_TIMEOUT:-3600}"
 
 # Same thinking-aware budgets as the 27B suite, and for the same reason: at 8000
@@ -175,56 +177,63 @@ trap cleanup EXIT
   echo "[$(date -Is)] server ready on :${PORT}"
   docker logs "${CONTAINER}" > "${SERVER_LOG}" 2>&1 || true
 
+  # One server, two evals. Loading 360GB is far too expensive to pay twice, so
+  # the smoke gate and the full run share this container.
+  run_eval() {
+    local n="$1" outdir="$2"
+    mkdir -p "${outdir}"
+    .venv/bin/python scripts/run_inference_bird_qwen_server.py \
+      --server_url "http://127.0.0.1:${PORT}/v1" \
+      --model "${SERVED_NAME}" \
+      --input_file "${INPUT_FILE}" \
+      --database_dir "${DATABASE_DIR}" \
+      --diff_json_path "${DIFF_JSON}" \
+      --output_dir "${outdir}" \
+      --num_examples "${n}" \
+      --temperature 0.0 \
+      --top_p 1.0 \
+      --max_new_tokens "${MAX_NEW_TOKENS}" \
+      --max_tool_rounds "${MAX_TOOL_ROUNDS}" \
+      --tool_choice_policy required_first \
+      --empty_tool_retries 1 \
+      --request_timeout "${REQUEST_TIMEOUT}" \
+      --eval_timeout 60 \
+      --eval_workers 16 \
+      --concurrency "${CONCURRENCY}" \
+      --no_prompt_rewrite \
+      "${THINK_ARGS[@]}" \
+      --overwrite
+  }
+
+  # Zero extracted tool calls is the signature of a parser mismatch, and it
+  # surfaces as a believable low accuracy rather than an error. Gate on it.
+  tool_calls_in() {
+    .venv/bin/python -c "
+import json, sys, pathlib
+p = pathlib.Path(sys.argv[1]) / 'eval_summary.json'
+print(json.loads(p.read_text()).get('generation_stats', {}).get('tool_call_count_total', 0) if p.exists() else 0)
+" "$1"
+  }
+
+  rc=0
+  if [[ "${SMOKE_FIRST}" == "1" && "${SMOKE}" == "-1" ]]; then
+    echo "[$(date -Is)] smoke gate: ${SMOKE_N} examples, parser=${TOOL_CALL_PARSER}"
+    set +e; run_eval "${SMOKE_N}" "${OUT_DIR}/smoke"; set -e
+    n_tools="$(tool_calls_in "${OUT_DIR}/smoke")"
+    echo "[$(date -Is)] smoke extracted ${n_tools} tool calls"
+    if [[ "${n_tools}" -eq 0 ]]; then
+      echo "[$(date -Is)] FATAL: parser ${TOOL_CALL_PARSER} extracted no tool calls." >&2
+      echo "  Not spending the full ${DATASET} on this. Re-run with the other parser:" >&2
+      echo "    TOOL_CALL_PARSER=qwen3_coder bash scripts/qwen/run_flashnext_server_plat_full.sh" >&2
+      exit 3
+    fi
+    echo "[$(date -Is)] gate passed; running the full set"
+  fi
+
   set +e
-  .venv/bin/python scripts/run_inference_bird_qwen_server.py \
-    --server_url "http://127.0.0.1:${PORT}/v1" \
-    --model "${SERVED_NAME}" \
-    --input_file "${INPUT_FILE}" \
-    --database_dir "${DATABASE_DIR}" \
-    --diff_json_path "${DIFF_JSON}" \
-    --output_dir "${OUT_DIR}" \
-    --num_examples "${SMOKE}" \
-    --temperature 0.0 \
-    --top_p 1.0 \
-    --max_new_tokens "${MAX_NEW_TOKENS}" \
-    --max_tool_rounds "${MAX_TOOL_ROUNDS}" \
-    --tool_choice_policy required_first \
-    --empty_tool_retries 1 \
-    --request_timeout "${REQUEST_TIMEOUT}" \
-    --eval_timeout 60 \
-    --eval_workers 16 \
-    --concurrency "${CONCURRENCY}" \
-    --no_prompt_rewrite \
-    "${THINK_ARGS[@]}" \
-    --overwrite
+  run_eval "${SMOKE}" "${OUT_DIR}"
   rc=$?
   set -e
 
-  docker logs "${CONTAINER}" > "${SERVER_LOG}" 2>&1 || true
-
-  # Zero tool calls is the signature of a parser mismatch, and it produces a
-  # plausible-looking low accuracy rather than an error. Call it out explicitly.
-  .venv/bin/python - "${OUT_DIR}" "${TOOL_CALL_PARSER}" <<'PY'
-import json, sys, pathlib
-d, parser = pathlib.Path(sys.argv[1]), sys.argv[2]
-p = d / "eval_summary.json"
-if not p.exists():
-    print("FAIL no eval_summary.json"); raise SystemExit
-s = json.loads(p.read_text()); t = s.get("total", {}); g = s.get("generation_stats", {})
-tools = g.get("tool_call_count_total", 0)
-stops = g.get("stop_reason_counts", {})
-errs = sum(v for k, v in stops.items() if "error" in k.lower())
-cnt = t.get("count", 0)
-print(f"EX={t.get('accuracy',0):.2f}% ({t.get('correct',0)}/{cnt}) "
-      f"tool_calls={tools} gen_errors={errs} stops={stops}")
-if tools == 0:
-    print(f"SUSPECT: zero tool calls extracted. --tool-call-parser={parser} probably "
-          f"does not match what this model emits. Retry with the other parser "
-          f"(qwen3_coder / qwen3_xml) before trusting this number.")
-elif errs > 0.10 * max(cnt, 1):
-    print("SUSPECT: generation errors above 10%.")
-else:
-    print("OK")
-PY
   echo "[$(date -Is)] complete rc=${rc}; summary=${OUT_DIR}/eval_summary.md"
 } 2>&1 | tee -a "${LOG}"
