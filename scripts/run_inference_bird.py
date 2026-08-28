@@ -182,6 +182,31 @@ def load_rows(input_file: str, num_examples: int) -> List[Dict[str, Any]]:
     return rows
 
 
+# Chat-template kwargs applied to every rendered prompt. Empty by default, which
+# leaves gemma-4's template at its own default of enable_thinking=false -- the
+# setting every result recorded before this existed was produced under.
+#
+# Worth knowing when porting this: templates do not agree on the default.
+# gemma-4 sets `enable_thinking | default(false)`, while Qwen3.8 uses
+# `enable_thinking is undefined or enable_thinking is true`, i.e. on. Passing
+# nothing therefore means thinking-off for Gemma and thinking-ON for Qwen, with
+# nothing to flag it. Prefer configuring this explicitly over relying on it.
+_CHAT_TEMPLATE_KWARGS: Dict[str, Any] = {}
+
+
+def configure_chat_template_kwargs(enable_thinking: bool = False, preserve_thinking: bool = False) -> None:
+    """Set the thinking kwargs passed to apply_chat_template for this process."""
+    global _CHAT_TEMPLATE_KWARGS
+    _CHAT_TEMPLATE_KWARGS = {
+        "enable_thinking": bool(enable_thinking),
+        "preserve_thinking": bool(preserve_thinking),
+    }
+    print(
+        f"[prompt] chat template kwargs: enable_thinking={bool(enable_thinking)} "
+        f"preserve_thinking={bool(preserve_thinking)}"
+    )
+
+
 def render_prompt(tokenizer, messages: List[Dict[str, str]], tools: Optional[List[Dict[str, Any]]] = None) -> str:
     if hasattr(tokenizer, "apply_chat_template"):
         try:
@@ -190,6 +215,7 @@ def render_prompt(tokenizer, messages: List[Dict[str, str]], tools: Optional[Lis
                 tokenize=False,
                 add_generation_prompt=True,
                 tools=tools,
+                **_CHAT_TEMPLATE_KWARGS,
             )
         except ValueError as exc:
             if "tokenizer.chat_template is not set" not in str(exc):

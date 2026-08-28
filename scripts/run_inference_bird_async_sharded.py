@@ -20,6 +20,7 @@ from nl2sql_gspo.data import normalize_record
 
 from scripts.run_inference_bird import (
     build_generation_stats,
+    configure_chat_template_kwargs,
     build_per_example_report_rows,
     configure_tool_env,
     ensure_output_dir,
@@ -57,6 +58,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vllm_async_concurrency", type=int, default=16)
     parser.add_argument("--max_tool_rounds", type=int, default=8)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--enable_thinking",
+        action="store_true",
+        help="Enable the model's reasoning in the chat template (gemma-4 defaults it off).",
+    )
+    parser.add_argument(
+        "--preserve_thinking",
+        action="store_true",
+        help="Keep historical reasoning in rendered chat history. Off by default: the "
+             "template re-renders it every round, so drift compounds over a tool loop.",
+    )
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--shard_file", default=None)
     parser.add_argument("--shard_output_dir", default=None)
@@ -110,6 +122,7 @@ def write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
 
 
 def run_worker(args: argparse.Namespace) -> None:
+    configure_chat_template_kwargs(args.enable_thinking, args.preserve_thinking)
     if not args.shard_file or not args.shard_output_dir:
         raise ValueError("--worker requires --shard_file and --shard_output_dir")
 
@@ -294,6 +307,10 @@ def run_parent(args: argparse.Namespace) -> None:
             "--max_tool_rounds",
             str(args.max_tool_rounds),
         ]
+        if args.enable_thinking:
+            cmd.append("--enable_thinking")
+        if args.preserve_thinking:
+            cmd.append("--preserve_thinking")
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = gpu_groups[shard_idx]
         with log_path.open("w", encoding="utf-8") as log_handle:
