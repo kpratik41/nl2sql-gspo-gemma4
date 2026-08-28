@@ -16,7 +16,8 @@
 #   - --no_prompt_rewrite, because outputs/qwen-*.jsonl already carry the Qwen
 #     tool syntax. Letting the runtime rewrite run on top strips the XML
 #     examples and re-inserts "do not print the function call".
-#   - thinking left OFF (the runner's default), matching the Gemma baseline.
+#   - thinking OFF by default, matching the Gemma baseline; ENABLE_THINKING=1
+#     turns it on and tags the outputs with _think so the two never mix.
 #   - NL2SQL_TOOL_LOOP_GUARD=1, which only applies at temperature 0.
 #
 # CRITICAL: .venv/bin must be on PATH. FlashInfer's GDN prefill kernel (the 48
@@ -61,6 +62,28 @@ MAX_TOOL_ROUNDS="${MAX_TOOL_ROUNDS:-8}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.90}"
 IDLE_MEMORY_MB="${IDLE_MEMORY_MB:-5000}"
 
+# Thinking mode. Off by default, which is what the Gemma baseline compares
+# against. ENABLE_THINKING=1 turns Qwen's reasoning on for generation.
+#
+# PRESERVE_THINKING stays off even when thinking is on, deliberately: the
+# shipped chat template re-renders historical reasoning into the prompt, and
+# qwen38_eval_plan.md records that it emits empty <think></think> blocks when
+# reasoning is preserved. In a tool loop that drift compounds every round, so
+# reasoning is generated per round and dropped from the history -- which is
+# also Qwen's own recommendation.
+ENABLE_THINKING="${ENABLE_THINKING:-0}"
+PRESERVE_THINKING="${PRESERVE_THINKING:-0}"
+THINK_ARGS=()
+RUN_SUFFIX=""
+if [[ "${ENABLE_THINKING}" == "1" ]]; then
+  THINK_ARGS+=(--enable_thinking)
+  RUN_SUFFIX="_think"
+fi
+if [[ "${PRESERVE_THINKING}" == "1" ]]; then
+  THINK_ARGS+=(--preserve_thinking)
+  RUN_SUFFIX="${RUN_SUFFIX}_preserve"
+fi
+
 # dataset : input jsonl : diff json
 DATASETS=(
   "arcwise_plat_sql:outputs/qwen-arcwise_plat_sql-schema-tool.jsonl:data/revisql/raw/arcwise_plat_sql.json"
@@ -84,7 +107,7 @@ if [[ -n "${ONLY_DATASETS:-}" ]]; then
 fi
 
 TS="$(date +%Y%m%d_%H%M%S)"
-SUITE_LOG="logs/qwen38_thinking_machine_evals_${TS}.log"
+SUITE_LOG="logs/qwen38_thinking_machine_evals${RUN_SUFFIX}_${TS}.log"
 mkdir -p logs
 
 max_gpu_memory_used_mb() {
@@ -108,14 +131,14 @@ wait_for_idle_gpus() {
 {
   echo "[$(date -Is)] suite start model=${MODEL_PATH}"
   echo "[$(date -Is)] tp=${TP} shards=${SHARDS} temp=${TEMPERATURE} top_k=${TOP_K} concurrency=${CONCURRENCY}"
-  echo "[$(date -Is)] tool_loop_guard=${NL2SQL_TOOL_LOOP_GUARD} thinking=off"
+  echo "[$(date -Is)] tool_loop_guard=${NL2SQL_TOOL_LOOP_GUARD} enable_thinking=${ENABLE_THINKING} preserve_thinking=${PRESERVE_THINKING}"
 
   declare -a SUMMARY_LINES=()
   suite_status=0
 
   for entry in "${DATASETS[@]}"; do
     IFS=":" read -r name input_file diff_json <<<"${entry}"
-    out_dir="outputs/inference/${name}/${MODEL_TAG}/vllm_async_tp2_dp4_ctx43k_p34k_o8k_r8_temp0_${TS}"
+    out_dir="outputs/inference/${name}/${MODEL_TAG}/vllm_async_tp2_dp4_ctx43k_p34k_o8k_r8_temp0${RUN_SUFFIX}_${TS}"
 
     echo
     echo "=============================================================="
@@ -153,6 +176,7 @@ wait_for_idle_gpus() {
       --tool_choice_policy required_first \
       --empty_tool_retries 1 \
       --no_prompt_rewrite \
+      "${THINK_ARGS[@]}" \
       --overwrite
     rc=$?
     set -e
