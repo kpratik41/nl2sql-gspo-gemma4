@@ -324,9 +324,76 @@ each dataset on `eval_summary.json`, not on the exit code.
 
 | Dataset | Rows | Correct | Overall EX | gemma-4-31B-it | Delta |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `arcwise_plat_sql` | 498 | _pending_ | _pending_ | 85.74% | |
+| `arcwise_plat_sql` | 498 | 417 | 83.73% | 85.74% | -2.01 |
 | `arcwise_plat_full` | 498 | _pending_ | _pending_ | 88.96% | |
 | `mini_dev_sqlite` | 500 | _pending_ | _pending_ | 71.40% | |
 
 Run in progress; this table and the per-dataset sections below are filled in as
 each dataset completes.
+
+## Qwen3.8-27B - arcwise_plat_sql BIRD EX
+
+- Data: `outputs/qwen-arcwise_plat_sql-schema-tool.jsonl` (498 rows)
+- Diff JSON: `data/revisql/raw/arcwise_plat_sql.json` (no `difficulty` field, so the
+  breakdown is all "unknown")
+- Output: `outputs/inference/arcwise_plat_sql/Qwen3.8-27B/vllm_async_tp2_dp4_ctx43k_p34k_o8k_r8_temp0_20260828_051521`
+- Model read from the HF cache on EBS (this run only; runs 2 and 3 read from the
+  NVMe copy instead)
+
+Overall BIRD EX:
+
+- **Correct: 417 / 498**
+- **Accuracy: 83.73%**  (gemma-4-31B-it: 85.74%, -2.01 points)
+
+By database, against the Gemma run on the same 498 questions:
+
+| Database | Qwen correct | Rows | Qwen EX | gemma-4-31B-it EX | Delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `student_club` | 47 | 48 | 97.92% | 97.92% | 0.00 |
+| `card_games` | 49 | 52 | 94.23% | 90.38% | +3.85 |
+| `european_football_2` | 45 | 51 | 88.24% | 86.27% | +1.97 |
+| `toxicology` | 35 | 40 | 87.50% | 85.00% | +2.50 |
+| `thrombosis_prediction` | 42 | 50 | 84.00% | 82.00% | +2.00 |
+| `codebase_community` | 41 | 49 | 83.67% | 87.76% | -4.09 |
+| `formula_1` | 55 | 66 | 83.33% | 87.88% | -4.55 |
+| `superhero` | 43 | 52 | 82.69% | 86.54% | -3.85 |
+| `financial` | 23 | 30 | 76.67% | 83.33% | -6.66 |
+| `debit_card_specializing` | 21 | 30 | 70.00% | 80.00% | -10.00 |
+| `california_schools` | 16 | 30 | 53.33% | 63.33% | -10.00 |
+
+`california_schools` is the weakest DB for both models, and Qwen is 10 points
+worse on it than Gemma. `debit_card_specializing` shows the same 10-point gap.
+Qwen is ahead on 4 of 11 DBs and level on a 5th, so the 2-point overall deficit
+is concentrated in a handful of databases rather than spread evenly.
+
+SQL execution:
+
+- Pred SQL extracted: `496 / 498`, missing `2`
+- Gold SQL extracted: `498 / 498`, missing `0`
+- Pred SQL executed: `496 / 498`, execution failures `2`
+- Gold SQL executed: `497 / 498`, execution failures `1`
+- Both pred and gold executed: `495`
+
+Generation stats:
+
+- Tool calls total: `707` (avg `1.420`/example, against Gemma's `1.114`)
+- Tool counts: `sqlite_query=687`, `sqlite_peek=9`, `bm25_search_sqlite=11`
+- Stop reasons: `finished=487`, `forced_final_at_cap=10`, `context_length_exceeded=1`
+- Rejected tool calls: `0`
+- Completion tokens total: `237785`, avg `477.48`/example (Gemma: `445.74`)
+- Max prompt tokens: `47470` (Gemma: `27228`)
+
+Timing:
+
+- Generation: `1026.39s` (includes engine startup: weight load, torch.compile,
+  and the FlashInfer GDN ninja JIT)
+- Evaluation: `66.66s`
+- Total: `1093.58s`
+
+Note on the timing comparison: this figure is **not** comparable to the Gemma
+`711.00s` generation number as a model-speed measurement. Roughly 12 of the 18
+minutes here were engine startup -- weights loading off EBS at 22-37s per shard
+with all 4 shards reading the same checkpoint concurrently, plus a 56s
+torch.compile and the FlashInfer JIT. Actual token generation began at 05:29:34
+and finished at 05:33:35, about 4 minutes. Runs 2 and 3 load from a copy on the
+instance-store NVMe instead, which removes most of that startup cost.
