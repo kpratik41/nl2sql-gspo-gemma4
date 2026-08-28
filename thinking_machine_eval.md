@@ -333,6 +333,69 @@ set, and the gap narrows as the gold gets cleaner and the set gets harder:
 -2.01 on Plat-SQL, -1.41 on Plat-Full, -0.20 on Mini-Dev. On the uncorrected
 Mini-Dev split the two models are within a single question of each other.
 
+### Combined accuracy and input-file sizes
+
+| Dataset | Rows | gemma-4-31B-it EX | Qwen3.8-27B EX | Delta | Gemma input file | Qwen input file |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `arcwise_plat_sql` | 498 | 85.74% (427) | 83.73% (417) | -2.01 | 45,320,494 B | 44,339,434 B |
+| `arcwise_plat_full` | 498 | 88.96% (443) | 87.55% (436) | -1.41 | 45,323,660 B | 44,342,600 B |
+| `mini_dev_sqlite` | 500 | 71.40% (357) | 71.20% (356) | -0.20 | 45,238,725 B | 44,253,725 B |
+
+### Input file integrity, gemma vs qwen
+
+Checked because a 1-2 point deficit could plausibly be a data-generation fault
+rather than a model difference. It is not.
+
+| Dataset | Delta (bytes) | Delta per row | Rows |
+| --- | ---: | ---: | ---: |
+| `arcwise_plat_sql` | -981,060 | -1,970 | 498 |
+| `arcwise_plat_full` | -981,060 | -1,970 | 498 |
+| `mini_dev_sqlite` | -985,000 | -1,970 | 500 |
+
+The Qwen files are ~2.2% smaller, which is exactly the expected amount: the Qwen
+system prompt is 975 chars shorter (13937 vs 14912) and appears twice per row, in
+both `prompt` and `messages` (-1950), plus ~20 bytes of JSON escaping for the XML
+tool-call examples.
+
+The decisive check is the distribution, not the total: across all 1496 rows there
+is **exactly one distinct delta value, 1970**. A generation fault -- a truncated
+schema, a dropped few-shot, a mangled row -- would produce deltas that vary from
+row to row. Zero user-message mismatches and zero gold-SQL mismatches.
+
+In tokens the Qwen input is 5% *shorter*, not larger: mean 10063 vs 10590 over the
+first 120 rows of Plat-Full, each file measured under its own model's tokenizer.
+So the 47470 `max_prompt_tokens` seen on the Qwen runs is not the input file; it
+is the tool loop appending query results, which is also why only Qwen hit
+`context_length_exceeded`.
+
+### Why Qwen scores lower
+
+Question-by-question on Plat-Full, the same 498 rows:
+
+| | Count |
+| --- | ---: |
+| Both correct | 419 |
+| Gemma only (Qwen lost) | 24 |
+| Qwen only (Qwen won) | 17 |
+| Neither correct | 38 |
+| Net | -7 |
+
+Three things rule out a data fault. Disagreement runs **both ways** -- Qwen wins
+17 questions Gemma misses, whereas corrupted input fails in one direction only.
+The 24 losses spread over 9 databases with at most 4 in any one, rather than
+clustering as malformed rows would. And 21 of the 24 executed successfully and
+simply returned the wrong rows -- semantic errors, not parse or prompt failures;
+only 3 produced empty SQL, and only 3 rows in 498 had no extractable prediction.
+
+What differs is behaviour: Qwen works the tool loop harder for a slightly worse
+result -- 1.37-1.57 tool calls per example against Gemma's 1.11, and 463-517
+completion tokens against 446 -- and hits the round cap 6-12 times per dataset
+where Gemma hit it once. It is also a 27B model against a 31B.
+
+`california_schools` is the one shared failure mode: 16/30 for Qwen on both
+arcwise sets, 60.00% for both models on Mini-Dev, and untouched by the
+Plat-SQL -> Plat-Full correction that lifted nearly every other database.
+
 ## Qwen3.8-27B - arcwise_plat_sql BIRD EX
 
 - Data: `outputs/qwen-arcwise_plat_sql-schema-tool.jsonl` (498 rows)
