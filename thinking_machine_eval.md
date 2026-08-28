@@ -743,8 +743,138 @@ for Qwen and thinking-off for Gemma, with nothing to flag it.
 
 gemma-4-31B-it does support thinking (6 `enable_thinking` and 3
 `preserve_thinking` usages in its template), so a thinking-on Gemma run is
-possible and would be the fair both-models-at-their-best comparison. It has not
-been run: the Gemma runner on this branch has no thinking flag to pass.
+possible and is the fair both-models-at-their-best comparison. It has since been
+run -- see "gemma-4-31B-it with thinking enabled" below. The runner gained
+`--enable_thinking` in commit 34e6033; the sentence that it has no flag to pass
+was true when written and is not any more.
+
+---
+
+# gemma-4-31B-it with thinking enabled
+
+The sweep the section above says is missing. Same three eval sets, same base
+model, thinking on, run through `scripts/run_gemma31b_thinking_machine_evals.sh`
+with its default `ENABLE_THINKING=1`.
+
+The same two settings move with thinking that moved for the Qwen sweep, and they
+are the same confound: `max_new_tokens` 8000 -> 16000 and `max_model_len` 43000
+-> 65536, because 34000 + 16000 does not fit in 43000. Thinking-off numbers were
+not re-run; they stay at 8000/43000. So ON vs OFF is not a single-variable
+comparison, though the truncation counts below suggest the budget is not what is
+driving it.
+
+Run at tp=2 x 2 shards on 4 GPUs rather than the 4 x 2 on 8 used for the
+thinking-off rows. Sharding does not affect greedy per-row output.
+
+## Results
+
+| Dataset | Rows | Thinking ON | Thinking OFF | Delta |
+| --- | ---: | ---: | ---: | ---: |
+| `arcwise_plat_sql` | 498 | **89.16% (444)** | 85.74% (427) | **+3.42** |
+| `arcwise_plat_full` | 498 | **92.57% (461)** | 88.96% (443) | **+3.61** |
+| `mini_dev_sqlite` | 500 | 69.40% (347) | 71.40% (357) | **-2.00** |
+
+**The Qwen result replicates, and larger.** Thinking is worth +3.4 and +3.6 on
+the two corrected-gold sets and *costs* 2.0 points on the uncorrected one. Qwen
+showed the same signs at +2.62, +2.01 and -1.00. Two unrelated model families,
+same pattern: longer reasoning converges on the defensible reading of an
+ambiguous question, which is rewarded where the gold was fixed and penalised
+where the gold still encodes the original.
+
+At 92.57% on Plat-Full this is the strongest result in this file, 3.01 points
+clear of the next (Qwen3.8-27B thinking-on, 89.56%). For outside context, and
+with the caveat that our row-set comparator is not the one ReViSQL used, their
+ ReViSQL-BIRD -K2.6 scores 93.8% greedy on this set, the human proxy is 92.96%,
+and their strongest open-source pipeline baseline (OpenSearch on GPT-5.2) is
+88.15%. An off-the-shelf instruct model with a 3-shot M-schema prompt landing
+between those is worth noting.
+
+## Cost
+
+| | OFF | ON |
+| --- | ---: | ---: |
+| avg completion tokens, Plat-SQL | 445.7 | 1830.1 |
+| avg completion tokens, Plat-Full | 435.6 | 1679.6 |
+| avg completion tokens, Mini-Dev | 507.8 | 2185.3 |
+| tool calls, Plat-SQL | 555 | 761 |
+| tool calls, Plat-Full | 545 | 736 |
+| tool calls, Mini-Dev | 608 | 865 |
+
+About 4x the generated tokens. Unlike Qwen, where thinking left tool-call counts
+almost unchanged and spent everything on reasoning, Gemma also explores more --
+37%, 35% and 42% more calls, with `bm25_search_sqlite` and `sqlite_peek` up
+several-fold. It reasons *and* investigates.
+
+## Truncation and the round cap
+
+| Dataset | stop reasons | pred SQL extracted | exec failures |
+| --- | --- | ---: | ---: |
+| `arcwise_plat_sql` | 492 finished, 4 `max_tool_rounds`, 2 `max_new_tokens` | 496/498 | 2 |
+| `arcwise_plat_full` | 497 finished, 1 `max_new_tokens` | 498/498 | 0 |
+| `mini_dev_sqlite` | 488 finished, 6 `max_tool_rounds`, 6 `max_new_tokens` | 497/500 | 4 |
+
+**There is no forced-finalize in this harness path.** At the cap
+`scripts/run_inference_bird.py` sets `stop_reason = "max_tool_rounds"` and
+breaks; it does not spend a turn asking the model to commit an answer. `grep -rn
+force_finalize scripts/*.py` returns nothing on this branch -- the `forced_final`
+stop reason in the Flash-Next section comes from
+`run_inference_bird_qwen_async.py`, a different runner on the qwen branch.
+
+That costs measurable accuracy here, unlike for Flash-Next where 62 forced
+finalisations changed nothing. Of the 4 Plat-SQL rows that hit the cap, 2 had
+emitted a candidate earlier and the extractor recovered it; the other two
+(`codebase_community`, 12734 and 21272 characters of exploration) never produced
+an `<sql_code>` block at all and are the entire `pred_sql_missing: 2`. A
+finalize turn has a ceiling of +2 questions (+0.40) on that run.
+
+## Per-database, Plat-Full
+
+| Database | ON | OFF | Delta |
+| --- | ---: | ---: | ---: |
+| `student_club` | 97.92% (47) | 95.83% (46) | +2.09 |
+| `card_games` | 96.15% (50) | 88.46% (46) | +7.69 |
+| `codebase_community` | 95.92% (47) | 91.84% (45) | +4.08 |
+| `superhero` | 94.23% (49) | 90.38% (47) | +3.85 |
+| `european_football_2` | 94.12% (48) | 92.16% (47) | +1.96 |
+| `thrombosis_prediction` | 94.00% (47) | 90.00% (45) | +4.00 |
+| `formula_1` | 93.94% (62) | 92.42% (61) | +1.52 |
+| `debit_card_specializing` | 93.33% (28) | 83.33% (25) | +10.00 |
+| `toxicology` | 90.00% (36) | 90.00% (36) | 0.00 |
+| `financial` | 90.00% (27) | 86.67% (26) | +3.33 |
+| `california_schools` | **66.67% (20)** | 63.33% (19) | +3.34 |
+
+Every database improves or holds. Not one regresses.
+
+**`california_schools` finally moved up.** It returned exactly 19/30 in every
+configuration in this file except RL-only, which moved it *down*. Thinking-on
+Plat-Full is the first 20/30 ever recorded for it. One question is not a
+breakthrough, but the database is no longer immovable in both directions.
+
+## Difficulty, on Mini-Dev
+
+| Difficulty | Rows | ON | OFF | Delta |
+| --- | ---: | ---: | ---: | ---: |
+| simple | 148 | 81.08% (120) | 81.08% (120) | 0.00 |
+| moderate | 250 | 67.60% (169) | 70.40% (176) | -2.80 |
+| challenging | 102 | 56.86% (58) | 59.80% (61) | -2.94 |
+
+**This is where Gemma and Qwen disagree, and it should be recorded rather than
+smoothed over.** The aggregate replicates but the breakdown does not. Qwen lost
+on `simple` (-1.35) and `moderate` (-2.40) and *gained* on `challenging`
+(+2.94); Gemma is flat on `simple`, and loses on both `moderate` (-2.80) and
+`challenging` (-2.94). Only the `moderate` band behaves the same way in both
+models. The earlier reading -- that thinking "helps where the work is genuinely
+hard and hurts where the question was merely under-specified" -- was drawn from
+one model and does not survive the second.
+
+`thrombosis_prediction` carries the annotation signature most clearly: thinking
+is **+4.00 on Plat-Full and -8.00 on Mini-Dev**. Same questions, same model,
+same reasoning; only the answer key differs.
+
+## Timing
+
+Generation 2224s, 1788s and 2220s on 4 GPUs, against 711s, 1066s and 574s for
+the thinking-off rows on 8. Roughly 4x the tokens on half the hardware.
 
 ---
 
@@ -921,15 +1051,19 @@ Timing: generation `923.71s`, evaluation `66.54s`, total `990.83s`.
 
 | Model | Params | Thinking | EX |
 | --- | --- | --- | ---: |
-| Qwen3.8-27B | 27B dense | on | **89.56%** |
-| gemma-4-31B-it | 31B dense | off | 88.96% |
-| Qwen3.8-Flash-Next | 180B MoE | off | 87.95% |
-| Qwen3.8-Flash-Next | 180B MoE | on | 87.95% |
-| Qwen3.8-27B | 27B dense | off | 87.55% |
+| **gemma-4-31B-it** | 31B dense | **on** | **92.57% (461)** |
+| Qwen3.8-27B | 27B dense | on | 89.56% (446) |
+| gemma-4-31B-it | 31B dense | off | 88.96% (443) |
+| Qwen3.8-Flash-Next | 180B MoE | off | 87.95% (438) |
+| Qwen3.8-Flash-Next | 180B MoE | on | 87.95% (438) |
+| Qwen3.8-27B | 27B dense | off | 87.55% (436) |
+| gemma-4-31b-it-bird-sft-rl | 31B dense | off | 81.53% (406) |
+| gemma-4-31b-it-bird-rl | 31B dense | off | 80.92% (403) |
 
 Thinking on a 27B dense model beats a 180B MoE by 1.6 points on this set, and
-thinking buys the MoE nothing at all. gemma-4-31B-it has not yet been measured
-with thinking on; that sweep is queued.
+thinking buys the MoE nothing at all. gemma-4-31B-it with thinking on now leads
+by 3.01 points over the next entry, and by 11.04 over our own SFT+RL checkpoint
+-- the two BIRD fine-tunes are the bottom of this table, not the top.
 
 ---
 
