@@ -55,9 +55,6 @@ TEMPERATURE="${TEMPERATURE:-0.0}"
 TOP_P="${TOP_P:-1.0}"
 TOP_K="${TOP_K:-20}"
 CONCURRENCY="${CONCURRENCY:-16}"
-MAX_MODEL_LEN="${MAX_MODEL_LEN:-43000}"
-MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-34000}"
-MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-8000}"
 MAX_TOOL_ROUNDS="${MAX_TOOL_ROUNDS:-8}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.96}"
 IDLE_MEMORY_MB="${IDLE_MEMORY_MB:-5000}"
@@ -83,6 +80,39 @@ if [[ "${PRESERVE_THINKING}" == "1" ]]; then
   THINK_ARGS+=(--preserve_thinking)
   RUN_SUFFIX="${RUN_SUFFIX}_preserve"
 fi
+
+# Token budgets depend on thinking, because reasoning traces are far longer than
+# a bare answer. The thinking-off numbers recorded in thinking_machine_eval.md
+# were produced at 8000/43000 and those values must not move, or they stop being
+# comparable to the Gemma baseline.
+#
+# With thinking on, 8000 was too small: the first sweep truncated 9 of 498 on
+# Plat-SQL with stop_reason max_new_tokens, i.e. reasoning cut mid-thought and
+# scored as an answer. 16000 removes that.
+#
+# max_model_len has to rise with it. It bounds prompt + generation for one
+# sequence, so 34000 + 16000 = 50000 does not fit in 43000. 65536 also covers
+# tool-loop growth: the thinking-off runs already observed prompts of 47470
+# tokens once query results had been appended, which is what produced the lone
+# context_length_exceeded there.
+if [[ "${ENABLE_THINKING}" == "1" ]]; then
+  MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-16000}"
+  MAX_MODEL_LEN="${MAX_MODEL_LEN:-65536}"
+else
+  MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-8000}"
+  MAX_MODEL_LEN="${MAX_MODEL_LEN:-43000}"
+fi
+MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-34000}"
+
+if (( MAX_PROMPT_LENGTH + MAX_NEW_TOKENS > MAX_MODEL_LEN )); then
+  echo "FATAL: max_prompt_length(${MAX_PROMPT_LENGTH}) + max_new_tokens(${MAX_NEW_TOKENS})" \
+       "exceeds max_model_len(${MAX_MODEL_LEN}); a full-length generation cannot fit" >&2
+  exit 2
+fi
+
+# Name the run directory after the budgets actually used, so a 16k thinking run
+# is never filed under a tag claiming 8k.
+CTX_TAG="ctx$((MAX_MODEL_LEN/1000))k_p$((MAX_PROMPT_LENGTH/1000))k_o$((MAX_NEW_TOKENS/1000))k_r${MAX_TOOL_ROUNDS}"
 
 # dataset : input jsonl : diff json
 DATASETS=(
@@ -131,6 +161,7 @@ wait_for_idle_gpus() {
 {
   echo "[$(date -Is)] suite start model=${MODEL_PATH}"
   echo "[$(date -Is)] tp=${TP} shards=${SHARDS} temp=${TEMPERATURE} top_k=${TOP_K} concurrency=${CONCURRENCY}"
+  echo "[$(date -Is)] max_new_tokens=${MAX_NEW_TOKENS} max_model_len=${MAX_MODEL_LEN} max_prompt_length=${MAX_PROMPT_LENGTH} util=${GPU_MEMORY_UTILIZATION}"
   echo "[$(date -Is)] tool_loop_guard=${NL2SQL_TOOL_LOOP_GUARD} enable_thinking=${ENABLE_THINKING} preserve_thinking=${PRESERVE_THINKING}"
 
   declare -a SUMMARY_LINES=()
@@ -138,7 +169,7 @@ wait_for_idle_gpus() {
 
   for entry in "${DATASETS[@]}"; do
     IFS=":" read -r name input_file diff_json <<<"${entry}"
-    out_dir="outputs/inference/${name}/${MODEL_TAG}/vllm_async_tp2_dp4_ctx43k_p34k_o8k_r8_temp0${RUN_SUFFIX}_${TS}"
+    out_dir="outputs/inference/${name}/${MODEL_TAG}/vllm_async_tp${TP}_dp${SHARDS}_${CTX_TAG}_temp0${RUN_SUFFIX}_${TS}"
 
     echo
     echo "=============================================================="

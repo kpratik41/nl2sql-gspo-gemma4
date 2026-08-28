@@ -13,8 +13,8 @@
 # Model shape, for sizing expectations: Qwen4ExpForConditionalGeneration, a
 # 180B-parameter MoE with 512 experts and 10 active per token, hybrid attention
 # (48 layers mixing linear_attention and full_attention), ~360GB of BF16 weights
-# across 131 safetensors shards. At tp=8 that is ~45GB of weights per H200,
-# leaving room for KV cache at the 0.96 utilization default.
+# across 131 safetensors shards (~335 GiB resident). At tp=8 on 8xH100 80GB that
+# is ~42GB of weights per GPU, leaving room for KV cache at 0.96 utilization.
 #
 # PREREQUISITE, and it is currently unmet on this box: vLLM must support the
 # qwen4_exp architecture. See the preflight below.
