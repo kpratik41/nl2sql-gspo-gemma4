@@ -35,6 +35,14 @@ export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 export NL2SQL_TOOL_LOOP_GUARD="${NL2SQL_TOOL_LOOP_GUARD:-1}"
 
+# Weight loading dominates engine startup, and the instance-store NVMe is much
+# faster than the EBS root. Prefer a copy there when one exists, falling back to
+# the HF cache. /opt/dlami/nvme does NOT survive a stop/start, so the fallback is
+# the correct behaviour after a restart, not an error.
+NVME_MODEL="${NVME_MODEL:-/opt/dlami/nvme/models/Qwen3.8-27B}"
+if [[ -z "${MODEL_PATH:-}" && -f "${NVME_MODEL}/config.json" ]]; then
+  MODEL_PATH="${NVME_MODEL}"
+fi
 MODEL_PATH="${MODEL_PATH:-$(ls -d "${HOME}"/.cache/huggingface/hub/models--Qwen--Qwen3.8-27B/snapshots/*/ | head -1)}"
 MODEL_TAG="${MODEL_TAG:-Qwen3.8-27B}"
 DATABASE_DIR="${DATABASE_DIR:-databases/dev_databases}"
@@ -59,6 +67,21 @@ DATASETS=(
   "arcwise_plat_full:outputs/qwen-arcwise_plat_full-schema-tool.jsonl:data/revisql/raw/arcwise_plat_full.json"
   "mini_dev_sqlite:outputs/qwen-mini_dev_sqlite-schema-tool.jsonl:data/bird_minidev_data/raw/mini_dev_sqlite.json"
 )
+
+# Run only a subset, e.g. ONLY_DATASETS=arcwise_plat_full,mini_dev_sqlite --
+# used when a run is resumed and earlier datasets already have results.
+if [[ -n "${ONLY_DATASETS:-}" ]]; then
+  _keep=()
+  for _e in "${DATASETS[@]}"; do
+    _n="${_e%%:*}"
+    case ",${ONLY_DATASETS}," in *",${_n},"*) _keep+=("${_e}") ;; esac
+  done
+  if [[ "${#_keep[@]}" -eq 0 ]]; then
+    echo "ONLY_DATASETS='${ONLY_DATASETS}' matched no dataset" >&2
+    exit 2
+  fi
+  DATASETS=("${_keep[@]}")
+fi
 
 TS="$(date +%Y%m%d_%H%M%S)"
 SUITE_LOG="logs/qwen38_thinking_machine_evals_${TS}.log"
