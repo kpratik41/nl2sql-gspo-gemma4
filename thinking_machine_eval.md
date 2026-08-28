@@ -326,10 +326,12 @@ each dataset on `eval_summary.json`, not on the exit code.
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `arcwise_plat_sql` | 498 | 417 | 83.73% | 85.74% | -2.01 |
 | `arcwise_plat_full` | 498 | 436 | 87.55% | 88.96% | -1.41 |
-| `mini_dev_sqlite` | 500 | _pending_ | _pending_ | 71.40% | |
+| `mini_dev_sqlite` | 500 | 356 | 71.20% | 71.40% | -0.20 |
 
-Run in progress; this table and the per-dataset sections below are filled in as
-each dataset completes.
+All three complete. Qwen3.8-27B lands slightly below gemma-4-31B-it on every
+set, and the gap narrows as the gold gets cleaner and the set gets harder:
+-2.01 on Plat-SQL, -1.41 on Plat-Full, -0.20 on Mini-Dev. On the uncorrected
+Mini-Dev split the two models are within a single question of each other.
 
 ## Qwen3.8-27B - arcwise_plat_sql BIRD EX
 
@@ -461,3 +463,109 @@ whole story of the earlier timing caveat: the checkpoint load went from about
 8 minutes to **7 seconds** (18/18 shards at 2.84 it/s), cutting total wall clock
 from `1093.58s` to `412.58s` for the same 498 rows. The `345.32s` here is close
 to a real generation measurement; the `1026.39s` on the Plat-SQL run was not.
+
+## Qwen3.8-27B - mini_dev_sqlite BIRD EX
+
+- Data: `outputs/qwen-mini_dev_sqlite-schema-tool.jsonl` (500 rows)
+- Diff JSON: `data/bird_minidev_data/raw/mini_dev_sqlite.json` (has `difficulty`)
+- Output: `outputs/inference/mini_dev_sqlite/Qwen3.8-27B/vllm_async_tp2_dp4_ctx43k_p34k_o8k_r8_temp0_20260828_053508`
+- Model read from `/opt/dlami/nvme/models/Qwen3.8-27B`
+
+Overall BIRD EX:
+
+- **Correct: 356 / 500**
+- **Accuracy: 71.20%**  (gemma-4-31B-it: 71.40%, -0.20 points -- one question)
+
+By difficulty, the only one of the three sets carrying labels:
+
+| Difficulty | Qwen correct | Rows | Qwen EX | gemma-4-31B-it EX | Delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `simple` | 122 | 148 | 82.43% | 81.08% | +1.35 |
+| `moderate` | 176 | 250 | 70.40% | 70.40% | 0.00 |
+| `challenging` | 58 | 102 | 56.86% | 59.80% | -2.94 |
+
+The models are **identical on moderate** (176/250 each) and Qwen is ahead on
+simple. The entire overall deficit sits in `challenging`, where Qwen loses 3
+questions. That is the cleanest signal across all three eval sets: the two models
+are equivalent on routine queries and diverge only at the hard end.
+
+By database:
+
+| Database | Qwen correct | Rows | Qwen EX | gemma-4-31B-it EX | Delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `superhero` | 46 | 52 | 88.46% | 84.62% | +3.84 |
+| `student_club` | 41 | 48 | 85.42% | 87.50% | -2.08 |
+| `card_games` | 39 | 52 | 75.00% | 71.15% | +3.85 |
+| `debit_card_specializing` | 22 | 30 | 73.33% | 70.00% | +3.33 |
+| `european_football_2` | 37 | 51 | 72.55% | 72.55% | 0.00 |
+| `formula_1` | 46 | 66 | 69.70% | 71.21% | -1.51 |
+| `codebase_community` | 33 | 49 | 67.35% | 69.39% | -2.04 |
+| `toxicology` | 25 | 40 | 62.50% | 65.00% | -2.50 |
+| `financial` | 20 | 32 | 62.50% | 59.38% | +3.12 |
+| `california_schools` | 18 | 30 | 60.00% | 60.00% | 0.00 |
+| `thrombosis_prediction` | 29 | 50 | 58.00% | 64.00% | -6.00 |
+
+Qwen is ahead on 4 databases, level on 2, behind on 5. Note `california_schools`
+at 60.00% for both models -- identical here as well, and *higher* than either
+model manages on the arcwise sets (53.33% Qwen / 63.33% Gemma). Mini-Dev has 30
+`california_schools` rows like the arcwise sets but different gold for many of
+them, so the arcwise correction appears to have made that database harder, not
+easier, for both models.
+
+SQL execution:
+
+- Pred SQL extracted: `500 / 500`, missing `0`
+- Gold SQL extracted: `500 / 500`, missing `0`
+- Pred SQL executed: `499 / 500`, execution failures `1`
+- Gold SQL executed: `499 / 500`, execution failures `1`
+- Both pred and gold executed: `498`
+
+Generation stats:
+
+- Tool calls total: `784` (avg `1.568`/example, against Gemma's `1.216`)
+- Tool counts: `sqlite_query=759`, `sqlite_peek=15`, `bm25_search_sqlite=10`
+- Stop reasons: `finished=488`, `forced_final_at_cap=12`
+- Rejected tool calls: `0`
+- Completion tokens total: `258672`, avg `517.34`/example (Gemma: `507.82`)
+- Max prompt tokens: `28382`
+
+Timing:
+
+- Generation: `390.75s`
+- Evaluation: `62.99s`
+- Total: `454.42s`
+
+## Cross-model summary
+
+| Dataset | Rows | gemma-4-31B-it | Qwen3.8-27B | Delta |
+| --- | ---: | ---: | ---: | ---: |
+| `arcwise_plat_sql` | 498 | 85.74% | 83.73% | -2.01 |
+| `arcwise_plat_full` | 498 | 88.96% | 87.55% | -1.41 |
+| `mini_dev_sqlite` | 500 | 71.40% | 71.20% | -0.20 |
+
+Observations:
+
+- **Both models rank the three sets identically**: Plat-Full > Plat-SQL >
+  Mini-Dev. The arcwise gold correction is worth about +3 points to Gemma and
+  +3.8 to Qwen, and the uncorrected Mini-Dev split is ~16 points harder for both.
+  The eval sets behave consistently across two very different models, which is
+  the main thing these runs were meant to establish.
+- **Qwen is behind everywhere, but never by much**, and the gap shrinks as the
+  gold gets cleaner and the questions get harder. On Mini-Dev the two are within
+  one question.
+- **Qwen spends more to get there.** Tool calls per example run 1.37-1.57 against
+  Gemma's 1.11-1.22 on the same questions, and Qwen hits the round cap 6-12 times
+  per set where Gemma hits it 1-3 times. Qwen also pushed a 47470-token prompt on
+  both arcwise sets against Gemma's ~27200, so its tool results are accumulating
+  far more context.
+- **`california_schools` is a shared, correction-resistant failure.** Both models
+  score exactly 60.00% on it in Mini-Dev and both are flat between Plat-SQL and
+  Plat-Full. It is the weakest database in 5 of the 6 runs.
+- Zero generation errors and zero rejected tool calls in all three Qwen runs.
+
+Caveat on comparability: these are two different models on the same data, not a
+controlled ablation. Qwen runs with `top_k=20` (its own generation config; the
+Gemma runs set no `top_k`), a different system-prompt dialect, and
+`tool_choice_policy=required_first` with `empty_tool_retries=1`, which have no
+Gemma equivalent. The questions, gold, few-shot demonstrations, temperature,
+round budget and token limits are identical.
