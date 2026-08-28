@@ -216,3 +216,117 @@ Timing:
 - Evaluation: `62.71s`
 - Total: `636.90s`
 
+
+---
+
+# Qwen3.8-27B on the same three eval sets
+
+Companion experiment to the `google/gemma-4-31B-it` runs above, on branch
+`qwen-3p8-thinky`. Same three question sets, same gold, same few-shot
+demonstrations, same generation settings — the only deliberate differences are
+the model and the tool-call dialect baked into the system prompt.
+
+## Data files generated
+
+The Qwen eval files are **not** rebuilt from raw. `scripts/qwen/build_qwen_eval_data.py`
+takes the Gemma tool-format file and swaps the system message wholesale, from
+`build_tool_system_prompt("default")` to `build_tool_system_prompt("default_qwen")`
+(14912 -> 13937 chars). The Gemma prompt teaches `call:name{...}` and forbids XML;
+the Qwen template teaches Qwen's native `<tool_call>` XML and adds the
+text-affinity guidance inserted by `_to_qwen_template` in `prompts.py`.
+
+Everything else in each row — user message (schema + 3 few-shot demos), `tools`,
+`db_id`, `gold_sql`, `evidence`, `question` — is left untouched. The script
+asserts the input system prompt is byte-exact before converting, so a template
+drift fails loudly instead of shipping a half-converted prompt.
+
+| # | Qwen input file (generated) | Rows | Built from (Gemma file) | Diff JSON (`--diff_json_path`) |
+| --- | --- | ---: | --- | --- |
+| 1 | `outputs/qwen-arcwise_plat_sql-schema-tool.jsonl` | 498 | `outputs/arcwise_plat_sql-schema-tool.jsonl` | `data/revisql/raw/arcwise_plat_sql.json` |
+| 2 | `outputs/qwen-arcwise_plat_full-schema-tool.jsonl` | 498 | `outputs/arcwise_plat_full-schema-tool.jsonl` | `data/revisql/raw/arcwise_plat_full.json` |
+| 3 | `outputs/qwen-mini_dev_sqlite-schema-tool.jsonl` | 500 | `outputs/mini_dev_sqlite-schema-tool.jsonl` | `data/bird_minidev_data/raw/mini_dev_sqlite.json` |
+
+Commands used:
+
+```bash
+python scripts/qwen/build_qwen_eval_data.py \
+  --input  outputs/arcwise_plat_sql-schema-tool.jsonl \
+  --output outputs/qwen-arcwise_plat_sql-schema-tool.jsonl --overwrite
+python scripts/qwen/build_qwen_eval_data.py \
+  --input  outputs/arcwise_plat_full-schema-tool.jsonl \
+  --output outputs/qwen-arcwise_plat_full-schema-tool.jsonl --overwrite
+python scripts/qwen/build_qwen_eval_data.py \
+  --input  outputs/mini_dev_sqlite-schema-tool.jsonl \
+  --output outputs/qwen-mini_dev_sqlite-schema-tool.jsonl --overwrite
+```
+
+### Verification of the generated files
+
+- **Only the system prompt moved.** Row-by-row over all fields and every message:
+  1496/1496 rows swapped, **0 non-system diffs**. `gold_sql`, `question`,
+  `evidence`, `tools` and the user message are byte-identical to the Gemma files.
+- **Tool signatures unchanged.** The baked `tools` array equals this branch's
+  `get_tool_definitions()` exactly, and `tool_catalog_compact()` appears verbatim
+  in the converted prompt. `gen_tools.py` differs across branches only in
+  sync-vs-async wrapping (`async def` directly instead of `_to_async` wrappers);
+  parameter names, defaults and required-lists are identical:
+  `bm25_search_sqlite(db_id, table, column, query, top_k, where)`,
+  `sqlite_peek(db_id, table, columns, limit, where)`,
+  `sqlite_query(db_id, sql, max_return_rows)`.
+- **Few-shot provenance** (3 demos/row, verified by membership, not assumption):
+
+  | Dataset | Demos | In ReViSQL BIRD-Platinum train | In train-6601 | Demos from an evaluated DB |
+  | --- | ---: | ---: | ---: | --- |
+  | `qwen-arcwise_plat_sql` | 1494 | **1494 (100%)** | 801 | none |
+  | `qwen-arcwise_plat_full` | 1494 | **1494 (100%)** | 798 | none |
+  | `qwen-mini_dev_sqlite` | 1500 | 221 | **1497 (99.8%)** | none |
+
+  The two corpora share 1160 questions, which is why the off-diagonal counts are
+  non-zero. Plat-SQL/Plat-Full draw from the data ReViSQL released
+  (`data/revisql/raw/bird-verified-train.jsonl`, 2064 rows); Mini-Dev draws from
+  `data/bird_train_data/raw/train-6601.jsonl`. No demonstration comes from any of
+  the 11 evaluated databases in any of the three files.
+
+## Run configuration
+
+Runner: `scripts/qwen/run_qwen38_thinking_machine_evals.sh` — the three datasets
+in sequence, each waiting for all 8 GPUs to go idle first.
+
+- Model: `Qwen/Qwen3.8-27B` (local snapshot `1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0`)
+- Inference: `scripts/run_inference_bird_qwen_async.py`, in-process async vLLM engine
+- `TP=2`, `SHARDS=4` (GPU groups `0,1` `2,3` `4,5` `6,7`), concurrency 16/shard
+- `temperature=0.0`, `top_p=1.0`, `top_k=20`, `max_tool_rounds=8`
+- `max_new_tokens=8000`, `max_prompt_length=34000`, `vllm_max_model_len=43000`
+- `--no_prompt_rewrite` (the files already carry the Qwen dialect; the runtime
+  rewrite is for the OpenAI-server path and would strip the XML examples)
+- `--tool_choice_policy required_first`, `--empty_tool_retries 1`
+- Thinking **off** (runner default), matching the Gemma baseline
+- `NL2SQL_TOOL_LOOP_GUARD=1` — applies only at temperature 0
+
+Differences from the Gemma runs, for the record: `top_k=20` (Qwen's own
+generation config; the Gemma runs set no `top_k`), the Qwen system-prompt dialect,
+and `tool_choice_policy`/`empty_tool_retries`, which have no Gemma equivalent.
+
+Attention backends are auto-selected, nothing forced. Confirmed from the worker log:
+
+```
+Using FlashInfer GDN prefill kernel        <- the 48 linear-attention layers
+Using FLASH_ATTN attention backend out of potential backends: [...]
+Using FlashAttention version 3             <- the 16 full-attention layers
+```
+
+`.venv/bin` must be on `PATH`: the FlashInfer GDN kernel is ninja-JIT-compiled,
+and without it EngineCore dies with every sample a `generation_error`, 0 tool
+calls, 0% accuracy — while the process still exits 0. The runner therefore judges
+each dataset on `eval_summary.json`, not on the exit code.
+
+## Results
+
+| Dataset | Rows | Correct | Overall EX | gemma-4-31B-it | Delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `arcwise_plat_sql` | 498 | _pending_ | _pending_ | 85.74% | |
+| `arcwise_plat_full` | 498 | _pending_ | _pending_ | 88.96% | |
+| `mini_dev_sqlite` | 500 | _pending_ | _pending_ | 71.40% | |
+
+Run in progress; this table and the per-dataset sections below are filled in as
+each dataset completes.
