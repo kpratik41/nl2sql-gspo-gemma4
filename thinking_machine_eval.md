@@ -632,3 +632,116 @@ Gemma runs set no `top_k`), a different system-prompt dialect, and
 `tool_choice_policy=required_first` with `empty_tool_retries=1`, which have no
 Gemma equivalent. The questions, gold, few-shot demonstrations, temperature,
 round budget and token limits are identical.
+
+---
+
+# Qwen3.8-27B with thinking enabled
+
+Same three eval files, same model, same NVMe weights. Thinking is generated per
+round and dropped from the history (`preserve_thinking` off), because the shipped
+chat template re-renders historical reasoning and `qwen38_eval_plan.md` records
+that it emits empty `<think></think>` blocks when it is preserved -- drift that
+compounds over a tool loop up to 8 rounds deep.
+
+Two settings had to move with it, and they are a confound worth stating rather
+than burying: `max_new_tokens` 8000 -> 16000 and `max_model_len` 43000 -> 65536.
+An earlier thinking sweep at 8000 truncated reasoning mid-thought and scored the
+fragment as an answer, so it was discarded and is not recorded here. 16000 does
+not fit under a 43000 context alongside a 34000-token prompt, so the context had
+to rise too. Thinking-off numbers were **not** re-run: they stay at 8000/43000,
+where they remain directly comparable to the Gemma baseline.
+
+## Results
+
+| Dataset | Rows | Qwen thinking ON | Qwen thinking OFF | gemma-4-31B-it | ON vs OFF | ON vs Gemma |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `arcwise_plat_sql` | 498 | **86.35%** (430) | 83.73% (417) | 85.74% (427) | **+2.62** | **+0.61** |
+| `arcwise_plat_full` | 498 | **89.56%** (446) | 87.55% (436) | 88.96% (443) | **+2.01** | **+0.60** |
+| `mini_dev_sqlite` | 500 | 70.20% (351) | 71.20% (356) | 71.40% (357) | **-1.00** | -1.20 |
+
+Thinking is not uniformly good. It is worth about +2 points on both arcwise sets,
+enough to turn a deficit against Gemma into a small lead on each. On the
+uncorrected Mini-Dev split it **costs** a point.
+
+That split is the interesting part. The arcwise sets have expert-corrected gold;
+Mini-Dev does not, and 163 of its 498 shared golds differ from the corrected
+Plat-SQL versions. Longer reasoning converges on the defensible reading of an
+ambiguous question, which is rewarded where the gold was fixed and penalised
+where the gold still encodes the original, less defensible one. The by-difficulty
+split on Mini-Dev supports this: thinking loses ground on `simple` (82.43 ->
+81.08) and `moderate` (70.40 -> 68.00) while *gaining* on `challenging`
+(56.86 -> 59.80). It helps where the work is genuinely hard and hurts where the
+question was merely under-specified.
+
+## Cost
+
+| | Thinking OFF | Thinking ON |
+| --- | ---: | ---: |
+| avg completion tokens, Plat-SQL | 477 | 1520 |
+| avg completion tokens, Plat-Full | 463 | 1291 |
+| avg completion tokens, Mini-Dev | 517 | 1822 |
+| avg tool calls/example | 1.37-1.57 | 1.44-1.61 |
+
+Roughly 3x the generated tokens for +2 points on corrected gold and -1 on
+uncorrected. Tool-call counts barely move, so the extra tokens are reasoning,
+not extra database work.
+
+## Truncation, and why 16k was not simply "enough"
+
+| Dataset | `max_new_tokens` hit | at 8000 | max prompt tokens |
+| --- | ---: | ---: | ---: |
+| `arcwise_plat_sql` | 8 | 9 | 41417 |
+| `arcwise_plat_full` | 4 | -- | 35454 |
+| `mini_dev_sqlite` | 9 | -- | 38117 |
+
+Doubling the budget moved Plat-SQL truncations from 9 to 8. These are not
+samples that were slightly short of room; they are runaway reasoning loops that
+a larger budget will not rescue, so raising the ceiling again is not worth the
+GPU time. Prompt lengths all landed well under the 65536 ceiling, and the
+`context_length_exceeded` that appeared once in the 43000-context thinking-off
+runs did not recur.
+
+Mini-Dev also produced 1 `generation_error` and 11 rows with no extractable
+prediction, against 3 on Plat-Full -- the only run in the suite with a
+generation error.
+
+## Per-database, thinking on
+
+| Database | Plat-SQL | Plat-Full | Mini-Dev |
+| --- | ---: | ---: | ---: |
+| `student_club` | -- | 93.75 | 83.33 |
+| `european_football_2` | -- | 94.12 | 74.51 |
+| `codebase_community` | -- | 93.88 | 65.31 |
+| `financial` | -- | 93.33 | 59.38 |
+| `toxicology` | -- | 92.50 | 67.50 |
+| `formula_1` | -- | 92.42 | 71.21 |
+| `card_games` | -- | 92.31 | 65.38 |
+| `superhero` | -- | 88.46 | 86.54 |
+| `thrombosis_prediction` | -- | 88.00 | 62.00 |
+| `debit_card_specializing` | -- | 80.00 | 70.00 |
+| `california_schools` | -- | 63.33 | 56.67 |
+
+`california_schools` reaches 63.33% on Plat-Full with thinking -- which is
+exactly gemma-4-31B-it's score there, and exactly Qwen's own thinking-off score.
+Across both models, both arcwise sets, corrected and uncorrected gold, and
+thinking on and off, that database lands in the same 56-63% band every time. It
+is the one failure mode nothing tried so far has moved.
+
+## Note on the Gemma baseline
+
+Verified rather than assumed: the Gemma runs had thinking **off**. Its chat
+template sets `enable_thinking = enable_thinking | default(false)`, and
+`scripts/run_inference_bird_async_sharded.py` never passes the kwarg.
+
+The two templates default in opposite directions, which is a trap for any future
+script. Gemma defaults to false; Qwen's is
+`enable_thinking is undefined or enable_thinking is true`, i.e. **on**. The Qwen
+runner passes the value explicitly, so the thinking-off runs really were off --
+confirmed empirically by 477 average completion tokens against 1520 with
+thinking on. A script that merely omits the kwarg would silently get thinking-on
+for Qwen and thinking-off for Gemma, with nothing to flag it.
+
+gemma-4-31B-it does support thinking (6 `enable_thinking` and 3
+`preserve_thinking` usages in its template), so a thinking-on Gemma run is
+possible and would be the fair both-models-at-their-best comparison. It has not
+been run: the Gemma runner on this branch has no thinking flag to pass.
