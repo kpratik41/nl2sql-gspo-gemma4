@@ -325,7 +325,7 @@ each dataset on `eval_summary.json`, not on the exit code.
 | Dataset | Rows | Correct | Overall EX | gemma-4-31B-it | Delta |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `arcwise_plat_sql` | 498 | 417 | 83.73% | 85.74% | -2.01 |
-| `arcwise_plat_full` | 498 | _pending_ | _pending_ | 88.96% | |
+| `arcwise_plat_full` | 498 | 436 | 87.55% | 88.96% | -1.41 |
 | `mini_dev_sqlite` | 500 | _pending_ | _pending_ | 71.40% | |
 
 Run in progress; this table and the per-dataset sections below are filled in as
@@ -397,3 +397,67 @@ with all 4 shards reading the same checkpoint concurrently, plus a 56s
 torch.compile and the FlashInfer JIT. Actual token generation began at 05:29:34
 and finished at 05:33:35, about 4 minutes. Runs 2 and 3 load from a copy on the
 instance-store NVMe instead, which removes most of that startup cost.
+
+## Qwen3.8-27B - arcwise_plat_full BIRD EX
+
+- Data: `outputs/qwen-arcwise_plat_full-schema-tool.jsonl` (498 rows)
+- Diff JSON: `data/revisql/raw/arcwise_plat_full.json` (no `difficulty` field)
+- Output: `outputs/inference/arcwise_plat_full/Qwen3.8-27B/vllm_async_tp2_dp4_ctx43k_p34k_o8k_r8_temp0_20260828_053508`
+- Model read from `/opt/dlami/nvme/models/Qwen3.8-27B` (instance-store NVMe)
+
+Overall BIRD EX:
+
+- **Correct: 436 / 498**
+- **Accuracy: 87.55%**  (gemma-4-31B-it: 88.96%, -1.41 points)
+
+By database, against the Gemma run on the same 498 questions:
+
+| Database | Qwen correct | Rows | Qwen EX | gemma-4-31B-it EX | Delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `student_club` | 47 | 48 | 97.92% | 95.83% | +2.09 |
+| `toxicology` | 37 | 40 | 92.50% | 90.00% | +2.50 |
+| `formula_1` | 61 | 66 | 92.42% | 92.42% | 0.00 |
+| `european_football_2` | 47 | 51 | 92.16% | 92.16% | 0.00 |
+| `codebase_community` | 45 | 49 | 91.84% | 91.84% | 0.00 |
+| `card_games` | 47 | 52 | 90.38% | 88.46% | +1.92 |
+| `superhero` | 45 | 52 | 86.54% | 90.38% | -3.84 |
+| `thrombosis_prediction` | 43 | 50 | 86.00% | 90.00% | -4.00 |
+| `financial` | 25 | 30 | 83.33% | 86.67% | -3.34 |
+| `debit_card_specializing` | 23 | 30 | 76.67% | 83.33% | -6.66 |
+| `california_schools` | 16 | 30 | 53.33% | 63.33% | -10.00 |
+
+The two models are exactly level on 3 of 11 databases and Qwen is ahead on 3
+more, so again the deficit is concentrated: `california_schools` alone accounts
+for 3 of the 10-question gap. Qwen scores 16/30 on `california_schools` on both
+arcwise sets -- correcting the questions and evidence moved it not at all, while
+it lifted Gemma by 0 points there too. That database is the shared failure mode,
+not a model-specific one.
+
+SQL execution:
+
+- Pred SQL extracted: `495 / 498`, missing `3`
+- Gold SQL extracted: `498 / 498`, missing `0`
+- Pred SQL executed: `495 / 498`, execution failures `3`
+- Gold SQL executed: `497 / 498`, execution failures `1`
+- Both pred and gold executed: `494`
+
+Generation stats:
+
+- Tool calls total: `680` (avg `1.365`/example)
+- Tool counts: `sqlite_query=662`, `sqlite_peek=5`, `bm25_search_sqlite=13`
+- Stop reasons: `finished=491`, `forced_final_at_cap=6`, `context_length_exceeded=1`
+- Rejected tool calls: `0`
+- Completion tokens total: `230523`, avg `462.90`/example
+- Max prompt tokens: `47470`
+
+Timing:
+
+- Generation: `345.32s`
+- Evaluation: `66.48s`
+- Total: `412.58s`
+
+This is the first run to load from the NVMe copy, and the difference is the
+whole story of the earlier timing caveat: the checkpoint load went from about
+8 minutes to **7 seconds** (18/18 shards at 2.84 it/s), cutting total wall clock
+from `1093.58s` to `412.58s` for the same 498 rows. The `345.32s` here is close
+to a real generation measurement; the `1026.39s` on the Plat-SQL run was not.
