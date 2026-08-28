@@ -930,3 +930,203 @@ Timing: generation `923.71s`, evaluation `66.54s`, total `990.83s`.
 Thinking on a 27B dense model beats a 180B MoE by 1.6 points on this set, and
 thinking buys the MoE nothing at all. gemma-4-31B-it has not yet been measured
 with thinking on; that sweep is queued.
+
+---
+
+# Base vs SFT+RL vs RL-only: what training on uncorrected gold cost
+
+Three gemma-4-31B checkpoints over the same three eval sets. The question this
+answers is not which checkpoint is best -- it is what our BIRD fine-tuning
+actually learned, which the corrected and uncorrected gold separate cleanly.
+
+## Run configuration
+
+All nine cells share one configuration. Thinking **off**, greedy decoding,
+`max_new_tokens=8000`, `vllm_max_model_len=43000`, `max_prompt_length=34000`,
+`temperature=0.0`, `top_p=1.0`, `max_tool_rounds=8`, concurrency 16, run through
+`scripts/run_gemma31b_thinking_machine_evals.sh` with `ENABLE_THINKING=0`.
+
+- Base: `google/gemma-4-31B-it` (rows carried over from the runs recorded above)
+- SFT+RL: `pratikkakkar/gemma-4-31b-it-bird-sft-rl`
+- RL-only: `pratikkakkar/gemma-4-31b-it-bird-rl`
+
+Two details were verified rather than assumed, because both would silently
+invalidate the comparison:
+
+- **The rendered prompt is byte-identical across all three checkpoints.** The
+  fine-tuned repos ship their own `chat_template.jinja`; had it drifted from the
+  base model's, the table would be measuring template differences. Rendering a
+  real Plat-Full row against each tokenizer gives the same SHA-256
+  (`d8581ff058912866`, 27044 chars).
+- **Thinking-off is reached identically two ways.** The base rows predate
+  `configure_chat_template_kwargs` and passed no chat-template kwargs, relying on
+  gemma-4's `enable_thinking | default(false)`. The two new runs pass
+  `enable_thinking=False` explicitly. Both render the same bytes.
+
+The base rows were produced at 4 shards on 8 GPUs, the two new models at 2 shards
+on 4. Sharding partitions rows across independent engines and does not affect
+greedy per-row output, so this changes wall clock only.
+
+## Results
+
+Denominators are 498 / 498 / 500.
+
+| Model | `arcwise_plat_sql` | `arcwise_plat_full` | `mini_dev_sqlite` |
+| --- | ---: | ---: | ---: |
+| `google/gemma-4-31B-it` (base) | **85.74% (427)** | **88.96% (443)** | 71.40% (357) |
+| `gemma-4-31b-it-bird-sft-rl` | 80.52% (401) | 81.53% (406) | 71.80% (359) |
+| `gemma-4-31b-it-bird-rl` | 79.72% (397) | 80.92% (403) | **73.00% (365)** |
+
+Deltas against base:
+
+| Model | Plat-SQL | Plat-Full | Mini-Dev |
+| --- | ---: | ---: | ---: |
+| SFT+RL | -5.22 | -7.43 | **+0.40** |
+| RL-only | -6.02 | -8.04 | **+1.60** |
+
+All six runs were clean: `rc=0`, zero generation errors, 524-568 tool calls each,
+and 5 rows in 2994 hitting a cap (4 at `max_new_tokens`, 1-2 at
+`max_tool_rounds`). Wall clock was about 1h20m for SFT+RL and 1h08m for RL-only.
+
+## The ranking inverts with the gold
+
+The two fine-tuned checkpoints are **worse than the base model on corrected gold
+and better than it on uncorrected gold**. The sign of every delta flips with
+nothing but the answer key:
+
+- Corrected gold (both arcwise sets): base > SFT+RL > RL-only
+- Uncorrected gold (Mini-Dev): RL-only > SFT+RL > base
+
+This is not a capability regression. A checkpoint that had simply become worse at
+Text-to-SQL would lose on Mini-Dev too, and both gain there. What the fine-tuning
+bought was agreement with BIRD's original annotations, including the wrong ones,
+and the arcwise correction is what exposes the difference.
+
+`thrombosis_prediction` is the cleanest single case. Against base, SFT+RL scores
+**+6.00 on Mini-Dev and -14.00 on Plat-Full** -- the same questions, the same
+model, differing only in whether the gold had been fixed.
+
+## Annotation-fit, quantified
+
+The swing between the two conditions measures how much of a checkpoint's
+behaviour is fitted to the annotations rather than to the task. Taking
+Mini-Dev minus Plat-Full for each model:
+
+| Model | Mini-Dev delta | Plat-Full delta | swing |
+| --- | ---: | ---: | ---: |
+| SFT+RL | +0.40 | -7.43 | 7.83 |
+| RL-only | +1.60 | -8.04 | **9.64** |
+
+RL-only is the more annotation-fit of the two, on both ends: it gains the most
+where the gold is uncorrected and loses the most where it is corrected.
+
+This is corroborated independently. The submission README records the two
+checkpoints as 0.19 points apart on full BIRD dev at temperature 0 (73.53 vs
+73.34) -- statistically the same model on uncorrected gold. They separate only
+when the gold is fixed, which is precisely what a difference in annotation-fit,
+rather than in capability, predicts.
+
+## The SFT-overfits-more hypothesis does not survive
+
+The prior expectation was that SFT would absorb annotation errors more than RL,
+since supervised training imitates the gold query token by token while a
+result-based reward only requires matching the result set, leaving the SQL text
+free. That predicts RL-only should sit between base and SFT+RL.
+
+It does not. RL-only is marginally *below* SFT+RL on both corrected sets (-0.80
+and -0.61, or 4 and 3 questions) and *above* it on the uncorrected set (+1.20).
+The two regimes degrade by the same amount, and if anything RL-only is the more
+thoroughly annotation-fit.
+
+The mechanism that fits the data is that a result-based reward is not the weaker
+constraint it appears to be. Reproducing an erroneous gold's *result set* still
+requires reproducing whatever the erroneous query did -- the missing `DISTINCT`,
+the wrong join cardinality -- even when the emitted SQL differs in form. The
+error is absorbed through the reward as effectively as through imitation. Both
+checkpoints share an RL stage against uncorrected gold, and that shared stage,
+not the SFT stage, is what the numbers implicate.
+
+This reproduces from the other direction what the ReViSQL paper measured:
+training on the original BIRD Train *lowered* their base model by 7.0 and 5.0
+points on Arcwise-Plat-SQL and -Full, while training on the corrected
+BIRD-Platinum raised it by 7.2 and 5.0. Our -5.22/-7.43 and -6.02/-8.04 are the
+same effect at the same magnitude, from an independently trained checkpoint.
+
+## Both fine-tunes read the question less
+
+The Plat-SQL to Plat-Full step corrects questions and evidence while leaving the
+task unchanged. How much a model gains from it measures how much it was reading
+the question rather than pattern-matching the schema:
+
+| Model | Plat-SQL | Plat-Full | gain |
+| --- | ---: | ---: | ---: |
+| base | 85.74% (427) | 88.96% (443) | **+3.22** |
+| SFT+RL | 80.52% (401) | 81.53% (406) | +1.01 |
+| RL-only | 79.72% (397) | 80.92% (403) | +1.20 |
+
+The base model converts a clearer question into three points; the fine-tuned
+checkpoints convert it into one. Fine-tuning made them less sensitive to what
+the question actually says.
+
+## Where the losses concentrate
+
+Per-database on Plat-Full, accuracy and delta against base:
+
+| Database | base | SFT+RL | RL-only |
+| --- | ---: | ---: | ---: |
+| `student_club` | 95.83% (46) | 95.83% (46) | 93.75% (45) |
+| `formula_1` | 92.42% (61) | 84.85% (56) | 89.39% (59) |
+| `european_football_2` | 92.16% (47) | 88.24% (45) | 84.31% (43) |
+| `codebase_community` | 91.84% (45) | 85.71% (42) | 83.67% (41) |
+| `superhero` | 90.38% (47) | 84.62% (44) | 80.77% (42) |
+| `thrombosis_prediction` | 90.00% (45) | 76.00% (38) | 70.00% (35) |
+| `toxicology` | 90.00% (36) | 72.50% (29) | 77.50% (31) |
+| `card_games` | 88.46% (46) | 82.69% (43) | 80.77% (42) |
+| `financial` | 86.67% (26) | 73.33% (22) | 86.67% (26) |
+| `debit_card_specializing` | 83.33% (25) | 73.33% (22) | 76.67% (23) |
+| `california_schools` | 63.33% (19) | 63.33% (19) | 53.33% (16) |
+
+The damage is concentrated, not diffuse. On Plat-Full, SFT+RL loses at least 10
+points on `toxicology` (-17.50), `thrombosis_prediction` (-14.00), `financial`
+(-13.34) and `debit_card_specializing` (-10.00) while `student_club` and
+`california_schools` are level. Uniform degradation would spread evenly; this
+clusters, which is what database-specific annotation conventions produce.
+
+## Difficulty, on Mini-Dev
+
+Only Mini-Dev carries difficulty labels.
+
+| Difficulty | Rows | base | SFT+RL | RL-only |
+| --- | ---: | ---: | ---: | ---: |
+| simple | 148 | 81.08% (120) | 82.43% (122) | **84.46% (125)** |
+| moderate | 250 | 70.40% (176) | **72.00% (180)** | 71.60% (179) |
+| challenging | 102 | **59.80% (61)** | 55.88% (57) | **59.80% (61)** |
+
+The fine-tuning gain on uncorrected gold comes almost entirely from `simple` and
+`moderate`. SFT+RL actually *loses* 3.92 points on `challenging`; RL-only exactly
+matches base there. Learned annotation conventions help on routine questions and
+do nothing for genuinely hard ones.
+
+## california_schools, and the first thing to move it
+
+`california_schools` returned exactly 19/30 in every configuration recorded in
+this file -- three model families, thinking on and off, corrected and
+uncorrected gold -- and the base and SFT+RL rows here make it 19/30 again.
+
+RL-only is the first checkpoint to move it, and it moves down: 17/30 on Plat-SQL,
+**16/30** on Plat-Full, 17/30 on Mini-Dev. So the database is not inherently
+immovable; it is stable across models that share the base model's behaviour on
+it, and RL-only diverged. Whatever is capping that database at ~63% is still
+unexplained, but it is now known to be perturbable.
+
+## Caveats
+
+- These are single greedy runs. Differences of 3-4 questions (0.6-0.8 points)
+  between SFT+RL and RL-only are within run-to-run noise and should not be read
+  as a ranking; the 5-8 point gaps against base are not.
+- EX here is our row-set equality (`bird_result_match`), not the grader ReViSQL
+  used. Their comparator sorts values within each row, drops empty rows, and
+  allows 1e-2 relative tolerance on single scalars. These numbers are internally
+  consistent but not comparable to their published figures.
+- Mini-Dev has 500 rows against the arcwise sets' 498; the difference is
+  `question_id` 119 and 120, both `financial`, dropped by Arcwise.
