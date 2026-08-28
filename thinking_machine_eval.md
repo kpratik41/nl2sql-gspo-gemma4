@@ -745,3 +745,118 @@ gemma-4-31B-it does support thinking (6 `enable_thinking` and 3
 `preserve_thinking` usages in its template), so a thinking-on Gemma run is
 possible and would be the fair both-models-at-their-best comparison. It has not
 been run: the Gemma runner on this branch has no thinking flag to pass.
+
+---
+
+# Qwen3.8-Flash-Next on arcwise_plat_full
+
+A third model on the primary eval set only. `Qwen4ExpForConditionalGeneration`
+(model_type `qwen4_exp`), a 180B MoE with 512 experts and 10 active per token,
+hybrid attention over 48 layers, ~360GB of BF16 weights in 131 shards.
+
+## Setup, and why it differs from the 27B runs
+
+Served by vLLM in Docker at `tp=8` on one shard, rather than the in-process
+async engine used for every 27B result. That was forced, not chosen: the vLLM
+recipe for this model requires 0.29.0+ and states that PyPI installation is not
+supported for it. PyPI's newest is 0.28.0 and the newest nightly wheel is
+0.28.1rc1.dev43, so there is no wheel to install into a venv. The recipe image
+`vllm/vllm-openai:qwen38-flash-next` carries a dev build
+(`0.1.dev20073+g8e685d198`, transformers 5.15.1) that does register the
+architecture, and it isolates the run completely from the vllm 0.19.1
+environment producing the 27B numbers.
+
+- Data: `outputs/qwen-arcwise_plat_full-schema-tool.jsonl`, **unchanged from the
+  27B runs**. Verified rather than assumed: Flash-Next ships a
+  `chat_template.jinja` byte-identical to Qwen3.8-27B's, the same
+  `Qwen2Tokenizer` with the same 33 added tokens and the same eos/pad, and the
+  same `<tool_call>` dialect.
+- Diff JSON: `data/revisql/raw/arcwise_plat_full.json`
+- Output: `outputs/inference/arcwise_plat_full/Qwen3.8-Flash-Next/vllm_server_tp8_ctx43k_o8k_r8_qwen3_xml_temp0_20260828_064525`
+- `--tool-call-parser qwen3_xml`, `--reasoning-parser qwen3`, util 0.96,
+  weights read from the NVMe copy.
+
+The server path means vLLM parses tool calls out of raw text, which the
+in-process runner did itself. A mismatched parser extracts nothing and reads as
+a plausible low accuracy rather than an error, so the run was gated on a
+20-example smoke test first: it returned 30 tool calls, confirming `qwen3_xml`,
+and the full 498 then ran against the same server.
+
+One parameter could not be matched: the server client has no `--top_k`, so the
+27B runs' `top_k=20` was not passed. At temperature 0 this is inert -- decoding
+is greedy argmax -- so the runs stay comparable.
+
+## Results
+
+- **Correct: 438 / 498**
+- **Accuracy: 87.95%**
+
+| Model | Config | Plat-Full EX |
+| --- | --- | ---: |
+| Qwen3.8-27B | thinking on | **89.56%** |
+| gemma-4-31B-it | thinking off | 88.96% |
+| **Qwen3.8-Flash-Next** | **thinking off** | **87.95%** |
+| Qwen3.8-27B | thinking off | 87.55% |
+
+Flash-Next beats the 27B at the same setting by 0.40, but trails Gemma by 1.01
+and the 27B with thinking by 1.61. A 180B MoE returning 0.4 points over a 27B
+dense model is a modest result for the parameter count on this task.
+
+| Database | Correct | Rows | Flash-Next | 27B (off) | gemma-4-31B-it |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `student_club` | 46 | 48 | 95.83% | 97.92% | 95.83% |
+| `codebase_community` | 46 | 49 | 93.88% | 91.84% | 91.84% |
+| `financial` | 28 | 30 | 93.33% | 83.33% | 86.67% |
+| `formula_1` | 60 | 66 | 90.91% | 92.42% | 92.42% |
+| `european_football_2` | 46 | 51 | 90.20% | 92.16% | 92.16% |
+| `toxicology` | 36 | 40 | 90.00% | 92.50% | 90.00% |
+| `superhero` | 45 | 52 | 86.54% | 86.54% | 90.38% |
+| `thrombosis_prediction` | 43 | 50 | 86.00% | 86.00% | 90.00% |
+| `card_games` | 44 | 52 | 84.62% | 90.38% | 88.46% |
+| `debit_card_specializing` | 25 | 30 | 83.33% | 76.67% | 83.33% |
+| `california_schools` | 19 | 30 | 63.33% | 63.33% | 63.33% |
+
+`california_schools` is 19/30 again. Three models, four configurations, corrected
+and uncorrected gold, thinking on and off -- every one lands on exactly 19/30 or
+its 16/30 neighbour. Nothing tried so far has moved that database.
+
+## Behaviour: a much more active agent
+
+| | 27B (off) | Flash-Next (off) |
+| --- | ---: | ---: |
+| Tool calls total | 680 | **1175** |
+| Avg calls/example | 1.365 | **2.359** |
+| `sqlite_query` | 701 | 1116 |
+| `sqlite_peek` | 4 | **30** |
+| `bm25_search_sqlite` | 10 | **29** |
+| Avg completion tokens | 463 | 576 |
+| Pred SQL extracted | 494/498 | **498/498** |
+| Pred SQL execution failures | 4 | **0** |
+
+Flash-Next issues 73% more tool calls and leans far harder on schema
+exploration -- `sqlite_peek` 7.5x, `bm25_search_sqlite` 3x. It is also the only
+run in the entire suite with perfect SQL hygiene: 498/498 extracted, zero
+execution failures, where every other run had between 2 and 11. Its SQL is more
+reliably well-formed; it simply picks the wrong query slightly more often than
+Gemma.
+
+**A caveat on the accuracy.** Stop reasons were
+`{'stop': 435, 'forced_final': 62, 'tool_calls': 1}` -- 62 examples, 12.4%, were
+forced to finalise, against 6 `forced_final_at_cap` for the 27B. That is the
+tool loop being cut off mid-investigation, which is what a model wanting ~2.4
+calls does against a round budget tuned for one wanting ~1.4. Some part of the
+1-point gap to Gemma is plausibly truncated investigation rather than worse
+reasoning, and a run at `max_tool_rounds=12` would separate the two.
+
+## Timing
+
+- Server startup: `243s` (360GB across tp=8 from NVMe)
+- Generation: `689.22s`
+- Evaluation: `121.49s`
+- Total: `811.27s`
+
+The 20-example smoke took 39.15s, which scaled naively to 16.2 min for 498 --
+about 50% over the 11.5 min actually taken. At concurrency 16 a 20-example
+sample is one full wave plus a 4-example tail, so ramp-up and drain dominate it;
+the steady-state rate observed 3 minutes into the full run projected 10.6 min
+and was close.
