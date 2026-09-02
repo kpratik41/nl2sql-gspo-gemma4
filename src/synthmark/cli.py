@@ -24,6 +24,12 @@ def _add_key_source(p: argparse.ArgumentParser) -> None:
     )
 
 
+def _master_secret(env_var: str) -> bytes:
+    from .keys import load_master_secret
+
+    return load_master_secret(env_var)
+
+
 def _resolve_key(args):
     from .keys import WatermarkKey, derive_key
 
@@ -173,22 +179,59 @@ def cmd_calibrate(args) -> None:
 
 def cmd_serve(args) -> None:
     import uvicorn
-    from transformers import AutoTokenizer
 
     from .detect import Calibration
-    from .serve import build_app
+    from .registry import KeyRegistry
+    from .serve import build_app, build_served
 
-    keys = {}
-    for spec in args.key_id:
-        keys[spec] = _resolve_key(argparse.Namespace(
-            key_file=None, key_id=spec, master_secret_env=args.master_secret_env))
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
-    cal = Calibration.load(args.calibration) if args.calibration else None
-    app = build_app(
-        keys, tokenizer, default_key_id=args.key_id[0],
-        calibrations={k: cal for k in keys} if cal else None, device=args.device,
+    master = _master_secret(args.master_secret_env)
+    registry = KeyRegistry.load(args.registry)
+
+    calibrations = {}
+    if args.calibration_dir:
+        for entry in registry:
+            path = Path(args.calibration_dir) / f"{entry.key_id.replace('/', '_')}.json"
+            if path.exists():
+                calibrations[entry.key_id] = Calibration.load(path)
+
+    served = build_served(registry, master, calibrations=calibrations, device=args.device)
+    print(
+        f"serving {len(served)} keys over {len(registry.tokenizers())} tokenizers:",
+        file=sys.stderr,
     )
-    uvicorn.run(app, host=args.host, port=args.port)
+    for sk in served.values():
+        print(
+            f"  {sk.entry.key_id:40s} {sk.entry.status:8s} fp={sk.key.fingerprint} "
+            f"model={sk.entry.model_id}",
+            file=sys.stderr,
+        )
+    uvicorn.run(build_app(served), host=args.host, port=args.port)
+
+
+def cmd_registry(args) -> None:
+    """Stamp or verify the fingerprints that bind a registry to a master secret."""
+    from .registry import KeyRegistry, RegistryError
+
+    master = _master_secret(args.master_secret_env)
+    registry = KeyRegistry.load(args.registry)
+
+    if args.stamp:
+        stamped = registry.stamp_fingerprints(master)
+        stamped.save(args.registry)
+        print(f"stamped {len(stamped)} fingerprints into {args.registry}", file=sys.stderr)
+        registry = stamped
+
+    failures = 0
+    for entry in registry:
+        try:
+            key = entry.resolve(master, verify=True)
+            state = "ok" if entry.fingerprint else "ok (unstamped)"
+            print(f"{state:15s} {entry.key_id:40s} fp={key.fingerprint} model={entry.model_id}")
+        except RegistryError as exc:
+            failures += 1
+            print(f"{'MISMATCH':15s} {entry.key_id:40s} {exc}")
+    if failures:
+        sys.exit(f"\n{failures} key(s) do not match the master secret; refusing to pass.")
 
 
 # ---------------------------------------------------------------------- parser
@@ -251,15 +294,21 @@ def build_parser() -> argparse.ArgumentParser:
     _add_key_source(c)
     c.set_defaults(func=cmd_calibrate)
 
-    s = sub.add_parser("serve", help="Run the detection HTTP service.")
-    s.add_argument("--key-id", nargs="+", required=True, help="One or more key labels to serve.")
+    s = sub.add_parser("serve", help="Run the multi-model detection HTTP service.")
+    s.add_argument("--registry", required=True, help="Path to the key registry JSON.")
     s.add_argument("--master-secret-env", default="SYNTHMARK_MASTER_SECRET")
-    s.add_argument("--model", default="google/gemma-4-E4B-it")
-    s.add_argument("--calibration")
+    s.add_argument("--calibration-dir", help="Dir of <key_id with / as _>.json calibrations.")
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8000)
     s.add_argument("--device", default="cpu")
     s.set_defaults(func=cmd_serve)
+
+    r = sub.add_parser("registry", help="Check a key registry against the master secret.")
+    r.add_argument("--registry", required=True)
+    r.add_argument("--master-secret-env", default="SYNTHMARK_MASTER_SECRET")
+    r.add_argument("--stamp", action="store_true",
+                   help="Fill in missing fingerprints and rewrite the file.")
+    r.set_defaults(func=cmd_registry)
 
     return p
 

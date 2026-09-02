@@ -16,3 +16,8 @@ keys/
 *.key
 *key*.json
 !results/calibration_*.json
+
+# ...but the key registry is not key material: it holds labels, model ids and
+# SHA-256 fingerprints only, and is meant to be reviewed in a pull request.
+!configs/key_registry.example.json
+!configs/key_registry.json

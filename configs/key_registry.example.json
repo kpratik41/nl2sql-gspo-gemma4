@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "notes": "Non-secret key registry. Contains NO key material: every key is derived as HKDF(master_secret, key_id) at runtime. Safe to commit and review in a pull request. Run 'synthmark registry stamp' once after adding an entry to fill in its fingerprint, then commit the result -- the fingerprint is what turns a wrong master secret into a loud startup failure instead of a silently undetectable watermark. Entries are only ever ADDED: retiring a key stops generation with it, never detection.",
+  "keys": [
+    {
+      "key_id": "google-gemma-4-e4b-it/v1",
+      "model_id": "google/gemma-4-E4B-it",
+      "status": "active",
+      "valid_from": "2026-09-01",
+      "notes": "Gemma 4 E4B instruct, general-purpose serving tier."
+    },
+    {
+      "key_id": "nvidia-nemotron-super-49b/v1",
+      "model_id": "nvidia/Llama-3_3-Nemotron-Super-49B-v1",
+      "status": "active",
+      "valid_from": "2026-09-01",
+      "notes": "Distinct key from Gemma: this is what makes a detection hit name the model rather than just the platform."
+    },
+    {
+      "key_id": "google-gemma-4-31b-it/v1",
+      "model_id": "google/gemma-4-31b-it",
+      "status": "active",
+      "valid_from": "2026-09-01",
+      "notes": "Larger model, lower output entropy, weaker watermark. Re-calibrate thresholds for this key rather than reusing E4B's."
+    },
+    {
+      "key_id": "google-gemma-4-e4b-it/v0",
+      "model_id": "google/gemma-4-E4B-it",
+      "status": "retired",
+      "valid_from": "2026-06-01",
+      "valid_to": "2026-09-01",
+      "notes": "Pilot key. Retired, but still served for detection: text generated under it still exists and must stay attributable."
+    }
+  ]
+}
