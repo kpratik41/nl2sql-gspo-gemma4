@@ -1,0 +1,60 @@
+# Detection service image.
+#
+# Deliberately CPU-only and model-free.  Detection reads token ids and hashes
+# them; it never runs a forward pass, so it needs tokenizers but no weights, and
+# no GPU.  That is what lets this run as an ordinary internal service, far away
+# from the serving fleet, on hardware nobody is fighting over.
+#
+# Build:
+#   docker build -f deploy/Dockerfile.detect \
+#       --build-arg SYNTHMARK_VERSION=0.2.0 \
+#       -t artifactory.example.internal/ai/synthmark-detect:0.2.0 .
+#
+# Run (the secret is injected, never baked in):
+#   docker run --rm -p 8000:8000 \
+#       -e SYNTHMARK_MASTER_SECRET="$(vault read -field=value secret/synthmark/master)" \
+#       artifactory.example.internal/ai/synthmark-detect:0.2.0
+
+FROM python:3.12-slim AS base
+
+# CPU wheels only. The default index would pull ~2.5 GB of CUDA runtime that
+# this image can never use.
+ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
+ARG PIP_INDEX_URL=https://artifactory.example.internal/api/pypi/pypi/simple
+ARG SYNTHMARK_VERSION=0.2.0
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HF_HUB_OFFLINE=1 \
+    HF_HOME=/opt/hf
+
+RUN pip install --no-cache-dir --index-url "${TORCH_INDEX}" torch \
+ && pip install --no-cache-dir --index-url "${PIP_INDEX_URL}" \
+        "synthmark[serve]==${SYNTHMARK_VERSION}"
+
+# The key registry is not secret -- it holds labels, model ids and fingerprints,
+# never key material -- so it belongs in the image alongside the code it
+# describes. The master secret does not, and is injected at runtime.
+COPY configs/key_registry.json /etc/synthmark/key_registry.json
+ENV SYNTHMARK_KEY_REGISTRY=/etc/synthmark/key_registry.json
+
+# Pre-fetch every tokenizer the registry names, so the running container needs
+# no network and cannot silently start with a tokenizer it downloaded today and
+# a corpus that was written with a different one.
+RUN HF_HUB_OFFLINE=0 python -c "\
+from transformers import AutoTokenizer; \
+from synthmark.registry import KeyRegistry; \
+[AutoTokenizer.from_pretrained(t) for t in KeyRegistry.load('/etc/synthmark/key_registry.json').tokenizers()]"
+
+RUN useradd --system --uid 10001 synthmark \
+ && chown -R synthmark /opt/hf
+USER synthmark
+
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"
+
+# --no-access-log: request paths are harmless, but keeping logging off by
+# default is the safer starting point for a service whose request bodies are,
+# by construction, text somebody is suspicious about.
+CMD ["uvicorn", "synthmark.serve:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

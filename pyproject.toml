@@ -4,22 +4,28 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "synthmark"
-version = "0.1.0"
+version = "0.2.0"
 description = "SynthID-Text watermarking, detection, and evaluation toolkit for open-weight LLMs"
 readme = "README.md"
 requires-python = ">=3.10"
+
+# Core = what it takes to derive a key and score text.  Deliberately does NOT
+# include the evaluation stack: a detection service should not have to install
+# scikit-learn, and a key-management job should not have to install anything at
+# all beyond this (synthmark.keys and synthmark.registry are pure stdlib).
 dependencies = [
     "torch>=2.4",
     "transformers>=4.46",
     "numpy>=1.24",
-    "scipy>=1.10",
-    "scikit-learn>=1.3",
 ]
 
 [project.optional-dependencies]
+# The detection HTTP service.
 serve = ["fastapi>=0.110", "uvicorn>=0.27", "pydantic>=2.0"]
+# Benchmarks, metrics and the learned detector.  Not needed in production.
+eval = ["scipy>=1.10", "scikit-learn>=1.3"]
 plots = ["matplotlib>=3.7"]
-dev = ["pytest>=7.0"]
+dev = ["pytest>=7.0", "synthmark[serve,eval]"]
 
 [project.scripts]
 synthmark = "synthmark.cli:main"

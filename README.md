@@ -127,26 +127,37 @@ synthmark calibrate --key-id markets-research/v1 \
 ### Serve
 
 ```bash
-synthmark serve --key-id desk-a/v1 desk-b/v1 --calibration calibration.json
+synthmark registry --registry configs/key_registry.json --stamp   # once, after editing
+synthmark serve --registry configs/key_registry.json --calibration-dir calibrations/
 ```
 
-One service can hold several independent keys. The response reports a score, the number of
-tokens scored, and a calibrated verdict — never a bare boolean — and refuses to answer at
-all below ~40 scored tokens, which is where false accusations come from.
+One service holds every key in the registry, each bound to the model it marks. `POST
+/detect` answers "is this marked by this key"; `POST /attribute` scans all keys and names
+which model produced the text, correcting the threshold for the number of keys tested.
+Responses report a score, the number of tokens scored, and a calibrated verdict — never a
+bare boolean — and refuse to answer at all below ~40 scored tokens, which is where false
+accusations come from.
+
+Detection needs tokenizers but no weights and no GPU. See [docs/integration.md](docs/integration.md)
+for deploying it alongside a vLLM serving platform.
 
 ## Layout
 
 ```
 src/synthmark/
   keys.py       key generation, HKDF derivation, fingerprints, 0600 storage
+  registry.py   which key marks which model; rotation and fingerprint checks
   config.py     bridge to the HF SynthID API
   generate.py   watermarked / unwatermarked generation, perplexity
   detect.py     g-values, masking, scoring, empirical calibration
   bayesian.py   the learned detector from the paper
   attacks.py    edits, paraphrase, translation, dilution
   metrics.py    AUC, TPR@FPR, bootstrap and Newcombe intervals
-  serve.py      FastAPI detection service
-  cli.py        synthmark keygen | generate | detect | calibrate | serve
+  serve.py      FastAPI detection service: /detect and /attribute
+  cli.py        synthmark keygen | generate | detect | calibrate | registry | serve
+configs/        key_registry.example.json — non-secret, one key per model
+deploy/         Dockerfile for the detection service
+docs/           key management and serving-platform integration
 experiments/    the evaluation described in watermarking_report.md
 tests/          unit tests (no model download required)
 ```
