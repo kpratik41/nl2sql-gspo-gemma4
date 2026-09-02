@@ -7,13 +7,13 @@
 #
 # Build:
 #   docker build -f deploy/Dockerfile.detect \
-#       --build-arg SYNTHMARK_VERSION=0.2.0 \
-#       -t artifactory.example.internal/ai/synthmark-detect:0.2.0 .
+#       --build-arg SYNTHMARK_VERSION=0.3.0 \
+#       -t artifactory.example.internal/ai/synthmark-detect:0.3.0 .
 #
 # Run (the secret is injected, never baked in):
 #   docker run --rm -p 8000:8000 \
 #       -e SYNTHMARK_MASTER_SECRET="$(vault read -field=value secret/synthmark/master)" \
-#       artifactory.example.internal/ai/synthmark-detect:0.2.0
+#       artifactory.example.internal/ai/synthmark-detect:0.3.0
 
 FROM python:3.12-slim AS base
 
@@ -21,7 +21,7 @@ FROM python:3.12-slim AS base
 # this image can never use.
 ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
 ARG PIP_INDEX_URL=https://artifactory.example.internal/api/pypi/pypi/simple
-ARG SYNTHMARK_VERSION=0.2.0
+ARG SYNTHMARK_VERSION=0.3.0
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -30,7 +30,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN pip install --no-cache-dir --index-url "${TORCH_INDEX}" torch \
  && pip install --no-cache-dir --index-url "${PIP_INDEX_URL}" \
-        "synthmark[serve]==${SYNTHMARK_VERSION}"
+        "synthmark-detect[serve]==${SYNTHMARK_VERSION}"
 
 # The key registry is not secret -- it holds labels, model ids and fingerprints,
 # never key material -- so it belongs in the image alongside the code it
@@ -57,4 +57,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \
 # --no-access-log: request paths are harmless, but keeping logging off by
 # default is the safer starting point for a service whose request bodies are,
 # by construction, text somebody is suspicious about.
-CMD ["uvicorn", "synthmark.serve:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+CMD ["uvicorn", "synthmark_detect.serve:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

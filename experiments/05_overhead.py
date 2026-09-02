@@ -27,7 +27,7 @@ from pathlib import Path
 
 from common import DEMO_MASTER_SECRET, MODEL_ID, PRIMARY_KEY_ID, RESULTS, banner, save_json
 
-from synthmark import Detector, WatermarkedLM, derive_key
+from synthmark_eval import Detector, WatermarkedLM, derive_key
 from synthmark.data import OPEN_ENDED
 
 

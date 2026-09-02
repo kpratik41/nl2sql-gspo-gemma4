@@ -12,9 +12,9 @@ import pytest
 import torch
 
 from synthmark.config import build_processor
-from synthmark.detect import Detector
+from synthmark_detect import Detector
 from synthmark.registry import RETIRED, KeyEntry, KeyRegistry
-from synthmark.serve import MIN_TOKENS, build_app, build_served
+from synthmark_detect.serve import MIN_TOKENS, build_app, build_served
 
 MASTER = "master-secret-with-enough-entropy"
 GEMMA = "google/gemma-4-E4B-it"

@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 from common import DATA, RESULTS, banner, save_json
 
-from synthmark import WatermarkedLM, paired_bootstrap_diff
+from synthmark_eval import WatermarkedLM, paired_bootstrap_diff
 
 HIGH_ENTROPY = ("creative", "open_ended", "financial")
 

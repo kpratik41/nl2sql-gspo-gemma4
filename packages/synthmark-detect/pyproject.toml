@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "synthmark-detect"
+version = "0.3.0"
+description = "Score text for a SynthID-Text watermark, and serve detection over HTTP"
+readme = "README.md"
+requires-python = ">=3.10"
+
+# No scipy, no scikit-learn: detection is a hash and a mean.
+dependencies = [
+    "synthmark==0.3.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+# The HTTP service. Left out of the default install so that a process which only
+# needs to score text cannot accidentally stand up a detection endpoint.
+serve = ["fastapi>=0.110", "uvicorn>=0.27", "pydantic>=2.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

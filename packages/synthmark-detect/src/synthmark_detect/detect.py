@@ -35,8 +35,8 @@ from typing import Iterable, Sequence
 import numpy as np
 import torch
 
-from .config import build_processor
-from .keys import WatermarkKey
+from synthmark.config import build_processor
+from synthmark.keys import WatermarkKey
 
 
 @dataclass

@@ -33,7 +33,7 @@ from pathlib import Path
 import numpy as np
 from common import DATA, DEMO_MASTER_SECRET, MODEL_ID, PRIMARY_KEY_ID, RESULTS, banner, save_json
 
-from synthmark import WatermarkedLM, derive_key, paired_bootstrap_diff, two_proportion_diff_ci
+from synthmark_eval import WatermarkedLM, derive_key, paired_bootstrap_diff, two_proportion_diff_ci
 
 ANSWER_RE = re.compile(r"(-?[\d,]*\.?\d+)")
 

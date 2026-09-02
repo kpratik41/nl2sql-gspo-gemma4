@@ -9,8 +9,8 @@ from typing import Sequence
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from .config import to_hf_config
-from .keys import WatermarkKey
+from synthmark.config import to_hf_config
+from synthmark.keys import WatermarkKey
 
 DEFAULT_MODEL = "google/gemma-4-E4B-it"
 

@@ -31,36 +31,49 @@ detection returns a normal-looking null score rather than an error.
 Publishing it internally is what makes that agreement enforceable by version pin instead
 of by documentation.
 
-### No separate folder is needed
+### Three distributions, one repository
 
-The repository already uses the `src/` layout that packaging wants:
+The repository is a monorepo: one git repo, three independently publishable
+packages, all built from the same commit.
 
 ```
-pyproject.toml          # the package definition
-src/synthmark/          # everything that ships
-tests/                  # ships nowhere, runs in CI
-experiments/  scripts/  report_src/  results/   # research record, excluded
+packages/synthmark/          keys.py registry.py config.py cli.py   → the shared contract
+packages/synthmark-detect/   detect.py serve.py                     → the detection service
+packages/synthmark-eval/     generate.py metrics.py attacks.py ...  → benchmarks only
+tests/  experiments/  scripts/  results/    → ship nowhere, stay in git as the record
 ```
 
-`[tool.setuptools.packages.find] where = ["src"]` means only `src/synthmark/` is picked
-up. The experiments, the report builders and the results stay in git as the evidence
-behind the numbers, and never enter the wheel. Nothing needs to move.
+Why three rather than one package with extras: extras control *dependencies*, not
+*contents*. A wheel with an `eval` extra still contains `serve.py`, and "why does the
+inference image contain an HTTP service" is a review question with no good answer.
+Splitting the distributions makes the answer structural — the serving image installs
+`synthmark`, whose wheel contains five files and no detector:
 
-### The dependency split matters more than the layout
+```
+$ unzip -l synthmark-0.3.0-py3-none-any.whl | grep '\.py$'
+    synthmark/__init__.py  synthmark/cli.py  synthmark/config.py
+    synthmark/keys.py      synthmark/registry.py
+```
 
-Core dependencies are `torch`, `transformers`, `numpy` — no more. The evaluation stack
-(`scipy`, `scikit-learn`) is in the `eval` extra, and the HTTP service in `serve`:
+Why three rather than three *branches* or three *repos*: `keys.py` must never diverge.
+If `derive_key` differs by one detail between the generation build and the detection
+build, every document generated becomes permanently undetectable, and nothing errors —
+you get a plausible score near 0.5. In one repo that is a diff a reviewer sees and a
+test round-trips. Across branches it is invisible. The three share one version number
+and are released together for the same reason.
+
+### Who installs what
 
 ```bash
-pip install synthmark                # keys, registry, detection
-pip install synthmark[serve]         # + the detection API
-pip install synthmark[eval]          # + benchmarks and metrics
+pip install synthmark                     # vLLM serving image: g-function + keys
+pip install "synthmark-detect[serve]"     # detection service
+pip install synthmark-eval                # benchmarks; pulls the other two
 ```
 
-`synthmark/keys.py` and `synthmark/registry.py` are **pure standard library**, and
-`__init__.py` imports only those eagerly (everything else resolves on first attribute
-access). So a key-rotation job or a CI check on the key registry runs with no PyTorch
-installed at all:
+`synthmark.keys` and `synthmark.registry` are **pure standard library**, and
+`__init__.py` imports only those eagerly (`config` resolves on first attribute access).
+So a key-rotation job or a CI check on the key registry runs with no PyTorch installed
+at all:
 
 ```python
 import synthmark            # no torch imported
@@ -70,9 +83,17 @@ reg = synthmark.KeyRegistry.load("configs/key_registry.json")
 ### Build and publish
 
 ```bash
-python -m build                       # -> dist/synthmark-0.2.0-py3-none-any.whl
+for p in synthmark synthmark-detect synthmark-eval; do
+    python -m build --wheel --outdir dist packages/$p
+done
 twine upload -r internal dist/*
 ```
+
+All three build as `py3-none-any` — pure Python, no compiled extensions — so one wheel
+each works on every OS, architecture and Python >= 3.10. The platform-specific part is
+`torch`, which is a *dependency*, not part of these wheels; which torch build a consumer
+resolves is controlled by their index URL, which is why `deploy/Dockerfile.detect` pins
+the CPU index explicitly.
 
 Three things to fix before the first upload, because they are painful to change after
 consumers have pinned:
@@ -146,7 +167,7 @@ Dockerfile gains one line:
 ```dockerfile
 FROM vllm/vllm-openai:v0.24.0
 RUN pip install --index-url https://artifactory.example.internal/api/pypi/pypi/simple \
-        "synthmark[serving]==0.2.0"
+        "synthmark-vllm==0.3.0"
 ```
 
 ### What the port actually involves

@@ -9,7 +9,7 @@ are the ones that a wrong answer would quietly break.
 import numpy as np
 import pytest
 
-from synthmark.detect import Calibration, Detector
+from synthmark_detect import Calibration, Detector
 from synthmark.keys import derive_key
 
 MASTER = "master-secret-with-enough-entropy"

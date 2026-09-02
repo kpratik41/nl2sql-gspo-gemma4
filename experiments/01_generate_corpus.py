@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 from common import DATA, DEMO_MASTER_SECRET, MODEL_ID, PRIMARY_KEY_ID, banner, save_json
-from synthmark import WatermarkedLM, derive_key
+from synthmark_eval import WatermarkedLM, derive_key
 from synthmark.data import SUITES
 
 

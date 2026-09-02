@@ -32,8 +32,8 @@ import json
 import numpy as np
 from common import DATA, DEMO_MASTER_SECRET, MODEL_ID, PRIMARY_KEY_ID, RESULTS, banner, save_json
 
-from synthmark import Detector, WatermarkedLM, derive_key, evaluate_detection
-from synthmark import attacks as A
+from synthmark_eval import Detector, WatermarkedLM, derive_key, evaluate_detection
+from synthmark_eval import attacks as A
 
 
 def score_all(det, texts, method="mean", batch_size=32):

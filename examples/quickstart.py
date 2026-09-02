@@ -3,7 +3,7 @@
 Run:  python examples/quickstart.py
 """
 
-from synthmark import Detector, WatermarkedLM, derive_key
+from synthmark_eval import Detector, WatermarkedLM, derive_key
 
 MASTER = "demo-master-secret-replace-me-with-a-real-one"
 

@@ -143,23 +143,43 @@ for deploying it alongside a vLLM serving platform.
 
 ## Layout
 
+Three distributions, one repository, one commit. They share a version number and
+are released together, because `keys.py` is a compatibility surface: if
+`derive_key` changes, every previously watermarked document becomes undetectable.
+
 ```
-src/synthmark/
+packages/synthmark/            pip install synthmark
   keys.py       key generation, HKDF derivation, fingerprints, 0600 storage
   registry.py   which key marks which model; rotation and fingerprint checks
-  config.py     bridge to the HF SynthID API
-  generate.py   watermarked / unwatermarked generation, perplexity
+  config.py     the g-function and logits processor (bridge to the HF SynthID API)
+  cli.py        synthmark keygen | generate | detect | calibrate | registry | serve
+
+packages/synthmark-detect/     pip install synthmark-detect[serve]
   detect.py     g-values, masking, scoring, empirical calibration
+  serve.py      FastAPI detection service: /detect and /attribute
+
+packages/synthmark-eval/       pip install synthmark-eval
+  generate.py   watermarked / unwatermarked generation, perplexity (HF generate())
   bayesian.py   the learned detector from the paper
   attacks.py    edits, paraphrase, translation, dilution
   metrics.py    AUC, TPR@FPR, bootstrap and Newcombe intervals
-  serve.py      FastAPI detection service: /detect and /attribute
-  cli.py        synthmark keygen | generate | detect | calibrate | registry | serve
+
 configs/        key_registry.example.json — non-secret, one key per model
 deploy/         Dockerfile for the detection service
 docs/           key management and serving-platform integration
 experiments/    the evaluation described in watermarking_report.md
 tests/          unit tests (no model download required)
+```
+
+`synthmark` is what a vLLM serving image installs: it contains the g-function and
+the keys, and no detection code or HTTP service. `synthmark-detect` is what the
+detection service installs. `synthmark-eval` re-exports both for the benchmarks,
+so an experiment still needs one import line.
+
+For development, install all three editable:
+
+```bash
+pip install -e packages/synthmark -e packages/synthmark-detect -e packages/synthmark-eval
 ```
 
 ## Reproducing the evaluation

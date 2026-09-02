@@ -7,7 +7,7 @@ makes the watermark device-independent.
 import json
 import sys
 
-from synthmark import Detector, WatermarkedLM, derive_key
+from synthmark_eval import Detector, WatermarkedLM, derive_key
 
 MASTER = "report-demo-secret-0123456789abcdef"
 PROMPT = "Write three paragraphs explaining to a client why bond prices fall when interest rates rise."

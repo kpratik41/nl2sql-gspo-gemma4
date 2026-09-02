@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "synthmark"
+version = "0.3.0"
+description = "SynthID-Text watermark keys, key registry, and g-function -- the contract both ends of a deployment share"
+readme = "README.md"
+requires-python = ">=3.10"
+
+# torch and transformers are needed only by synthmark.config (the logits
+# processor). synthmark.keys and synthmark.registry are pure standard library
+# and the package imports them without touching torch, so a key-rotation job
+# can install this and never load it.
+dependencies = [
+    "torch>=2.4",
+    "transformers>=4.46",
+]
+
+[project.scripts]
+synthmark = "synthmark.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

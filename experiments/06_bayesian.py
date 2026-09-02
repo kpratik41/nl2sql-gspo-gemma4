@@ -29,7 +29,7 @@ from common import (
 )
 from transformers import AutoTokenizer
 
-from synthmark import Detector, derive_key, evaluate_detection
+from synthmark_eval import Detector, derive_key, evaluate_detection
 from synthmark.bayesian import build_dataset, save_detector, train_bayesian_detector
 
 LENGTHS = [25, 50, 100, 200, 400]

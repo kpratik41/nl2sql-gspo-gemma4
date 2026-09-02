@@ -38,7 +38,7 @@ from common import (
 )
 from transformers import AutoTokenizer
 
-from synthmark import Detector, derive_key, evaluate_detection
+from synthmark_eval import Detector, derive_key, evaluate_detection
 from synthmark.data import HIGH_ENTROPY_SUITES
 
 LENGTHS = [25, 50, 100, 200, 300, 400]

@@ -24,7 +24,7 @@ import torch
 from sklearn.metrics import roc_auc_score
 from transformers import BayesianDetectorConfig, BayesianDetectorModel
 
-from .detect import Detector
+from synthmark_detect.detect import Detector
 
 
 @dataclass

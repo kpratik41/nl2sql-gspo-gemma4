@@ -40,7 +40,7 @@ Deployment notes
 Run with::
 
     export SYNTHMARK_MASTER_SECRET="$(vault read -field=value secret/synthmark/master)"
-    uvicorn synthmark.serve:app --host 0.0.0.0 --port 8000
+    uvicorn synthmark_detect.serve:app --host 0.0.0.0 --port 8000
 """
 
 from __future__ import annotations
@@ -53,8 +53,8 @@ from typing import Callable, Literal
 from pydantic import BaseModel, Field
 
 from .detect import Calibration, Detector
-from .keys import WatermarkKey, load_master_secret
-from .registry import KeyEntry, KeyRegistry
+from synthmark.keys import WatermarkKey, load_master_secret
+from synthmark.registry import KeyEntry, KeyRegistry
 
 MIN_TOKENS = 40
 """Below this, the detector has too little signal for any verdict to be meaningful.
@@ -448,7 +448,7 @@ def _attribute(served: dict[str, ServedKey], req: AttributeRequest) -> Attribute
 
 
 def _default_app():
-    """Module-level app for ``uvicorn synthmark.serve:app``.
+    """Module-level app for ``uvicorn synthmark_detect.serve:app``.
 
     Configured entirely through the environment so no secret ever lives in the
     source tree or an image layer:

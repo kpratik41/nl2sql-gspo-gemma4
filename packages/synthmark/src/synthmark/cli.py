@@ -24,6 +24,19 @@ def _add_key_source(p: argparse.ArgumentParser) -> None:
     )
 
 
+def _need(module: str, distribution: str):
+    """Import an optional sibling distribution, or exit explaining which to install."""
+    from importlib import import_module
+
+    try:
+        return import_module(module)
+    except ModuleNotFoundError:
+        sys.exit(
+            f"error: this command needs the {distribution} package.\n"
+            f"  pip install {distribution}"
+        )
+
+
 def _master_secret(env_var: str) -> bytes:
     from .keys import load_master_secret
 
@@ -78,7 +91,7 @@ def cmd_keygen(args) -> None:
 
 
 def cmd_generate(args) -> None:
-    from .generate import WatermarkedLM
+    WatermarkedLM = _need("synthmark_eval.generate", "synthmark-eval").WatermarkedLM
 
     key = None if args.no_watermark else _resolve_key(args)
     lm = WatermarkedLM(args.model, device_map=args.device)
@@ -115,7 +128,8 @@ def cmd_generate(args) -> None:
 def cmd_detect(args) -> None:
     from transformers import AutoTokenizer
 
-    from .detect import Calibration, Detector
+    _d = _need("synthmark_detect", "synthmark-detect")
+    Calibration, Detector = _d.Calibration, _d.Detector
 
     key = _resolve_key(args)
     if args.text:
@@ -159,7 +173,7 @@ def cmd_detect(args) -> None:
 def cmd_calibrate(args) -> None:
     from transformers import AutoTokenizer
 
-    from .detect import Detector
+    Detector = _need("synthmark_detect", "synthmark-detect").Detector
 
     key = _resolve_key(args)
     texts = json.loads(Path(args.texts).read_text())
@@ -180,9 +194,10 @@ def cmd_calibrate(args) -> None:
 def cmd_serve(args) -> None:
     import uvicorn
 
-    from .detect import Calibration
+    Calibration = _need("synthmark_detect", "synthmark-detect").Calibration
     from .registry import KeyRegistry
-    from .serve import build_app, build_served
+    _s = _need("synthmark_detect.serve", "synthmark-detect[serve]")
+    build_app, build_served = _s.build_app, _s.build_served
 
     master = _master_secret(args.master_secret_env)
     registry = KeyRegistry.load(args.registry)

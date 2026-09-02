@@ -22,7 +22,7 @@ from pathlib import Path
 from common import DATA, DEMO_MASTER_SECRET, OTHER_KEY_ID, PRIMARY_KEY_ID, RESULTS, banner, save_json
 from transformers import AutoTokenizer
 
-from synthmark import Detector, derive_key
+from synthmark_eval import Detector, derive_key
 
 
 def main() -> None:
