@@ -31,10 +31,19 @@ Two consequences follow directly, and they set the boundaries of everything else
 
 ## Install
 
+Three distributions. Install only the one whose job you are doing:
+
 ```bash
-pip install -e .            # core
-pip install -e '.[serve]'   # + detection service
-pip install -e '.[dev]'     # + tests
+pip install synthmark                     # keys, registry, g-function  (vLLM serving image)
+pip install "synthmark-detect[serve]"     # + scoring and the detection service
+pip install synthmark-eval                # + benchmarks; pulls the other two
+```
+
+For development in this repo, all three editable:
+
+```bash
+pip install -e packages/synthmark -e packages/synthmark-detect -e packages/synthmark-eval
+pytest -q                                 # 52 passed, 3 skipped
 ```
 
 ## Use
@@ -63,7 +72,7 @@ business units can hold separate keys, and rotation is just a new label (`.../v2
 ### Generate
 
 ```python
-from synthmark import WatermarkedLM, derive_key
+from synthmark_eval import WatermarkedLM, derive_key
 
 lm  = WatermarkedLM("google/gemma-4-E4B-it")
 key = derive_key(master_secret, "markets-research/v1")
@@ -81,7 +90,7 @@ text — with no sampling there is no randomness to encode a signal in.
 ### Detect
 
 ```python
-from synthmark import Detector
+from synthmark_detect import Detector
 
 det = Detector(key, lm.tokenizer)          # CPU is fine; no model weights needed
 r = det.detect(text, calibration=cal, target_fpr=0.01)
@@ -181,6 +190,109 @@ For development, install all three editable:
 ```bash
 pip install -e packages/synthmark -e packages/synthmark-detect -e packages/synthmark-eval
 ```
+
+## What is built, and what is not
+
+Being explicit about this, because "the watermarking package" sounds like it covers
+serving, and today it does not.
+
+| | State |
+|---|---|
+| Key derivation, registry, rotation | **Built**, tested |
+| Detection: scoring, calibration, `/detect`, `/attribute` | **Built**, tested |
+| Watermarked generation via HuggingFace `generate()` | **Built**, tested, evaluated |
+| Watermarked generation **under vLLM** | **Not built** — see below |
+
+### The vLLM processor is not written yet
+
+The *logits processor* is the code that applies the watermark: at each decoding step it
+takes the model's scores over the vocabulary and steers which token is chosen.
+
+There is exactly one implementation of it, [`synthmark/config.py`](packages/synthmark/src/synthmark/config.py),
+and it is written against **HuggingFace's** interface — HF calls it as
+`__call__(input_ids, scores)`.
+
+vLLM wants the same arithmetic through a different shape. Its V1 interface is a class
+with `apply(logits)`, `update_state(batch_update)`, `is_argmax_invariant()` and
+`validate_params()`. **Porting the processor** means writing a second class that performs
+the identical watermark computation against those four methods. Nobody has written that
+file — not this repo, not upstream, not anyone. `synthmark-vllm` will be a fourth package
+in `packages/` when it exists; it is deliberately absent rather than present and empty,
+because an empty wheel on an internal index installs cleanly, does nothing, and burns a
+version number.
+
+Three things the port has to get right, all of which fail *silently* — no crash, no
+error, just text that will not detect:
+
+1. **Per-sequence state under continuous batching.** SynthID needs the last
+   `ngram_len - 1` tokens of each sequence. vLLM adds, removes and *moves* sequences
+   between row indices every step; `update_state(batch_update)` reports exactly those
+   events, and the watermark state must be reindexed in lockstep or the watermark is
+   computed against another request's context.
+2. **Prompt tokens.** The first few generated tokens are watermarked using context that
+   runs back into the prompt. vLLM V1 supplies `prompt_token_ids` on add, so this works —
+   the older limitation ([vLLM #2142](https://github.com/vllm-project/vllm/issues/2142))
+   is closed.
+3. **`is_argmax_invariant()` must return `False`.** SynthID changes which token wins;
+   claiming otherwise lets vLLM skip the processor entirely under greedy sampling.
+
+The acceptance gate is a round trip, not a unit test: generate through vLLM, detect with
+`synthmark-detect`, assert `p < 0.01` on every document, and assert no detection with the
+watermark off. Run it per served model. Every failure mode above produces the same
+plausible score near 0.5, so nothing cheaper catches them.
+
+## Publishing
+
+```bash
+for p in synthmark synthmark-detect synthmark-eval; do
+    python -m build --wheel --outdir dist packages/$p
+done
+twine upload -r internal dist/*
+```
+
+All three build as **`py3-none-any`**: any Python 3, no C-extension ABI, any OS and
+architecture. One wheel each, everywhere — no manylinux matrix, no per-arch builds.
+
+The platform-specific dependency is `torch`, which is a *dependency* rather than package
+content, so which build a consumer resolves is decided by **their index URL**, not by
+anything here. That is why [deploy/Dockerfile.detect](deploy/Dockerfile.detect) pins
+`https://download.pytorch.org/whl/cpu` explicitly: without it, a detection container
+silently pulls ~2.5 GB of CUDA runtime it can never use. Worth confirming what your
+internal index resolves `torch` to before the first install.
+
+Two things to settle before the first upload, because they are painful to change once
+consumers have pinned:
+
+- **`keys.py` is a compatibility surface, not just code.** If `derive_key` changes, every
+  previously watermarked document becomes undetectable. Changes to it are major-version
+  changes; the HKDF salt (`b"synthmark/hkdf/v1"`) is versioned for exactly that reason.
+  All three distributions share one version and are released together.
+- **`tests/test_keys.py` and `tests/test_registry.py` are the spec.** They are what a
+  second implementation — a Java service, a different serving stack — validates against.
+
+## Moving this repo to another workspace
+
+Move the git history, not a file copy: a copy loses the commit history and the rename
+tracking that keeps `git log --follow` working through the package split.
+
+```bash
+git clone <repo> && git checkout watermarking
+pip install -e packages/synthmark -e packages/synthmark-detect -e packages/synthmark-eval
+pytest -q                                             # 52 passed, 3 skipped
+for p in synthmark synthmark-detect synthmark-eval; do
+    python -m build --wheel --outdir dist packages/$p
+done
+```
+
+Build the wheels *there*, not here — a build only fails where it fails: a different Python
+version, no route to public PyPI, a differently configured index. Those three commands are
+the smoke test for the move.
+
+**What will not travel: `data/` (~12 MB).** The generated corpora are gitignored because
+they are large and, in principle, regenerable — but regenerating them needs GPUs and the
+Gemma weights. Copy `data/` across separately if you need the raw text. The *results* are
+committed (`results/`, 376 KB), so every number the reports cite survives the move and the
+reports rebuild without it; only re-deriving new statistics from raw text needs the corpora.
 
 ## Reproducing the evaluation
 
