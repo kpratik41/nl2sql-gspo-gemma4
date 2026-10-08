@@ -1,6 +1,6 @@
 # Long-context full-parameter RL: Gemma 4 and Nemotron Lightning
 
-Last updated: 2026-10-07 (America/New_York).
+Last updated: 2026-10-08 (UTC).
 
 This is the running record for this conversation on the `verl` branch. It records requirements, inspected facts, recommendations, and unresolved questions. Proposed configurations have not yet been benchmarked. No verl RL training run has been launched as part of this discussion.
 
@@ -317,6 +317,72 @@ Full-policy model/optimizer storage remains large. Eight H100s are a pilot targe
 
 No Lightning weights have been downloaded and no Lightning training run has been launched for this comparison. Gemma remains the original target until the user chooses otherwise.
 
+## Recipe and resource index
+
+These links collect the implementation examples behind the discussion. **There is no verified drop-in recipe here for full-parameter Gemma 4 31B RL at 40k on eight H100s in verl.** Each example supplies part of the path. Links to `main`, `latest`, or `nightly` move over time; record exact commits before reproducing a run. Upstream results below have not been reproduced in this workspace.
+
+### Gemma: examples closest to the proposed implementation
+
+| Resource | Why it helps | Scope and adaptations |
+|---|---|---|
+| [AutoModel Gemma 31B Tulu-3 CP8, 16k YAML](https://github.com/NVIDIA-NeMo/Automodel/blob/main/examples/vlm_finetune/gemma4/gemma4_31b_tulu3_text_cp8_16k.yaml) | Single-node, eight-GPU text SFT example using FSDP2 and Gemma's ring CP; a useful first engineering reference for our GPU count. | Uses packed 16k sequences and freezes embeddings. Enable training for all language-model parameters, including embeddings/tied output weights, and remeasure memory. This is neither 40k nor RL. |
+| [AutoModel FFPA CP8, 16k mock-data YAML](https://github.com/NVIDIA-NeMo/Automodel/blob/main/examples/vlm_finetune/gemma4/gemma4_31b_ffpa_mock_packing_cp8_16k.yaml) | Shows the optional D512 FFPA backend combined with CP and packing. | Synthetic VLM workload for execution/performance checks; its mock examples are not the proposed text RL dataset. |
+| [AutoModel Gemma 64k validation README](https://github.com/NVIDIA-NeMo/Automodel/blob/main/examples/long_context_validation/gemma4_31B/README.md) and [CoderForge CP8 YAML](https://github.com/NVIDIA-NeMo/Automodel/blob/main/examples/long_context_validation/gemma4_31B/gemma4_31b_base_coderforge_cp8_64k_1e5_800steps.yaml) | Long-context SFT configuration, including loss/memory handling. | Base model, 16 nodes / 128 GPUs. Architectural reference; not evidence that this fits our node or that the data contains individual 64k reasoning problems. |
+| [NeMo RL Gemma guide](https://docs.nvidia.com/nemo/rl/nightly/guides/models/gemma/gemma4.html), [DAPO base YAML](https://github.com/NVIDIA-NeMo/RL/blob/main/examples/configs/recipes/llm/dapo-gemma4-31b-it-4n8g-fsdp2-automodel.yaml), and [CP2 override](https://github.com/NVIDIA-NeMo/RL/blob/main/examples/configs/recipes/llm/dapo-gemma4-31b-it-4n8g-fsdp2cp2-automodel.yaml) | Demonstrates the AutoModel training path within RL, with a CP comparison. | Four eight-GPU nodes and 4,096-token total sequences. Useful integration reference; using this framework would require a separate decision to relax the verl requirement. |
+
+Start with the single-node Tulu-3 example to understand model construction and CP, then inspect the FFPA variant and NeMo RL integration. Use the 64k recipe to study long-context choices after the shorter correctness checks pass. This reading order is a proposed development sequence, not a claim that changing a length field produces a working RL trainer.
+
+### verl: integration, algorithms, and data interfaces
+
+| Resource | How to use it here |
+|---|---|
+| [AutoModel backend documentation](https://verl.readthedocs.io/en/latest/workers/automodel_workers.html) and [small Qwen SFT launcher](https://github.com/verl-project/verl/blob/main/examples/sft/gsm8k/run_qwen2_5_0_5b_automodel.sh) | Understand engine configuration and the existing SFT integration. The example's model and CP settings do not validate Gemma RL or Gemma ring CP. |
+| [AutoModel engine implementation](https://github.com/verl-project/verl/blob/main/verl/workers/engine/automodel/transformer_impl.py) and [utilities](https://github.com/verl-project/verl/blob/main/verl/workers/engine/automodel/utils.py) | Inspect where the model, distributed groups, loss/log probabilities, and batch handling connect. These are starting points for determining whether Gemma-specific CP hooks need integration work. |
+| [verl configuration reference](https://verl.readthedocs.io/en/latest/examples/config.html) | Trace prompt/response limits, rollout settings, microbatches, offload, and actor/reference configuration in the chosen version. SFT settings do not cover every RL memory allocation. |
+| [GSPO examples and explanation](https://github.com/verl-project/verl/blob/main/examples/gspo_trainer/README.md), [Qwen FSDP launcher](https://github.com/verl-project/verl/blob/main/examples/gspo_trainer/run_qwen3_8b_fsdp.sh), and [Qwen MoE Megatron launcher](https://github.com/verl-project/verl/blob/main/examples/gspo_trainer/run_qwen3_30b_a3b_megatron.sh) | References for sequence-level importance ratios and trainer wiring. Transfer the algorithmic structure only after validating the selected model/backend; Qwen launchers are not Gemma or Lightning recipes. |
+| [Router replay guide](https://github.com/verl-project/verl/blob/main/examples/router_replay/README.md) and [rollout correction guide](https://github.com/verl-project/verl/blob/main/docs/algo/rollout_corr.md) | Understand MoE routing consistency and differences between generation and training probabilities. Particularly relevant to Lightning; neither guide removes the tested Lightning launcher's R3/CP restriction. |
+| [Preparing data](https://verl.readthedocs.io/en/latest/preparation/prepare_data.html) and [custom reward functions](https://verl.readthedocs.io/en/latest/preparation/reward_function.html) | Convert generated tasks into the expected message/Parquet format and implement deterministic answer checks. Verify the schema and reward-call signature against the pinned checkout. |
+
+### Nemotron 3.5 Lightning: reproduce before extending
+
+| Resource | Scope and use |
+|---|---|
+| [BF16 model card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16) | Architecture, checkpoint selection, and model-specific usage. The BF16 checkpoint is the post-training reference discussed here. |
+| [H100-tested verl backport launcher](https://github.com/Phlip79/verl/blob/dc3421cf63fbfbf7aecb191bbca1e0fb0707e90d/examples/grpo_trainer/run_nemotron_3_5_lightning_30b_a3b_megatron.sh) and [integration PR #7192](https://github.com/verl-project/verl/pull/7192) | Closest cited full-parameter verl GRPO example: two eight-H100 nodes, short-context defaults, CP1 with R3. Start from its tested dependency/model revisions; the rebased draft is a different validation target. |
+| [Bridge model verification card](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/examples/model_verification_cards/nemotron-3.5-lightning/card.yaml) and [Lightning examples README](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/examples/models/nemotron/nemotron_3/lightning/README.md) | Reference for the two-node H100 32k SFT configuration and model conversion/training setup. Establishes a useful CP training path, separate from verl RL compatibility. |
+| [NeMo RL Lightning guide](https://github.com/NVIDIA-NeMo/RL/blob/main/docs/guides/nemotron-3.5-lightning.md) | Reference for the 73,728-token RL setup on a substantially larger GB200 cluster. Study its settings and validation requirements without treating its throughput or memory as H100 measurements. |
+| [Megatron parallelism guide](https://docs.nvidia.com/nemo/megatron-bridge/latest/parallelisms.html) | Explains TP, CP, PP, DP, and EP placement. Useful when choosing between 8, 16, and 24 GPUs, especially because expert and dense parallelism groups are not independent factors to multiply blindly. |
+
+### Synthetic long-context data and evaluation
+
+| Resource | Proposed use |
+|---|---|
+| [NVIDIA RULER](https://github.com/NVIDIA/RULER) and [synthetic task configuration](https://github.com/NVIDIA/RULER/blob/main/scripts/synthetic.yaml) | Starting point for controllable retrieval, tracing, and aggregation tasks with known answers. Adapt task generation for training; retain independent held-out instances and report task-specific results. |
+| [Needle retrieval generator](https://github.com/NVIDIA/RULER/blob/main/scripts/data/synthetic/niah.py) and [variable-tracking generator](https://github.com/NVIDIA/RULER/blob/main/scripts/data/synthetic/variable_tracking.py) | Build early debugging tasks, then increase difficulty with multiple relevant facts, dependencies, and distractors spread across the context. A single easy needle is insufficient as the entire curriculum. |
+| [Common-word extraction](https://github.com/NVIDIA/RULER/blob/main/scripts/data/synthetic/common_words_extraction.py), [frequency extraction](https://github.com/NVIDIA/RULER/blob/main/scripts/data/synthetic/freq_words_extraction.py), and [evaluation code](https://github.com/NVIDIA/RULER/blob/main/scripts/eval/evaluate.py) | References for aggregation tasks and answer normalization. Audit the scorer for partial answers, duplicates, and reward shortcuts before using it for RL. |
+| [LongBench](https://github.com/THUDM/LongBench) | Complement synthetic held-out evaluation with broader long-context tasks. Keep benchmark evaluation separate from the training blend and check task length, license, and scoring requirements. |
+
+For our pilot, generate individual examples whose required evidence spans approximately 40k tokens, measured with the selected model's tokenizer and chat template. Record actual prompt and response lengths separately. Use deterministic answer verification and calibrate difficulty against the untrained policy: groups where every rollout receives the same reward provide little useful relative learning signal. The dataset and reward implementation remain proposed work.
+
+### Attention implementation and correctness references
+
+| Resource | What to inspect |
+|---|---|
+| [Gemma AutoModel CP implementation](https://github.com/NVIDIA-NeMo/Automodel/blob/main/nemo_automodel/components/models/gemma4_moe/cp_attention.py) and [FFPA integration discussion](https://github.com/NVIDIA-NeMo/Automodel/discussions/2928) | Ring communication, local/global masks, packed document boundaries, and optional FFPA dispatch. Despite the directory name, the earlier dense Gemma discussion points to this shared implementation. |
+| [FFPA kernel project](https://github.com/xlite-dev/ffpa-attn) and [PyTorch FlexAttention documentation](https://docs.pytorch.org/docs/stable/nn.attention.flex_attention.html) | Large-head-dimension attention and programmable masking references. Validate forward/backward, dtype, GPU architecture, and the exact integrated dispatch path rather than choosing a kernel by its name. |
+| [Gemma CP unit tests](https://github.com/NVIDIA-NeMo/Automodel/blob/main/tests/unit_tests/models/gemma4/test_cp_attention.py) and [FFPA ring parity test](https://github.com/NVIDIA-NeMo/Automodel/blob/main/tests/functional_tests/models/gemma4/test_ffpa_cp_ring_parity.py) | Examples of mask and numerical checks. The inspected FFPA parity test uses a single-card CP1 ring, including packed cases; its filename does not establish distributed CP2/CP4 correctness. Add separate multi-rank parity checks for our selected path. |
+| [Bridge CP guard #5895](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/5895), [TE proposal #6120](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/6120), [hybrid proposal #6213](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/6213), and [TE D512 work #3527](https://github.com/NVIDIA/TransformerEngine/pull/3527) | Watchlist for changes to the limitation investigated above. Recheck merge status, hardware support, and full-model tests before revising the recommendation. |
+
+### Practical lessons when adapting the examples
+
+- **Audit trainable parameters.** “No adapters” does not guarantee that every language-model weight is trained. The linked single-node Tulu-3 recipe freezes embeddings. Log trainable parameter names/counts, and verify embeddings, tied output weights, attention, and MLP parameters receive gradients. Freezing unused vision/audio towers is consistent with our text-only scope.
+- **Distinguish packed length from example length.** A 40k buffer containing many isolated short examples tests memory and packing, not reasoning across a single 40k document. Validate both execution length and task dependency length.
+- **Distinguish a performance recipe from a resumable training run.** The linked 16k Tulu-3 and FFPA mock examples disable checkpointing. Enable and test save/resume before a real run; account for checkpoint-time memory and storage. Compare optimizer precision and offload settings before reusing memory estimates.
+- **Measure the whole RL iteration.** Capture peak allocated/reserved GPU memory and timings separately for rollout, actor/reference log probabilities, backward/optimizer updates, policy-weight transfer, and checkpointing. Include the chosen number of responses per prompt and response cap in every measurement.
+- **Verify semantics before scaling length.** Compare short-context loss, token log probabilities, and gradients against a trusted reference; then check CP1 versus distributed CP, padding/packing boundaries, and generation-versus-training probabilities. A successful optimizer step alone is not enough to establish correct RL training.
+- **Create a reproducibility manifest before running.** Record model revision; verl, AutoModel or Bridge, Megatron Core, and rollout-engine commits; PyTorch/CUDA/Transformer Engine/kernel versions; GPU topology; optimizer precision; trainable-parameter policy; parallelism; seeds; data generator revision; and the resolved configuration. Independently current `main` revisions are not automatically a compatible software stack.
+- **Use the existing milestones as gates.** Reproduce a small correctness case, then increase to 8k/16k/32k/40k with full language-model training enabled. Decide whether to add nodes from measured memory and iteration time, including generation, rather than model-loading success or upstream SFT memory alone.
+
 ## Earlier environment setup
 
 At the user's request, `consensus` was checked out in a separate worktree at `/home/ubuntu/verl-fun/nl2sql-gspo-gemma4-consensus`; the VS Code worktree remained on `verl`. A Python 3.12.3 `.venv` was created there.
@@ -341,3 +407,4 @@ Detach with Ctrl+A, then D; stop the script with Ctrl+C. Use `screen -ls` to che
 - Authorized this single running Markdown document and ongoing commits/pushes to `origin/verl` for important discussion updates.
 - Added Nemotron 3.5 Lightning as an alternative: its hybrid/MoE architecture and 128-dimensional attention heads make Megatron more attractive, while full training-state memory remains substantial. Documented the separate evidence for Bridge CP training, large-scale NeMo RL, and draft verl integration, including the tested launcher’s R3/CP restriction and short-context defaults. No model switch has been decided.
 - Investigated the Gemma CP restriction through source, history, developer responses, and pending fixes. Confirmed local-attention wiring, D512 distributed-kernel gaps, and explicit project-priority constraints. Found merged AutoModel CP support and NeMo RL CP2 functional evidence; revised the plan to evaluate that existing path while preserving the full-parameter, 40k, and verl requirements. Recorded why neither the 4k RL recipe nor the large-cluster 64k SFT recipe validates our target hardware/workload.
+- Added a curated recipe/resource index covering Gemma AutoModel/NeMo RL, verl integration and GSPO, Lightning reproduction, synthetic data, attention kernels, and correctness tests. Recorded frozen-embedding and checkpoint defaults, packed-versus-individual context length, single-card parity-test limits, and a reproducibility/measurement checklist. These resources guide future implementation; no training run was launched.
