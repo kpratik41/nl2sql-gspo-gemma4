@@ -8,6 +8,7 @@ This is the running record for this conversation on the `verl` branch. It record
 
 - Model: the previously downloaded Gemma 4 31B instruction-tuned checkpoint.
 - Alternative under evaluation: `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`. Comparing it does not constitute a decision to replace Gemma.
+- Research update: Gemma 4 31B CP exists in NVIDIA AutoModel and has NeMo RL functional coverage. The `CP=1` restriction discussed here is specific to Megatron Bridge's current dense provider. Evaluate that existing AutoModel path before deciding that Gemma requires a new CP implementation or a model switch; integration into our required verl workflow remains to be verified.
 - Framework: verl.
 - Training: **full-parameter RL of the language model; no LoRA or QLoRA**. The earlier LoRA recommendation is superseded by this explicit requirement. For text-only tasks, vision/audio components are outside the proposed training scope.
 - Context: approximately 40,000 tokens. The working assumption is about 40,960 input tokens plus a short response; the user has not yet confirmed whether the target instead means total sequence length or long generated responses.
@@ -97,9 +98,82 @@ The examined NVIDIA Megatron Bridge `Gemma4DenseProvider.provide()` explicitly r
 
 In particular, **CP=1 and PP=1 do not mean only one GPU can be used**. Other parallelism may still distribute work, subject to model support. They mean that this provider cannot currently use two specific ways of spreading one large training example across devices. Adding GPUs does not remove those implementation checks.
 
-Consequence: do not assume generic Megatron CP/PP configuration recipes will work for this checkpoint. FSDP2 is the first integration candidate. Reconsider Megatron if model support improves or a custom integration is justified by measurements.
+Consequence: do not assume generic Megatron CP/PP configuration recipes will work for this checkpoint. FSDP2 is the first integration candidate, with AutoModel's existing model-specific CP path now a priority to investigate. Reconsider Megatron if model support improves or a custom integration is justified by measurements.
 
 Source checked during this discussion: [Gemma 4 provider](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/src/megatron/bridge/models/gemma/gemma4_provider.py). This link tracks upstream main; recheck and pin a commit before implementation.
+
+## Investigation: why Megatron Bridge restricts dense Gemma 4 to CP=1
+
+This follow-up examined upstream source, the original dense-model contribution, the explicit CP guard change, developer issue comments, two pending CP implementations, their Transformer Engine dependency, and working AutoModel/NeMo RL alternatives. Repository/API states below were checked during this discussion on 2026-10-07 America/New_York. Upstream main and open-PR states can change.
+
+### Direct cause: the dense provider selects an attention implementation without CP
+
+The construction path is:
+
+```text
+Gemma4DenseProvider
+  → get_gemma4_layer_spec()
+  → LocalSpecProvider
+  → Megatron Core's non-TE DotProductAttention
+  → requires context_parallel_size == 1
+```
+
+The dense layer spec explicitly selects the local backend. The resulting attention implementation checks CP size and does not implement the distributed exchange of attention information. Its forward code constructs attention scores explicitly. This confirms an implementation constraint, not a limit on how many tokens the pretrained architecture can understand. Sources: [dense layer spec](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/src/megatron/bridge/models/gemma/modeling_gemma4.py), [Megatron Core local attention](https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/dot_product_attention.py).
+
+Bridge PR #5895 added the early error, merged September 2, 2026, as commit `d69c7c4292c062c83648a92349a6bf1d87b3f783`. Before that change, CP already failed deeper in layer construction. The new guard made the failure understandable rather than introducing a new capability restriction. Its author encountered this while attempting dense Gemma 4 GRPO with CP2. [Guard PR and rationale](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/5895)
+
+Plain-language example: splitting 40k tokens into two 20k pieces is only the allocation step. Tokens on one GPU may still need information from the other GPU, and backward must return the appropriate gradients. The local attention implementation lacks that communication protocol. Removing its error checks would not add the missing operations.
+
+### Second obstacle: a compatible distributed attention backend for 512-dimensional heads
+
+Simply choosing Transformer Engine does not complete the repair. Draft Bridge PR #6120 explains that the released TE path it targets has no suitable backend for symmetric 512-dimensional heads together with CP. It depends on TE PR #3527; without that dependency, model construction can succeed but attention subsequently fails. This corroborates the head-dimension concern, while keeping the immediate cause distinct: the current dense provider chooses the local path in the first place. [Bridge TE integration proposal](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/6120)
+
+TE PR #3527 describes the backend gap: FA2/FA3 kernels stop at 256; the applicable C++ cuDNN fused path also caps at 256; the unfused implementation accepts 512 but cannot run CP. Its proposed FROST backend uses cuDNN's Python/CuTe-DSL path. **That proposal targets SM100/SM103 Blackwell, not our SM90 H100s**, and was still unmerged when checked. It also states that its previous numerical tests precede a dispatch refactor and require rerunning on the current head. Treat this as evidence about the missing integration, not an available H100 solution. [TE proposal and hardware scope](https://github.com/NVIDIA/TransformerEngine/pull/3527)
+
+The official [FlashAttention README](https://github.com/Dao-AILab/flash-attention) independently documents the FA2 head-size limit. These are version/backend constraints, not a claim that no possible attention algorithm can process 512-dimensional heads. FlexAttention and FFPA offer alternative implementations.
+
+### Why it is still unfinished: prioritization and correctness work
+
+In Bridge issue #4663, NVIDIA contributors explained in July that limited engineering bandwidth and different model priorities left Gemma 4 outside their current performance-optimization work; they welcomed a contribution with numerical, distributed, and performance validation. This is explicit project-priority evidence, not speculation about the model's theoretical suitability. [Developer response](https://github.com/NVIDIA-NeMo/Megatron-Bridge/issues/4663#issuecomment-4898117463)
+
+There are also real correctness problems to solve:
+
+- Local and global layers use different dimensions, head counts, and attention windows. Their behavior must survive backend replacement.
+- CP requires correct global token positions, cross-GPU K/V exchange, softmax normalization, and backward gradient accumulation.
+- Packed examples require document boundaries to remain isolated after distributed rearrangement; successful single-document tests are insufficient.
+- Smaller kernel tests must be followed by full-model loss/logit/gradient comparisons and checkpoint checks.
+
+Draft PR #6213 implements a hybrid approach: TE for supported sliding-layer layouts and differentiable K/V gathering with compiled FlexAttention for global layers. It explicitly handles document IDs, padding, and rank-major packed layouts. The author reports CP2/CP4 attention-level gradient checks, but full 31B parity, full-model performance, and the pinned H100 validation are still listed as unfinished. [Hybrid CP proposal and validation limits](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/6213)
+
+Do not attribute this 31B restriction to cross-layer KV sharing in the smaller E-series: our inspected 31B config has `num_kv_shared_layers=0` and no per-layer input embeddings. Those features complicate other Gemma variants but are not the demonstrated cause here. CP and PP are separate implementations; this investigation does not establish the reason for the separate PP=1 guard.
+
+### Development status and working alternatives
+
+| Evidence | Status at inspection | What it establishes |
+|---|---|---|
+| [Bridge #3885](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/3885) | Merged May 23 | Initially added limited dense Gemma support; support for loading a model was not a promise of every parallelism feature. |
+| [Bridge #5895](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/5895) | Merged September 2 | Clear error for an already unsupported CP path. |
+| [Bridge #6120](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/6120) | Open draft, not merged | TE wiring proposal dependent on an additional backend change; reported reduced-model B200 tests. |
+| [TE #3527](https://github.com/NVIDIA/TransformerEngine/pull/3527) | Open, not merged | Proposed Blackwell-specific D512 backend, not an H100 fix. |
+| [Bridge #6213](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/6213) | Open draft, not merged | Alternative hybrid CP implementation with attention-level tests and remaining full-model validation. |
+| [AutoModel #2592](https://github.com/NVIDIA-NeMo/Automodel/pull/2592) | Merged June 17 | Dense Gemma 4 31B CP through model-specific ring FlexAttention; reports CP parity and a single-node 16k CP8 SFT run. |
+| [AutoModel #2436](https://github.com/NVIDIA-NeMo/Automodel/pull/2436) | Merged June 30 | Optional D512 FFPA kernels with forward/backward and a CP ring integration. |
+
+**Gemma 4 31B can use context parallelism in another implementation today.** AutoModel's ring path exchanges attention data and applies model-specific masks around compiled FlexAttention; it can optionally dispatch eligible global chunks to FFPA. This is a concrete alternative to writing a new Bridge backend. [AutoModel ring implementation](https://github.com/NVIDIA-NeMo/Automodel/blob/main/nemo_automodel/components/models/gemma4_moe/cp_attention.py)
+
+For the documented FFPA route, direct HF `attn_implementation: ffpa` is restricted to non-CP/non-packed execution. Its CP configuration instead uses the model's ring interface with `attn_implementation: sdpa` and `text_config.cp_full_attn_backend: ffpa`. The same word `sdpa` therefore does not imply the same executed kernel across these integrations. Inspect dispatch and profile it. [AutoModel FFPA explanation](https://github.com/NVIDIA-NeMo/Automodel/discussions/2928)
+
+### What this changes for our 40k full-parameter RL plan
+
+NeMo RL now documents Gemma 4 31B CP1/CP2 functional training comparisons with AutoModel. This is evidence that CP also works in an RL workflow, not only SFT. Its guide describes 100-step comparisons and labels support functionally ready rather than claiming broad long-run convergence. [NeMo RL Gemma guide](https://docs.nvidia.com/nemo/rl/nightly/guides/models/gemma/gemma4.html)
+
+However, the associated [base recipe](https://github.com/NVIDIA-NeMo/RL/blob/main/examples/configs/recipes/llm/dapo-gemma4-31b-it-4n8g-fsdp2-automodel.yaml) uses four eight-GPU nodes and a 4,096-token total-sequence limit. The [CP2 override](https://github.com/NVIDIA-NeMo/RL/blob/main/examples/configs/recipes/llm/dapo-gemma4-31b-it-4n8g-fsdp2cp2-automodel.yaml) retains that limit. Those runs do not validate 40k RL on our eight or sixteen H100s.
+
+AutoModel also documents 64k CP8 SFT, but that [long-context recipe](https://github.com/NVIDIA-NeMo/Automodel/blob/main/examples/long_context_validation/gemma4_31B/README.md) uses the base checkpoint on 16 nodes / 128 GPUs. It supports architectural feasibility, not a small-cluster memory claim.
+
+Revised next investigation: evaluate **AutoModel FSDP2 plus its Gemma-specific CP kernels** for the requested verl workflow before attempting a new Megatron patch or deciding to switch models. verl has an [AutoModel engine](https://github.com/verl-project/verl/blob/main/docs/workers/automodel_workers.rst), but its documentation/examples inspected here emphasize SFT and do not establish Gemma-specific CP integration or our end-to-end RL path. Check the exact versions, CP batch/mask hooks, response log probabilities, full-policy weight transfer to vLLM, and checkpoint restore. Porting may be required. NeMo RL is the demonstrated framework alternative if the user later relaxes the verl requirement.
+
+This qualifies the earlier preference for Lightning: Lightning remains attractive for its architecture and Megatron support, but **Gemma's lack of CP is not universal**, and AutoModel provides existing work we should assess. We have not changed frameworks, models, runtime configuration, or procured hardware during this research.
 
 ## Revised approach: full-parameter training
 
@@ -228,7 +302,7 @@ Consequently, Lightning has stronger evidence for useful model parallelism, but 
 | Two nodes total / 16 H100s | Prefer all 16 for initial full training. Reproduce the reported short-context verl setup first, then grow sequence length. The NVIDIA TP2/CP2/EP8 SFT recipe is a separate long-context starting point; reconcile CP with the selected RL routing path before combining them. |
 | Three nodes total / 24 H100s | Consider 16 training GPUs plus eight rollout GPUs after full-policy synchronization and throughput are measured. |
 
-My recommendation if the model is flexible is to prioritize a **Lightning + Megatron feasibility study**, particularly with two H100 nodes. It removes Gemma's unusual attention-head constraint and brings published hybrid/MoE training evidence. This is an engineering preference based on support and architecture, not a claim that it will beat Gemma's task accuracy or achieve a known training speed.
+The initial alternative-model recommendation was to prioritize a **Lightning + Megatron feasibility study**, particularly with two H100 nodes. It removes Gemma's unusual attention-head constraint and brings published hybrid/MoE training evidence. The subsequent CP investigation above qualifies that recommendation: assess Gemma's already implemented AutoModel CP path as well before choosing a model. Neither route has been benchmarked here, and architecture/support evidence does not establish task accuracy or a training-speed winner.
 
 Full-policy model/optimizer storage remains large. Eight H100s are a pilot target, not a guaranteed 40k training configuration. With two nodes, CP can potentially reduce per-sequence activation pressure in addition to distributing model states, provided the exact RL path supports it. Interconnect quality matters for both expert dispatch and CP communication.
 
@@ -266,3 +340,4 @@ Detach with Ctrl+A, then D; stop the script with Ctrl+C. Use `screen -ls` to che
 - Revised the starting plan to full-parameter FSDP2 with memory-efficient attention, checkpointing, and measured offloading requirements.
 - Authorized this single running Markdown document and ongoing commits/pushes to `origin/verl` for important discussion updates.
 - Added Nemotron 3.5 Lightning as an alternative: its hybrid/MoE architecture and 128-dimensional attention heads make Megatron more attractive, while full training-state memory remains substantial. Documented the separate evidence for Bridge CP training, large-scale NeMo RL, and draft verl integration, including the tested launcher’s R3/CP restriction and short-context defaults. No model switch has been decided.
+- Investigated the Gemma CP restriction through source, history, developer responses, and pending fixes. Confirmed local-attention wiring, D512 distributed-kernel gaps, and explicit project-priority constraints. Found merged AutoModel CP support and NeMo RL CP2 functional evidence; revised the plan to evaluate that existing path while preserving the full-parameter, 40k, and verl requirements. Recorded why neither the 4k RL recipe nor the large-cluster 64k SFT recipe validates our target hardware/workload.
