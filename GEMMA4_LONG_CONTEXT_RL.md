@@ -1,0 +1,194 @@
+# Gemma 4 31B long-context RL: discussion and decisions
+
+Last updated: 2026-10-07 (America/New_York).
+
+This is the running record for this conversation on the `verl` branch. It records requirements, inspected facts, recommendations, and unresolved questions. Proposed configurations have not yet been benchmarked. No verl RL training run has been launched as part of this discussion.
+
+## Current requirements and documentation workflow
+
+- Model: the previously downloaded Gemma 4 31B instruction-tuned checkpoint.
+- Framework: verl.
+- Training: **full-parameter RL of the language model; no LoRA or QLoRA**. The earlier LoRA recommendation is superseded by this explicit requirement. For text-only tasks, vision/audio components are outside the proposed training scope.
+- Context: approximately 40,000 tokens. The working assumption is about 40,960 input tokens plus a short response; the user has not yet confirmed whether the target instead means total sequence length or long generated responses.
+- Data: synthetic data or an appropriate existing dataset. General long-context reasoning versus continued NL2SQL specialization remains open.
+- Hardware: one existing H100 node; additional H100 nodes can be procured. Clarify whether “2 nodes later” means two total or two additional when planning procurement.
+- Keep the VS Code checkout on `verl`; use separate worktrees for other branches.
+- The user explicitly authorized creating this note, committing it, pushing it to `origin/verl`, and continuing to update, commit, and push this same file with important discussion findings and decisions. During continued work, maintain this file rather than creating separate discussion notes. This is an ongoing conversation workflow, not a scheduled background job.
+
+## How the components fit together
+
+| Component | Responsibility |
+|---|---|
+| verl | Runs the RL workflow: prompts, rollouts, rewards, advantages/loss, training updates, weight synchronization, evaluation, and checkpoints. |
+| GRPO / GSPO | Learning algorithms/objectives used within that workflow. They are independent of the choice of distributed training backend. |
+| FSDP2 | Shards model parameters, gradients, and optimizer state across training GPUs. Layers gather the parameters needed for computation. |
+| Megatron Core / Megatron-LM | Another training backend with distributed model computation and several parallelism strategies; actual availability depends on the specific model implementation. |
+| Megatron Bridge | Adapts supported Hugging Face architectures/checkpoints to Megatron and handles conversion. A model “provider” is the code that constructs that architecture for Megatron. |
+| vLLM / SGLang | Generation engines for producing candidate answers during rollouts. Generation kernels need not be the same as training kernels. |
+
+Typical cycle: question and context → candidate answers → reward function → RL loss → forward/backward and optimizer step → updated weights sent to the generator → repeat.
+
+For NL2SQL, rewards can check whether generated SQL returns the expected results. For synthetic reasoning, rewards can compare the answer with a programmatically computed target.
+
+References: [verl](https://github.com/verl-project/verl), [engine workers](https://verl.readthedocs.io/en/latest/workers/engine_workers.html), [Megatron Bridge](https://github.com/NVIDIA-NeMo/Megatron-Bridge).
+
+## Inspected hardware and model
+
+The current host has eight NVIDIA H100 80GB HBM3 GPUs. `nvidia-smi topo -m` reported NV18 connectivity between each pair. The host reported approximately 2 TiB of system RAM. GPU memory is distributed across devices; it is not one automatically pooled allocation.
+
+The downloaded checkpoint was found at:
+
+```text
+/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31b-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475
+```
+
+Both safetensors shards resolve to existing cache blobs. The index reports 62,546,177,752 weight bytes, approximately 62.5 decimal GB. The cached configuration has no quantization configuration. The repository's `gemma-4-31b-it-local` directory in the consensus worktree contains configuration/tokenizer files; the actual weight files were verified in the cache above.
+
+The inspected model configuration specifies:
+
+| Property | Value |
+|---|---|
+| Architecture | `Gemma4ForConditionalGeneration`, dense text backbone |
+| Text layers | 60 |
+| Sliding-attention layers | 50, head dimension 256 |
+| Global-attention layers | 10, head dimension 512 |
+| Attention pattern | Five sliding layers followed by one global layer |
+| Sliding window | 1,024 tokens |
+| Query heads | 32 |
+| Local / global KV heads | 16 / 4 |
+| Configured maximum positions | 262,144 |
+| Vocabulary | 262,144 |
+| Final logit softcapping | 30.0 |
+
+40k tokens is within the configured context window. That alone establishes neither training feasibility nor task accuracy at that length.
+
+The existing consensus code uses TRL/DeepSpeed and SDPA paths. It is not evidence of an already working verl 40k configuration. The `verl` branch was initially empty before this note.
+
+## Attention at 40k tokens
+
+The usual FlashAttention-2 training path cannot handle this model's 512-dimensional global heads. The local layers have 256-dimensional heads, so the limitation does not apply identically to every layer. Kernel capabilities vary by version, GPU, and forward/backward mode; inference support does not establish training support.
+
+The first training candidate is **PyTorch FlexAttention**, preserving the model's global causal attention and local sliding windows. A second candidate is hybrid attention: FlashAttention-2 for local layers and a verified memory-efficient training kernel for global layers. Axolotl documents such a hybrid implementation and a 32k Gemma 4 31B FSDP2 LoRA example. That example is implementation evidence, not a full-parameter verl RL benchmark.
+
+Selecting `attn_implementation="sdpa"` does not by itself prove memory efficiency. SDPA dispatches to a backend, and the actual forward and backward kernels must be inspected. Avoid a dense attention-score allocation:
+
+```text
+1 sample × 32 heads × 40,960² positions × 2 BF16 bytes
+= 107,374,182,400 bytes = 100 GiB
+```
+
+That is one hypothetical dense score tensor for one layer, before gradients and other intermediates. Tiled memory-efficient attention avoids materializing it, although global attention still has quadratic compute cost.
+
+FlexAttention needs a real H100 forward/backward test with the 512-dimensional global heads. Compilation settings, block sizes, masks, and grouped-query attention can affect feasibility and performance. Preserve Gemma's attention scaling, normalization, positional embeddings, and sliding-window semantics.
+
+References: [Axolotl Gemma 4 guidance](https://docs.axolotl.ai/docs/models/gemma4.html), [32k example](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/gemma4/31b-lora-fsdp.yaml), [FlexAttention API](https://docs.pytorch.org/docs/stable/nn.attention.flex_attention.html).
+
+## CP=1 and PP=1 in simple terms
+
+The numbers specify how many cooperating partitions a parallelism method uses. A value of one means that method is not splitting the work.
+
+- **Context parallelism (CP)** divides the tokens of one sequence among GPUs. For example, CP=4 could assign about 10k of a 40k sequence to each of four ranks. They exchange the information needed for correct attention across the complete sequence. CP=1 means there is no division along the sequence dimension.
+- **Pipeline parallelism (PP)** divides model layers into stages. For example, PP=2 could put layers 1–30 on one GPU group and layers 31–60 on another. PP=1 means there is one pipeline stage.
+- **Tensor parallelism (TP)** divides computations within a layer across GPUs. It is distinct from both methods above.
+- **Data parallelism (DP)** processes different examples on different replicas and combines their gradients. FSDP additionally shards model states; it does not automatically divide each example's sequence computation.
+
+The examined NVIDIA Megatron Bridge `Gemma4DenseProvider.provide()` explicitly raises errors for PP other than one and CP other than one. Its CP explanation points to a local attention implementation without context-parallel support. These guards concern that Gemma 4 dense integration; they are not a fundamental limitation of Gemma's architecture or of Megatron as a whole. Other implementations or future versions may differ.
+
+In particular, **CP=1 and PP=1 do not mean only one GPU can be used**. Other parallelism may still distribute work, subject to model support. They mean that this provider cannot currently use two specific ways of spreading one large training example across devices. Adding GPUs does not remove those implementation checks.
+
+Consequence: do not assume generic Megatron CP/PP configuration recipes will work for this checkpoint. FSDP2 is the first integration candidate. Reconsider Megatron if model support improves or a custom integration is justified by measurements.
+
+Source checked during this discussion: [Gemma 4 provider](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/src/megatron/bridge/models/gemma/gemma4_provider.py). This link tracks upstream main; recheck and pin a commit before implementation.
+
+## Revised approach: full-parameter training
+
+The original suggestion to begin with LoRA has been rejected by the user. The following replaces it.
+
+### One node: eight H100s
+
+Use verl with FSDP2, BF16 computation, full language-model parameter updates, and a validated memory-efficient attention backend. Start with all eight GPUs available for training and alternate generation/training phases using supported sleep/offload behavior. Begin with one sequence per GPU per training microbatch and accumulate gradients for the desired effective batch.
+
+Required profiling candidates:
+
+1. Layer-level FSDP sharding and gradient checkpointing/recomputation.
+2. Supported optimizer/model-state CPU offload if model states leave inadequate GPU headroom. Verify the exact FSDP2/verl offload semantics in the pinned stack rather than assuming every offload flag is independent.
+3. Activation offload or compatible MLP tiling if activations remain the bottleneck. System RAM is abundant, but transfers and CPU optimization may be slow.
+4. Limited rollout concurrency and explicit memory release between phases. Test vLLM TP=4 as a starting generation layout, not a settled optimal configuration.
+5. Efficient response log-probability computation without keeping full-vocabulary logits for every prompt position. At 40,960 positions, a single BF16 logits tensor with this vocabulary is 20 GiB; FP32 is 40 GiB. Preserve final logit softcapping and correct response-position indexing.
+
+A conventional mixed-precision Adam budget can be about 16 bytes per trainable parameter: BF16 weights and gradients, FP32 master weights, and two FP32 moments. For 31 billion parameters that is roughly 496 decimal GB, or 462 GiB, before activations, temporary layer gathers, communication buffers, rollout state, and any reference model. Evenly sharded eight ways, that illustrative budget is about 58 GiB per GPU. Actual optimizer/dtype choices change this estimate.
+
+This makes one-node full training a plausible but unproven engineering target, likely requiring offload and careful memory management at 40k. Aggregate GPU capacity alone is not a feasibility test. No throughput estimate is justified yet.
+
+Start with GRPO or GSPO and four responses per prompt. These approaches avoid a separate learned critic. A reference policy is still needed if the chosen KL objective requires one; full tuning cannot recover a frozen base reference by disabling an adapter. Budget reference weights/offload and reference log-probability passes explicitly, or make a deliberate decision about a no-reference objective. Keep generated answers short initially, around 512–1,024 tokens.
+
+Sequence parallelism may ultimately be needed. The examined verl generic Ulysses path wraps FlashAttention calls. Do not assume that setting Ulysses size above one will automatically parallelize FlexAttention or correctly support Gemma's heterogeneous heads. That combination requires integration and correctness testing.
+
+References: [verl configuration](https://verl.readthedocs.io/en/latest/examples/config.html), [verl attention/sequence-parallel implementation](https://github.com/verl-project/verl/blob/main/verl/models/transformers/monkey_patch.py).
+
+### Additional nodes
+
+| Hardware, assuming eight H100s per node | Full-training planning option |
+|---|---|
+| One node / 8 GPUs | All eight train; generation and training alternate. Profile offload, attention, and activations. |
+| Two nodes total / 16 GPUs | If model-state memory is the problem, shard training across all 16 and alternate rollout phases. If training already fits comfortably on eight and generation is limiting, dedicate the second node to rollout. |
+| Three nodes total / 24 GPUs | Consider 16 training GPUs plus eight rollout GPUs, subject to measured bottlenecks and interconnect performance. |
+
+The earlier suggestion to dedicate a second node to rollout was made for LoRA. It is conditional for full training: using all 16 for training may be more valuable. With the illustrative 496 GB state budget, ideal 16-way sharding reduces the state share to about 29 GiB per GPU. It does not automatically reduce the activation/attention footprint of one sequence.
+
+Check cross-node InfiniBand/RoCE bandwidth and latency before procurement. Cross-node FSDP communication and full-policy weight synchronization can be substantial. Start with synchronous policy updates; asynchronous rollout overlap introduces policy staleness and should be a separate optimization. Buying more nodes cannot fix an unsupported kernel or provider feature.
+
+## Proposed data and rewards
+
+The first general-purpose candidate is freshly generated **RULER-style synthetic data**, using configurable long-context tasks rather than training on a fixed benchmark test split.
+
+| Task | Training behavior | Verifiable reward |
+|---|---|---|
+| Multi-key retrieval | Retrieve several relevant records spread across the input | Exact set match |
+| Multi-hop tracing | Follow references between distant records | Exact final answer |
+| Aggregation | Count/combine information across many records | Exact numeric result |
+
+Generate a few thousand pilot examples; measure baseline performance before choosing difficulty. Adjust difficulty so groups contain a useful mix of successful and unsuccessful answers. Identical rewards within a group give little or no relative-advantage learning signal.
+
+Measure length with Gemma's tokenizer after applying the chat template. Put necessary evidence at varied positions across roughly 40k tokens. Padding an otherwise short task with irrelevant text is not sufficient evidence of useful long-context reasoning. Keep evaluation seeds, entities, and templates separate. Evaluate at 8k, 16k, 32k, and 40k to track both long-context gains and shorter-context regressions.
+
+Use a separate realistic evaluation such as LongBench to test transfer. Synthetic task improvements alone do not establish broader ability.
+
+For NL2SQL specialization, an alternative is large schema catalogs and documentation with relevant information distributed across the context. Reward executable SQL using multiple database instances where possible, reducing accidental equivalence on one instance. The target task choice remains open.
+
+Sources: [RULER generators and tasks](https://github.com/NVIDIA/RULER), [LongBench](https://github.com/THUDM/LongBench).
+
+## Implementation milestones and open questions
+
+1. Pin compatible verl, Transformers, PyTorch, vLLM, and attention-kernel versions; identify any required model patches. General framework support is not proof of this exact combination.
+2. Validate attention outputs and gradients at short lengths against a trusted baseline, then test global/local kernels at 40k on H100.
+3. Validate full-model loading and sensible generation before training; check trainer/generator log-probability agreement and weight synchronization.
+4. Run full-parameter forward/backward/optimizer smoke tests at increasing lengths: 8k → 16k → 32k → 40k. These are engineering checks; the intended training target remains 40k.
+5. Complete one end-to-end RL update at 40k: generation → reward → policy/reference log probabilities as required → backward → optimizer step → rollout weight synchronization → fresh generation.
+6. Record peak memory and time separately for each phase, numerical stability, reward distribution, and validation accuracy. Test checkpoint save/resume before a long run.
+7. Use those measurements to choose offloading, node count, and GPU placement; do not procure another node based only on parameter-count arithmetic.
+
+Unresolved: meaning of the 40k requirement, general reasoning versus SQL, final algorithm and KL/reference choice, supported FlexAttention/sequence-parallel integration, and additional-node interconnect. No claim of a working 40k full-parameter training configuration has been made.
+
+## Earlier environment setup
+
+At the user's request, `consensus` was checked out in a separate worktree at `/home/ubuntu/verl-fun/nl2sql-gspo-gemma4-consensus`; the VS Code worktree remained on `verl`. A Python 3.12.3 `.venv` was created there.
+
+`python -u temp.py` was launched in a detached GNU screen named `consensus-temp`. It was verified at setup to run four CPU workers targeting approximately 2% of the host's 192 logical CPUs. This script is unrelated to GPU model training.
+
+The session identifier at setup was `13223.consensus-temp`. While it remains running:
+
+```bash
+screen -r 13223.consensus-temp
+```
+
+Detach with Ctrl+A, then D; stop the script with Ctrl+C. Use `screen -ls` to check current session state. This note records the earlier verification, not a guarantee that the process remains running indefinitely.
+
+## Decision history
+
+- Explained verl as the RL coordinator, Megatron/FSDP as training backends, and vLLM/SGLang as generation engines.
+- Inspected the eight-H100 node, cached model weights, and heterogeneous attention configuration.
+- Initially suggested LoRA for memory headroom. **Superseded:** the user requires full-parameter RL.
+- Identified CP/PP limitations in the examined Megatron Bridge Gemma 4 dense provider; these are implementation-specific.
+- Revised the starting plan to full-parameter FSDP2 with memory-efficient attention, checkpointing, and measured offloading requirements.
+- Authorized this single running Markdown document and ongoing commits/pushes to `origin/verl` for important discussion updates.
