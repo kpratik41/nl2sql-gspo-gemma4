@@ -1,4 +1,4 @@
-# Gemma 4 31B long-context RL: discussion and decisions
+# Long-context full-parameter RL: Gemma 4 and Nemotron Lightning
 
 Last updated: 2026-10-07 (America/New_York).
 
@@ -7,6 +7,7 @@ This is the running record for this conversation on the `verl` branch. It record
 ## Current requirements and documentation workflow
 
 - Model: the previously downloaded Gemma 4 31B instruction-tuned checkpoint.
+- Alternative under evaluation: `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`. Comparing it does not constitute a decision to replace Gemma.
 - Framework: verl.
 - Training: **full-parameter RL of the language model; no LoRA or QLoRA**. The earlier LoRA recommendation is superseded by this explicit requirement. For text-only tasks, vision/audio components are outside the proposed training scope.
 - Context: approximately 40,000 tokens. The working assumption is about 40,960 input tokens plus a short response; the user has not yet confirmed whether the target instead means total sequence length or long generated responses.
@@ -170,6 +171,78 @@ Sources: [RULER generators and tasks](https://github.com/NVIDIA/RULER), [LongBen
 
 Unresolved: meaning of the 40k requirement, general reasoning versus SQL, final algorithm and KL/reference choice, supported FlexAttention/sequence-parallel integration, and additional-node interconnect. No claim of a working 40k full-parameter training configuration has been made.
 
+## Alternative: Nemotron 3.5 Lightning
+
+The concrete comparison target is **`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`**. NVIDIA identifies the BF16 release as the customization/post-training checkpoint. The requirement remains full-parameter RL, without adapters. NVFP4 serving recipes and single-GPU inference claims are not training-memory estimates.
+
+### What changes architecturally
+
+| Property | Gemma 4 31B | Nemotron 3.5 Lightning |
+|---|---|---|
+| Main architecture | Dense transformer with local/global attention | Hybrid Mamba-2, mixture-of-experts (MoE), and attention |
+| Advertised parameter scale | About 31B dense | About 30B total, 3B active per token |
+| Attention head dimension | 256 local / 512 global | 128 for attention; Mamba has separate dimensions |
+| Attention structure | 50 sliding and 10 global layers | Six attention blocks in the 52-block main stack; other blocks are Mamba or MoE |
+| Vocabulary | 262,144 | 131,072 |
+| First training backend to investigate | FSDP2 with a compatible attention path | Megatron via a pinned Lightning-compatible verl integration |
+
+The inspected Lightning config has 128 routed experts, six selected per token, and one shared expert. A router chooses a subset of expert networks for each token. Mamba blocks maintain and transform sequence state rather than building a full token-to-token attention matrix. These differences give a reason to expect lower computation for many workloads, but do not establish a speedup factor on our machine. Some global attention remains, as do activation and communication costs.
+
+Gemma's specific 512-dimensional-head obstacle is absent. A supported Transformer Engine fused/FlashAttention path is the first candidate for Lightning's attention blocks, alongside optimized Mamba and MoE kernels. Every part of the hybrid model still needs a compatible backward pass; a generic transformer attention patch is insufficient.
+
+The model card advertises up to one million tokens; the inspected HF config defaults `max_position_embeddings` to 262,144. Neither number proves training feasibility. Our 40k target is below both. Regenerate/tokenize datasets using Lightning's own tokenizer and native chat template, including an explicit thinking-mode choice.
+
+Sources: [BF16 model card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16), [configuration](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16/blob/main/config.json), [native template guidance](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/examples/models/nemotron/nemotron_3/lightning/README.md).
+
+### Active parameters reduce computation, not total training-state storage
+
+“3B active” does not mean a 3B model's optimizer-memory requirement. Full tuning retains all expert weights and their training state; different tokens select different experts. Full-parameter training makes the policy parameters trainable, although an individual token only exercises its routed subset.
+
+At the same illustrative 16 bytes per parameter used above, 30B parameters imply about 480 decimal GB of state, not 48 GB. NVIDIA's conversion verification reports approximately 32.9B checkpoint parameters including auxiliary components; budgeting all of those at 16 bytes would be about 527 GB. Actual trainable components, precision, optimizer state, and sharding determine the real allocation. This remains similar in order of magnitude to Gemma.
+
+The smaller vocabulary halves the hypothetical full-sequence logits allocation: at 40,960 positions, BF16 logits would be 10 GiB instead of 20 GiB. Efficient response-logprob computation is still worthwhile.
+
+**Expert parallelism (EP)** becomes useful: different GPUs own different experts, and tokens are routed to the appropriate devices. This distributes expert storage and computation but creates all-to-all communication. Plan placement around NVLink and the cross-node network. EP groups overlap with other parallelism dimensions in Megatron; do not multiply TP, CP, and EP sizes together as if they were independent GPU counts. See [Megatron parallelism guide](https://docs.nvidia.com/nemo/megatron-bridge/latest/parallelisms.html).
+
+### What is actually supported and verified
+
+There are three distinct pieces of evidence:
+
+1. **Megatron Bridge training:** NVIDIA records full-parameter BF16 SFT at 32,768 tokens on two eight-H100 nodes, using TP=2, CP=2, EP=8, and expert TP=1, with full recomputation. This establishes a working context-parallel training path for Lightning, unlike the examined Gemma dense provider. It is SFT at 32k, not our 40k verl RL workload. [Verification card](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/examples/model_verification_cards/nemotron-3.5-lightning/card.yaml)
+2. **NVIDIA's NeMo RL reference:** its Lightning RLVR recipe uses a 73,728-token maximum and TP=4, CP=4, EP=16, PP=1. It runs on a much larger GB200 deployment, including 128 training GPUs. This demonstrates long-context RL support in that stack, not feasibility on eight or sixteen H100s. NeMo RL is an alternative framework; switching to it has not been requested. [Reference recipe](https://github.com/NVIDIA-NeMo/RL/blob/main/docs/guides/nemotron-3.5-lightning.md)
+3. **verl integration:** PR #7192 was open and draft when checked. Its author reports full-parameter H100 GRPO validation on a v0.7 backport, while the rebased main-branch implementation still needs GPU validation. Pin the tested revision rather than assuming this work is available in a released verl version. [PR and validation scope](https://github.com/verl-project/verl/pull/7192)
+
+The PR records H100-tested backport `dc3421cf63fbfbf7aecb191bbca1e0fb0707e90d`; rebased PR head `1ba0bcbef9697acc20ff5863f592a096c5d75474`; and model revision `d468880b6ad3c6e0d21377ce7242adaea4cc884d`. These are reproduction references, not versions installed in this workspace.
+
+The examined backport launcher defaults to two eight-H100 nodes, actor TP=2 / CP=1 / PP=1 / EP=8 / expert TP=1, with offloading. Its prompt and response defaults are 2,048 tokens each. That supplied configuration is not a 40k validation. The same launcher requires **CP=1 when R3 router replay is enabled**. [Pinned launcher](https://github.com/Phlip79/verl/blob/dc3421cf63fbfbf7aecb191bbca1e0fb0707e90d/examples/grpo_trainer/run_nemotron_3_5_lightning_30b_a3b_megatron.sh)
+
+Router replay records and reuses expert-routing decisions to reduce discrepancies between rollout and training computations. At 40k we must determine whether CP=1 fits, or validate a CP-compatible routing strategy. Simply disabling replay to allow CP changes numerical behavior and requires checking actor/rollout probability agreement and training stability.
+
+Consequently, Lightning has stronger evidence for useful model parallelism, but **CP support in Bridge does not imply every verl RL feature combination supports CP**. The cited recipes use PP=1; they are not proof that arbitrary pipeline layouts or PP combined with MTP work. Keep PP=1 initially.
+
+### Full-training approach on our hardware
+
+| Available hardware | Proposed Lightning plan and evidence limit |
+|---|---|
+| One node / 8 H100s | Attempt a reduced Megatron configuration with expert parallelism, BF16, recomputation, and offload as needed. TP=1 / EP=8 / CP=1 / PP=1 is a candidate to test, not a verified 40k configuration. Alternate generation and training. |
+| Two nodes total / 16 H100s | Prefer all 16 for initial full training. Reproduce the reported short-context verl setup first, then grow sequence length. The NVIDIA TP2/CP2/EP8 SFT recipe is a separate long-context starting point; reconcile CP with the selected RL routing path before combining them. |
+| Three nodes total / 24 H100s | Consider 16 training GPUs plus eight rollout GPUs after full-policy synchronization and throughput are measured. |
+
+My recommendation if the model is flexible is to prioritize a **Lightning + Megatron feasibility study**, particularly with two H100 nodes. It removes Gemma's unusual attention-head constraint and brings published hybrid/MoE training evidence. This is an engineering preference based on support and architecture, not a claim that it will beat Gemma's task accuracy or achieve a known training speed.
+
+Full-policy model/optimizer storage remains large. Eight H100s are a pilot target, not a guaranteed 40k training configuration. With two nodes, CP can potentially reduce per-sequence activation pressure in addition to distributing model states, provided the exact RL path supports it. Interconnect quality matters for both expert dispatch and CP communication.
+
+### Extra correctness checks and data choices
+
+- Preserve Mamba state resets between packed examples. Incorrect packing can leak information across training samples.
+- Track expert-load balance and router precision, plus actor/rollout log-probability differences. Start with the pinned reproduction's settings before tuning.
+- Treat multi-token prediction (MTP) training and speculative generation as separate choices. For a minimal baseline, ordinary generation avoids speculative plumbing; reproducing the cited validated recipe instead requires its exact MTP settings. Explicitly decide how auxiliary MTP weights are trained/preserved and exported. Do not silently freeze the main policy or substitute adapters.
+- Revalidate save/resume and model export, including experts, Mamba state-space parameters, and any MTP components. Support for training does not by itself prove checkpoint restoration.
+- Keep the proposed RULER-style retrieval, tracing, and aggregation pilot. Baseline and difficulty calibration must be rerun because the model and tokenizer changed. Keep necessary evidence distributed through the full 40k input and use independent held-out examples.
+- Lightning's open RL training blend and math recipes can inform reward formats, but do not assume they contain 40k input examples. Short math data with padding does not replace the long-context requirement.
+
+No Lightning weights have been downloaded and no Lightning training run has been launched for this comparison. Gemma remains the original target until the user chooses otherwise.
+
 ## Earlier environment setup
 
 At the user's request, `consensus` was checked out in a separate worktree at `/home/ubuntu/verl-fun/nl2sql-gspo-gemma4-consensus`; the VS Code worktree remained on `verl`. A Python 3.12.3 `.venv` was created there.
@@ -192,3 +265,4 @@ Detach with Ctrl+A, then D; stop the script with Ctrl+C. Use `screen -ls` to che
 - Identified CP/PP limitations in the examined Megatron Bridge Gemma 4 dense provider; these are implementation-specific.
 - Revised the starting plan to full-parameter FSDP2 with memory-efficient attention, checkpointing, and measured offloading requirements.
 - Authorized this single running Markdown document and ongoing commits/pushes to `origin/verl` for important discussion updates.
+- Added Nemotron 3.5 Lightning as an alternative: its hybrid/MoE architecture and 128-dimensional attention heads make Megatron more attractive, while full training-state memory remains substantial. Documented the separate evidence for Bridge CP training, large-scale NeMo RL, and draft verl integration, including the tested launcher’s R3/CP restriction and short-context defaults. No model switch has been decided.
