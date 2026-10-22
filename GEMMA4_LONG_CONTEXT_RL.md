@@ -1,410 +1,265 @@
-# Long-context full-parameter RL: Gemma 4 and Nemotron Lightning
+# Gemma 4 31B: incremental validation of CP=2 and FFPA for verl RL
 
-Last updated: 2026-10-08 (UTC).
+Updated: 2026-10-22 (America/New_York).
 
-This is the running record for this conversation on the `verl` branch. It records requirements, inspected facts, recommendations, and unresolved questions. Proposed configurations have not yet been benchmarked. No verl RL training run has been launched as part of this discussion.
+## Goal and current status
 
-## Current requirements and documentation workflow
+Use **`google/gemma-4-31B-it`**, context parallelism **CP=2**, and optionally **FFPA**, eventually for full-parameter NL2SQL RL in **verl**. First establish correct execution, memory scaling, and speed; implement the NL2SQL training workflow afterward. TRL/DeepSpeed ZeRO-3 work on `consensus` is prior work, not evidence that this verl configuration works.
 
-- Model: the previously downloaded Gemma 4 31B instruction-tuned checkpoint.
-- Alternative under evaluation: `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`. Comparing it does not constitute a decision to replace Gemma.
-- Research update: Gemma 4 31B CP exists in NVIDIA AutoModel and has NeMo RL functional coverage. The `CP=1` restriction discussed here is specific to Megatron Bridge's current dense provider. Evaluate that existing AutoModel path before deciding that Gemma requires a new CP implementation or a model switch; integration into our required verl workflow remains to be verified.
-- Framework: verl.
-- Training: **full-parameter RL of the language model; no LoRA or QLoRA**. The earlier LoRA recommendation is superseded by this explicit requirement. For text-only tasks, vision/audio components are outside the proposed training scope.
-- Context: approximately 40,000 tokens. The working assumption is about 40,960 input tokens plus a short response; the user has not yet confirmed whether the target instead means total sequence length or long generated responses.
-- Data: synthetic data or an appropriate existing dataset. General long-context reasoning versus continued NL2SQL specialization remains open.
-- Hardware: one existing H100 node; additional H100 nodes can be procured. Clarify whether “2 nodes later” means two total or two additional when planning procurement.
-- Keep the VS Code checkout on `verl`; use separate worktrees for other branches.
-- The user explicitly authorized creating this note, committing it, pushing it to `origin/verl`, and continuing to update, commit, and push this same file with important discussion findings and decisions. During continued work, maintain this file rather than creating separate discussion notes. This is an ongoing conversation workflow, not a scheduled background job.
+This document is a research-backed implementation plan. No benchmark, dependency installation, distributed run, or training run was performed for this update. Configuration fragments describe intended AutoModel behavior; they are not runnable verl recipes.
 
-## How the components fit together
+The recommended order is:
 
-| Component | Responsibility |
+1. Single-GPU attention and model forward tests, with and without FFPA.
+2. Real two-GPU CP=2 forward correctness and performance.
+3. Attention backward, model backward, and optimizer validation.
+4. Integrate the validated AutoModel path into verl.
+5. Validate one complete RL update, then add NL2SQL data/rewards.
+
+**CP=2 is the primary capability goal. FFPA is an optional optimization.** A correct FlexAttention CP=2 path is a useful result even if FFPA is unavailable or slower on the selected hardware.
+
+## Corrections to the earlier note
+
+| Earlier assumption | Current interpretation |
 |---|---|
-| verl | Runs the RL workflow: prompts, rollouts, rewards, advantages/loss, training updates, weight synchronization, evaluation, and checkpoints. |
-| GRPO / GSPO | Learning algorithms/objectives used within that workflow. They are independent of the choice of distributed training backend. |
-| FSDP2 | Shards model parameters, gradients, and optimizer state across training GPUs. Layers gather the parameters needed for computation. |
-| Megatron Core / Megatron-LM | Another training backend with distributed model computation and several parallelism strategies; actual availability depends on the specific model implementation. |
-| Megatron Bridge | Adapts supported Hugging Face architectures/checkpoints to Megatron and handles conversion. A model “provider” is the code that constructs that architecture for Megatron. |
-| vLLM / SGLang | Generation engines for producing candidate answers during rollouts. Generation kernels need not be the same as training kernels. |
+| The current host has eight H100s | This workspace currently exposes one NVIDIA RTX PRO 6000 Blackwell Server Edition, reporting 97,887 MiB total memory. Earlier eight-H100 observations belong to a previous environment. |
+| Gemma dense cannot use CP | That was a restriction of the examined Megatron Bridge provider. AutoModel has a Gemma-specific ring CP implementation; investigate that path first. |
+| Two nodes means 16 GPUs | GPUs per future node are unspecified. Parameterize the plan by GPUs per node; show both two total GPUs and sixteen total GPUs below. |
+| Linear attention memory means linear inference latency | Tiled attention can avoid quadratic score storage while global attention computation remains quadratic. Measure memory and latency independently. |
+| Setting `attn_implementation=ffpa` enables CP+FFPA | Direct HF FFPA is rejected with CP>1. AutoModel CP uses `sdpa` as the entry point and a separate full-attention backend setting. |
+| A generic verl CP or Ulysses flag enables Gemma ring CP | These are different integration paths. Correct model construction, batch sharding, masks, token mapping, and gradient normalization must all be established. |
+| A forward test establishes training support | Training also needs correct backward kernels, CP communication in backward, activation checkpointing, optimizer memory, and loss scaling. |
+| Nemotron is the preferred next step | Gemma 4 31B remains the chosen model. The earlier alternative-model investigation is deferred. |
 
-Typical cycle: question and context → candidate answers → reward function → RL loss → forward/backward and optimizer step → updated weights sent to the generator → repeat.
+The old checkpoint paths under `/home/ubuntu`, screen-session identifiers, branch/worktree setup, and historical PR-status tables are not current environment facts. Git history retains the earlier investigation. This roadmap supersedes its hardware and implementation recommendations.
 
-For NL2SQL, rewards can check whether generated SQL returns the expected results. For synthetic reasoning, rewards can compare the answer with a programmatically computed target.
+## What CP and FFPA each do
 
-References: [verl](https://github.com/verl-project/verl), [engine workers](https://verl.readthedocs.io/en/latest/workers/engine_workers.html), [Megatron Bridge](https://github.com/NVIDIA-NeMo/Megatron-Bridge).
+**CP=2 splits the sequence computation across two GPU ranks.** For an approximately 40k-token sequence, each rank processes roughly half the token positions and exchanges attention information with its partner. Both halves still participate in the same example. The implementation determines the actual layout; do not manually assume that arbitrary token slicing is sufficient.
 
-## Inspected hardware and model
+**FSDP2 shards model training state.** It addresses parameter, gradient, and optimizer storage. CP addresses sequence-dependent work and activations. They complement each other, but their process groups and memory effects must be inspected rather than multiplied blindly.
 
-The current host has eight NVIDIA H100 80GB HBM3 GPUs. `nvidia-smi topo -m` reported NV18 connectivity between each pair. The host reported approximately 2 TiB of system RAM. GPU memory is distributed across devices; it is not one automatically pooled allocation.
+**FFPA accelerates eligible attention operations.** AutoModel uses its CuTeDSL kernels for eligible 512-dimensional full-attention heads. Local sliding layers use a separate backend. The model's attention semantics remain the same.
 
-The downloaded checkpoint was found at:
+The published [Gemma checkpoint configuration](https://huggingface.co/google/gemma-4-31B-it/blob/main/config.json) specifies 60 text layers: 50 sliding layers with head dimension 256 and a 1,024-token window, plus 10 full-attention layers with head dimension 512. It has 32 query heads, 16 local KV heads, four global KV heads, a 262,144-token configured maximum, and final-logit softcapping of 30. Preserve those settings, attention scaling, normalization, and positional embeddings.
+
+### What “linear memory” should mean in our tests
+
+For fixed batch size, heads, and dtype, an efficient full-attention kernel should avoid storing an `S × S` attention-score matrix. Its sequence-dependent working memory can scale approximately linearly with sequence length `S`. Full causal attention still performs approximately quadratic arithmetic. Fixed-window sliding attention can have approximately linear arithmetic when its implementation exploits the window.
+
+For perspective, one hypothetical BF16 score tensor at 40,960 tokens and 32 heads would occupy:
 
 ```text
-/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31b-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475
+1 × 32 × 40,960 × 40,960 × 2 bytes = 100 GiB
 ```
 
-Both safetensors shards resolve to existing cache blobs. The index reports 62,546,177,752 weight bytes, approximately 62.5 decimal GB. The cached configuration has no quantization configuration. The repository's `gemma-4-31b-it-local` directory in the consensus worktree contains configuration/tokenizer files; the actual weight files were verified in the cache above.
+Avoiding that allocation is a key success criterion. CP=2 does not remove the need for a memory-efficient kernel.
 
-The inspected model configuration specifies:
+Whole-model memory includes fixed weights, logits, masks, temporary copies, communication buffers, and cached allocations. Training adds activations and optimizer state. Therefore, total memory need not double when context doubles, and CP=2 need not halve the total peak.
 
-| Property | Value |
-|---|---|
-| Architecture | `Gemma4ForConditionalGeneration`, dense text backbone |
-| Text layers | 60 |
-| Sliding-attention layers | 50, head dimension 256 |
-| Global-attention layers | 10, head dimension 512 |
-| Attention pattern | Five sliding layers followed by one global layer |
-| Sliding window | 1,024 tokens |
-| Query heads | 32 |
-| Local / global KV heads | 16 / 4 |
-| Configured maximum positions | 262,144 |
-| Vocabulary | 262,144 |
-| Final logit softcapping | 30.0 |
+At this model's vocabulary size, BF16 logits for all 40,960 positions alone occupy 20 GiB. Use last-position logits for generation-style forward tests where supported, and separately test response log probabilities for training. Record whether logits are materialized; otherwise they can hide attention-memory improvements.
 
-40k tokens is within the configured context window. That alone establishes neither training feasibility nor task accuracy at that length.
+## What the upstream evidence establishes
 
-The existing consensus code uses TRL/DeepSpeed and SDPA paths. It is not evidence of an already working verl 40k configuration. The `verl` branch was initially empty before this note.
+The [requested discussion #2928](https://github.com/NVIDIA-NeMo/Automodel/discussions/2928) explains two distinct routes:
 
-## Attention at 40k tokens
+- Direct HF FFPA: CP=1, no packed sequences; eligible global layers use FFPA and sliding layers use FlexAttention.
+- Ring CP: initialize with SDPA and select FFPA through `text_config.cp_full_attn_backend`; eligible full-attention chunks use FFPA while other chunks retain the ring fallback.
 
-The usual FlashAttention-2 training path cannot handle this model's 512-dimensional global heads. The local layers have 256-dimensional heads, so the limitation does not apply identically to every layer. Kernel capabilities vary by version, GPU, and forward/backward mode; inference support does not establish training support.
+Its published H100 results report FFPA gains over Flex of about 17–24% for CP1 at 4k/8k and about 11% for packed CP8 at 16k. These are upstream results, not forecasts for our GPU or CP2. The discussion also identifies SDPA fallback to math and allocator pressure as reasons a comparison can be misleading.
 
-The first training candidate is **PyTorch FlexAttention**, preserving the model's global causal attention and local sliding windows. A second candidate is hybrid attention: FlashAttention-2 for local layers and a verified memory-efficient training kernel for global layers. Axolotl documents such a hybrid implementation and a 32k Gemma 4 31B FSDP2 LoRA example. That example is implementation evidence, not a full-parameter verl RL benchmark.
+Current source confirms the routing in [FFPA integration](https://github.com/NVIDIA-NeMo/Automodel/blob/65866fbce209938cd153f2bc26f01fa0d34cc61e/nemo_automodel/components/attention/ffpa_attention.py), [Gemma model setup](https://github.com/NVIDIA-NeMo/Automodel/blob/65866fbce209938cd153f2bc26f01fa0d34cc61e/nemo_automodel/components/models/gemma4_moe/model.py), and [ring attention](https://github.com/NVIDIA-NeMo/Automodel/blob/65866fbce209938cd153f2bc26f01fa0d34cc61e/nemo_automodel/components/models/gemma4_moe/cp_attention.py). The shared implementation lives under `gemma4_moe` even though our target is dense.
 
-Selecting `attn_implementation="sdpa"` does not by itself prove memory efficiency. SDPA dispatches to a backend, and the actual forward and backward kernels must be inspected. Avoid a dense attention-score allocation:
+The [FFPA project](https://github.com/xlite-dev/ffpa-attn/blob/b11d103e4adeed630f77d2cc84038100cd5ebc2c/README.md) lists CuTeDSL forward/backward support for large heads including SM120-class devices. That makes our GPU a candidate. Runtime tests must still establish support for the exact BF16 D512 dense and varlen operations that AutoModel invokes. B200/SM100 and RTX PRO/SM120 have different kernel paths; published B200 numbers do not transfer directly. FP8/FP4 forward-only benchmarks are outside this BF16 training comparison.
 
-```text
-1 sample × 32 heads × 40,960² positions × 2 BF16 bytes
-= 107,374,182,400 bytes = 100 GiB
+[NeMo RL's Gemma guide](https://docs.nvidia.com/nemo/rl/nightly/guides/models/gemma/gemma4.html) lists 31B CP1/CP2 as functionally ready, with short-run coverage. Its current [base recipe](https://github.com/NVIDIA-NeMo/RL/blob/main/examples/configs/recipes/llm/dapo-gemma4-31b-it-4n8g-automodel.yaml) uses four eight-GPU nodes and a 4,096-token total-sequence limit; the [CP2 override](https://github.com/NVIDIA-NeMo/RL/blob/main/examples/configs/recipes/llm/dapo-gemma4-31b-it-4n8g-automodel-cp2.yaml) changes CP. This supports the integration approach, not a claim that 40k full-parameter RL fits our future cluster. NeMo RL is a reference implementation; verl remains the requested framework.
+
+## Backend combinations to test
+
+| Case | CP | HF attention entry point | Global attention | Sliding attention | Purpose |
+|---|---:|---|---|---|---|
+| A | 1 | `flex_attention` | Flex | Flex | Main efficient baseline |
+| B | 1 | `ffpa` | Eligible calls use FFPA | Flex | Single-GPU optimization candidate |
+| C | 2 | `sdpa` | Ring Flex | Ring Flex | Primary CP capability baseline |
+| D | 2 | `sdpa` | Ring FFPA when eligible | Ring Flex | CP optimization candidate |
+| E | 1 | `sdpa` | Profile actual dispatch | Profile actual dispatch | Short-context diagnostic |
+
+For C/D, hold the sliding backend at `flex` to isolate the global-kernel change. Current source has additional options, but they can be tested later. Never label a run “FFPA” solely from its configuration: record executed kernels and fallback reasons.
+
+Conceptual AutoModel settings for **C**:
+
+```yaml
+model:
+  pretrained_model_name_or_path: google/gemma-4-31B-it
+  torch_dtype: torch.bfloat16
+  attn_implementation: sdpa
+  text_config:
+    use_cache: false
+    cp_full_attn_backend: flex
+    cp_sliding_attn_backend: flex
+distributed:
+  strategy: fsdp2
+  tp_size: 1
+  cp_size: 2
+  activation_checkpointing: true
 ```
 
-That is one hypothetical dense score tensor for one layer, before gradients and other intermediates. Tiled memory-efficient attention avoids materializing it, although global attention still has quadratic compute cost.
+For **D**, change only `text_config.cp_full_attn_backend` to `ffpa`. Exact loader arguments and schema depend on the pinned AutoModel revision and eventual verl adapter. For forward-only tests, disable activation checkpointing and omit optimizer construction.
 
-FlexAttention needs a real H100 forward/backward test with the 512-dimensional global heads. Compilation settings, block sizes, masks, and grouped-query attention can affect feasibility and performance. Preserve Gemma's attention scaling, normalization, positional embeddings, and sliding-window semantics.
+For **B**, use direct `attn_implementation: ffpa`, CP1, and unpacked examples. Direct FFPA's eligibility includes BF16/FP16, D512, zero attention dropout, supported masks/scaling, and available kernels. Unsupported calls may fall back. The CP FFPA gate also needs document metadata supplied by the model's CP batch preparation, including synthesized IDs for an unpacked single document.
 
-References: [Axolotl Gemma 4 guidance](https://docs.axolotl.ai/docs/models/gemma4.html), [32k example](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/gemma4/31b-lora-fsdp.yaml), [FlexAttention API](https://docs.pytorch.org/docs/stable/nn.attention.flex_attention.html).
+## Stage 0 — establish the reproducible environment
 
-## CP=1 and PP=1 in simple terms
+Before benchmarking:
 
-The numbers specify how many cooperating partitions a parallelism method uses. A value of one means that method is not splitting the work.
+1. Record GPU model, compute capability, driver, usable memory, topology, CPU RAM, CUDA runtime, and available disk. Do not install over the existing working environment; create an isolated benchmark environment.
+2. Pin model revision and tokenizer/chat template. Use the exact case-sensitive model ID above or a verified local snapshot. Keep BF16 weights and computation for the primary comparison.
+3. Resolve a compatible PyTorch/Transformers/AutoModel/FFPA stack and save a lock/container manifest. Verify dense and varlen FFPA forward/backward imports and execution on the actual GPU.
+4. Log the resolved attention configuration, model class, trainable parameter policy, and kernel fallbacks. For text-only full training, train all language-model weights including embeddings/tied output weights; unused vision/audio components can be frozen.
+5. Create deterministic token inputs and a small realistic text set. Define length after tokenization/chat templating. Start with one unpacked example, batch size one, no padding.
 
-- **Context parallelism (CP)** divides the tokens of one sequence among GPUs. For example, CP=4 could assign about 10k of a 40k sequence to each of four ranks. They exchange the information needed for correct attention across the complete sequence. CP=1 means there is no division along the sequence dimension.
-- **Pipeline parallelism (PP)** divides model layers into stages. For example, PP=2 could put layers 1–30 on one GPU group and layers 31–60 on another. PP=1 means there is one pipeline stage.
-- **Tensor parallelism (TP)** divides computations within a layer across GPUs. It is distinct from both methods above.
-- **Data parallelism (DP)** processes different examples on different replicas and combines their gradients. FSDP additionally shards model states; it does not automatically divide each example's sequence computation.
+Source snapshots inspected on this date, **not a tested compatible installation**:
 
-The examined NVIDIA Megatron Bridge `Gemma4DenseProvider.provide()` explicitly raises errors for PP other than one and CP other than one. Its CP explanation points to a local attention implementation without context-parallel support. These guards concern that Gemma 4 dense integration; they are not a fundamental limitation of Gemma's architecture or of Megatron as a whole. Other implementations or future versions may differ.
-
-In particular, **CP=1 and PP=1 do not mean only one GPU can be used**. Other parallelism may still distribute work, subject to model support. They mean that this provider cannot currently use two specific ways of spreading one large training example across devices. Adding GPUs does not remove those implementation checks.
-
-Consequence: do not assume generic Megatron CP/PP configuration recipes will work for this checkpoint. FSDP2 is the first integration candidate, with AutoModel's existing model-specific CP path now a priority to investigate. Reconsider Megatron if model support improves or a custom integration is justified by measurements.
-
-Source checked during this discussion: [Gemma 4 provider](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/src/megatron/bridge/models/gemma/gemma4_provider.py). This link tracks upstream main; recheck and pin a commit before implementation.
-
-## Investigation: why Megatron Bridge restricts dense Gemma 4 to CP=1
-
-This follow-up examined upstream source, the original dense-model contribution, the explicit CP guard change, developer issue comments, two pending CP implementations, their Transformer Engine dependency, and working AutoModel/NeMo RL alternatives. Repository/API states below were checked during this discussion on 2026-10-07 America/New_York. Upstream main and open-PR states can change.
-
-### Direct cause: the dense provider selects an attention implementation without CP
-
-The construction path is:
-
-```text
-Gemma4DenseProvider
-  → get_gemma4_layer_spec()
-  → LocalSpecProvider
-  → Megatron Core's non-TE DotProductAttention
-  → requires context_parallel_size == 1
-```
-
-The dense layer spec explicitly selects the local backend. The resulting attention implementation checks CP size and does not implement the distributed exchange of attention information. Its forward code constructs attention scores explicitly. This confirms an implementation constraint, not a limit on how many tokens the pretrained architecture can understand. Sources: [dense layer spec](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/src/megatron/bridge/models/gemma/modeling_gemma4.py), [Megatron Core local attention](https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/transformer/dot_product_attention.py).
-
-Bridge PR #5895 added the early error, merged September 2, 2026, as commit `d69c7c4292c062c83648a92349a6bf1d87b3f783`. Before that change, CP already failed deeper in layer construction. The new guard made the failure understandable rather than introducing a new capability restriction. Its author encountered this while attempting dense Gemma 4 GRPO with CP2. [Guard PR and rationale](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/5895)
-
-Plain-language example: splitting 40k tokens into two 20k pieces is only the allocation step. Tokens on one GPU may still need information from the other GPU, and backward must return the appropriate gradients. The local attention implementation lacks that communication protocol. Removing its error checks would not add the missing operations.
-
-### Second obstacle: a compatible distributed attention backend for 512-dimensional heads
-
-Simply choosing Transformer Engine does not complete the repair. Draft Bridge PR #6120 explains that the released TE path it targets has no suitable backend for symmetric 512-dimensional heads together with CP. It depends on TE PR #3527; without that dependency, model construction can succeed but attention subsequently fails. This corroborates the head-dimension concern, while keeping the immediate cause distinct: the current dense provider chooses the local path in the first place. [Bridge TE integration proposal](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/6120)
-
-TE PR #3527 describes the backend gap: FA2/FA3 kernels stop at 256; the applicable C++ cuDNN fused path also caps at 256; the unfused implementation accepts 512 but cannot run CP. Its proposed FROST backend uses cuDNN's Python/CuTe-DSL path. **That proposal targets SM100/SM103 Blackwell, not our SM90 H100s**, and was still unmerged when checked. It also states that its previous numerical tests precede a dispatch refactor and require rerunning on the current head. Treat this as evidence about the missing integration, not an available H100 solution. [TE proposal and hardware scope](https://github.com/NVIDIA/TransformerEngine/pull/3527)
-
-The official [FlashAttention README](https://github.com/Dao-AILab/flash-attention) independently documents the FA2 head-size limit. These are version/backend constraints, not a claim that no possible attention algorithm can process 512-dimensional heads. FlexAttention and FFPA offer alternative implementations.
-
-### Why it is still unfinished: prioritization and correctness work
-
-In Bridge issue #4663, NVIDIA contributors explained in July that limited engineering bandwidth and different model priorities left Gemma 4 outside their current performance-optimization work; they welcomed a contribution with numerical, distributed, and performance validation. This is explicit project-priority evidence, not speculation about the model's theoretical suitability. [Developer response](https://github.com/NVIDIA-NeMo/Megatron-Bridge/issues/4663#issuecomment-4898117463)
-
-There are also real correctness problems to solve:
-
-- Local and global layers use different dimensions, head counts, and attention windows. Their behavior must survive backend replacement.
-- CP requires correct global token positions, cross-GPU K/V exchange, softmax normalization, and backward gradient accumulation.
-- Packed examples require document boundaries to remain isolated after distributed rearrangement; successful single-document tests are insufficient.
-- Smaller kernel tests must be followed by full-model loss/logit/gradient comparisons and checkpoint checks.
-
-Draft PR #6213 implements a hybrid approach: TE for supported sliding-layer layouts and differentiable K/V gathering with compiled FlexAttention for global layers. It explicitly handles document IDs, padding, and rank-major packed layouts. The author reports CP2/CP4 attention-level gradient checks, but full 31B parity, full-model performance, and the pinned H100 validation are still listed as unfinished. [Hybrid CP proposal and validation limits](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/6213)
-
-Do not attribute this 31B restriction to cross-layer KV sharing in the smaller E-series: our inspected 31B config has `num_kv_shared_layers=0` and no per-layer input embeddings. Those features complicate other Gemma variants but are not the demonstrated cause here. CP and PP are separate implementations; this investigation does not establish the reason for the separate PP=1 guard.
-
-### Development status and working alternatives
-
-| Evidence | Status at inspection | What it establishes |
-|---|---|---|
-| [Bridge #3885](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/3885) | Merged May 23 | Initially added limited dense Gemma support; support for loading a model was not a promise of every parallelism feature. |
-| [Bridge #5895](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/5895) | Merged September 2 | Clear error for an already unsupported CP path. |
-| [Bridge #6120](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/6120) | Open draft, not merged | TE wiring proposal dependent on an additional backend change; reported reduced-model B200 tests. |
-| [TE #3527](https://github.com/NVIDIA/TransformerEngine/pull/3527) | Open, not merged | Proposed Blackwell-specific D512 backend, not an H100 fix. |
-| [Bridge #6213](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/6213) | Open draft, not merged | Alternative hybrid CP implementation with attention-level tests and remaining full-model validation. |
-| [AutoModel #2592](https://github.com/NVIDIA-NeMo/Automodel/pull/2592) | Merged June 17 | Dense Gemma 4 31B CP through model-specific ring FlexAttention; reports CP parity and a single-node 16k CP8 SFT run. |
-| [AutoModel #2436](https://github.com/NVIDIA-NeMo/Automodel/pull/2436) | Merged June 30 | Optional D512 FFPA kernels with forward/backward and a CP ring integration. |
-
-**Gemma 4 31B can use context parallelism in another implementation today.** AutoModel's ring path exchanges attention data and applies model-specific masks around compiled FlexAttention; it can optionally dispatch eligible global chunks to FFPA. This is a concrete alternative to writing a new Bridge backend. [AutoModel ring implementation](https://github.com/NVIDIA-NeMo/Automodel/blob/main/nemo_automodel/components/models/gemma4_moe/cp_attention.py)
-
-For the documented FFPA route, direct HF `attn_implementation: ffpa` is restricted to non-CP/non-packed execution. Its CP configuration instead uses the model's ring interface with `attn_implementation: sdpa` and `text_config.cp_full_attn_backend: ffpa`. The same word `sdpa` therefore does not imply the same executed kernel across these integrations. Inspect dispatch and profile it. [AutoModel FFPA explanation](https://github.com/NVIDIA-NeMo/Automodel/discussions/2928)
-
-### What this changes for our 40k full-parameter RL plan
-
-NeMo RL now documents Gemma 4 31B CP1/CP2 functional training comparisons with AutoModel. This is evidence that CP also works in an RL workflow, not only SFT. Its guide describes 100-step comparisons and labels support functionally ready rather than claiming broad long-run convergence. [NeMo RL Gemma guide](https://docs.nvidia.com/nemo/rl/nightly/guides/models/gemma/gemma4.html)
-
-However, the associated [base recipe](https://github.com/NVIDIA-NeMo/RL/blob/main/examples/configs/recipes/llm/dapo-gemma4-31b-it-4n8g-fsdp2-automodel.yaml) uses four eight-GPU nodes and a 4,096-token total-sequence limit. The [CP2 override](https://github.com/NVIDIA-NeMo/RL/blob/main/examples/configs/recipes/llm/dapo-gemma4-31b-it-4n8g-fsdp2cp2-automodel.yaml) retains that limit. Those runs do not validate 40k RL on our eight or sixteen H100s.
-
-AutoModel also documents 64k CP8 SFT, but that [long-context recipe](https://github.com/NVIDIA-NeMo/Automodel/blob/main/examples/long_context_validation/gemma4_31B/README.md) uses the base checkpoint on 16 nodes / 128 GPUs. It supports architectural feasibility, not a small-cluster memory claim.
-
-Revised next investigation: evaluate **AutoModel FSDP2 plus its Gemma-specific CP kernels** for the requested verl workflow before attempting a new Megatron patch or deciding to switch models. verl has an [AutoModel engine](https://github.com/verl-project/verl/blob/main/docs/workers/automodel_workers.rst), but its documentation/examples inspected here emphasize SFT and do not establish Gemma-specific CP integration or our end-to-end RL path. Check the exact versions, CP batch/mask hooks, response log probabilities, full-policy weight transfer to vLLM, and checkpoint restore. Porting may be required. NeMo RL is the demonstrated framework alternative if the user later relaxes the verl requirement.
-
-This qualifies the earlier preference for Lightning: Lightning remains attractive for its architecture and Megatron support, but **Gemma's lack of CP is not universal**, and AutoModel provides existing work we should assess. We have not changed frameworks, models, runtime configuration, or procured hardware during this research.
-
-## Revised approach: full-parameter training
-
-The original suggestion to begin with LoRA has been rejected by the user. The following replaces it.
-
-### One node: eight H100s
-
-Use verl with FSDP2, BF16 computation, full language-model parameter updates, and a validated memory-efficient attention backend. Start with all eight GPUs available for training and alternate generation/training phases using supported sleep/offload behavior. Begin with one sequence per GPU per training microbatch and accumulate gradients for the desired effective batch.
-
-Required profiling candidates:
-
-1. Layer-level FSDP sharding and gradient checkpointing/recomputation.
-2. Supported optimizer/model-state CPU offload if model states leave inadequate GPU headroom. Verify the exact FSDP2/verl offload semantics in the pinned stack rather than assuming every offload flag is independent.
-3. Activation offload or compatible MLP tiling if activations remain the bottleneck. System RAM is abundant, but transfers and CPU optimization may be slow.
-4. Limited rollout concurrency and explicit memory release between phases. Test vLLM TP=4 as a starting generation layout, not a settled optimal configuration.
-5. Efficient response log-probability computation without keeping full-vocabulary logits for every prompt position. At 40,960 positions, a single BF16 logits tensor with this vocabulary is 20 GiB; FP32 is 40 GiB. Preserve final logit softcapping and correct response-position indexing.
-
-A conventional mixed-precision Adam budget can be about 16 bytes per trainable parameter: BF16 weights and gradients, FP32 master weights, and two FP32 moments. For 31 billion parameters that is roughly 496 decimal GB, or 462 GiB, before activations, temporary layer gathers, communication buffers, rollout state, and any reference model. Evenly sharded eight ways, that illustrative budget is about 58 GiB per GPU. Actual optimizer/dtype choices change this estimate.
-
-This makes one-node full training a plausible but unproven engineering target, likely requiring offload and careful memory management at 40k. Aggregate GPU capacity alone is not a feasibility test. No throughput estimate is justified yet.
-
-Start with GRPO or GSPO and four responses per prompt. These approaches avoid a separate learned critic. A reference policy is still needed if the chosen KL objective requires one; full tuning cannot recover a frozen base reference by disabling an adapter. Budget reference weights/offload and reference log-probability passes explicitly, or make a deliberate decision about a no-reference objective. Keep generated answers short initially, around 512–1,024 tokens.
-
-Sequence parallelism may ultimately be needed. The examined verl generic Ulysses path wraps FlashAttention calls. Do not assume that setting Ulysses size above one will automatically parallelize FlexAttention or correctly support Gemma's heterogeneous heads. That combination requires integration and correctness testing.
-
-References: [verl configuration](https://verl.readthedocs.io/en/latest/examples/config.html), [verl attention/sequence-parallel implementation](https://github.com/verl-project/verl/blob/main/verl/models/transformers/monkey_patch.py).
-
-### Additional nodes
-
-| Hardware, assuming eight H100s per node | Full-training planning option |
+| Project | Inspected revision |
 |---|---|
-| One node / 8 GPUs | All eight train; generation and training alternate. Profile offload, attention, and activations. |
-| Two nodes total / 16 GPUs | If model-state memory is the problem, shard training across all 16 and alternate rollout phases. If training already fits comfortably on eight and generation is limiting, dedicate the second node to rollout. |
-| Three nodes total / 24 GPUs | Consider 16 training GPUs plus eight rollout GPUs, subject to measured bottlenecks and interconnect performance. |
+| AutoModel | `65866fbce209938cd153f2bc26f01fa0d34cc61e` |
+| verl | `dc709afb7a74fd2645640a4e5f2fdf40166b4fbb` |
+| FFPA | `b11d103e4adeed630f77d2cc84038100cd5ebc2c` |
 
-The earlier suggestion to dedicate a second node to rollout was made for LoRA. It is conditional for full training: using all 16 for training may be more valuable. With the illustrative 496 GB state budget, ideal 16-way sharding reduces the state share to about 29 GiB per GPU. It does not automatically reduce the activation/attention footprint of one sequence.
+AutoModel's inspected [dependency manifest](https://github.com/NVIDIA-NeMo/Automodel/blob/65866fbce209938cd153f2bc26f01fa0d34cc61e/pyproject.toml) pins Transformers 5.18.0 and its FFPA extra specifies `ffpa-attn>=0.2.4` plus `nvidia-cutlass-dsl==4.6.2`. These are source constraints, not instructions to combine independently latest packages. Resolve the full dependency set before choosing the runtime pin.
 
-Check cross-node InfiniBand/RoCE bandwidth and latency before procurement. Cross-node FSDP communication and full-policy weight synchronization can be substantial. Start with synchronous policy updates; asynchronous rollout overlap introduces policy staleness and should be a separate optimization. Buying more nodes cannot fix an unsupported kernel or provider feature.
+**Exit gate:** short BF16 Flex execution works; FFPA either executes the required operations or has a documented blocker. FFPA failure does not prevent the Flex CP track.
 
-## Proposed data and rewards
+## Stage 1 — single-GPU forward latency and memory
 
-The first general-purpose candidate is freshly generated **RULER-style synthetic data**, using configurable long-context tasks rather than training on a fixed benchmark test split.
+This is the first implementation milestone. It establishes local kernel behavior before distributed complexity.
 
-| Task | Training behavior | Verifiable reward |
-|---|---|---|
-| Multi-key retrieval | Retrieve several relevant records spread across the input | Exact set match |
-| Multi-hop tracing | Follow references between distant records | Exact final answer |
-| Aggregation | Count/combine information across many records | Exact numeric result |
+### 1A. Attention-only tests
 
-Generate a few thousand pilot examples; measure baseline performance before choosing difficulty. Adjust difficulty so groups contain a useful mix of successful and unsuccessful answers. Identical rewards within a group give little or no relative-advantage learning signal.
+Use model-shaped Q/K/V for both layer types: D512 with 32/4 query/KV heads for full attention, and D256 with 32/16 heads plus the 1,024-token window for sliding attention. Include actual model scaling and causal masks.
 
-Measure length with Gemma's tokenizer after applying the chat template. Put necessary evidence at varied positions across roughly 40k tokens. Padding an otherwise short task with irrelevant text is not sufficient evidence of useful long-context reasoning. Keep evaluation seeds, entities, and templates separate. Evaluate at 8k, 16k, 32k, and 40k to track both long-context gains and shorter-context regressions.
+At short lengths, compare outputs against a trusted reference before measuring speed. Add boundary cases around 1,024 tokens, padding, unequal lengths, and eventually packed documents. Keep eager/dense reference calculations at small lengths.
 
-Use a separate realistic evaluation such as LongBench to test transfer. Synthetic task improvements alone do not establish broader ability.
+Sweep **1,024 → 2,048 → 4,096 → 8,192 → 16,384 → 32,768 → 40,960** tokens, stopping on OOM or unsupported execution. Compare Flex and FFPA global attention. Profile SDPA only at safe lengths first; investigate any math fallback before increasing length.
 
-For NL2SQL specialization, an alternative is large schema catalogs and documentation with relevant information distributed across the context. Reward executable SQL using multiple database instances where possible, reducing accidental equivalence on one instance. The target task choice remains open.
+### 1B. Full-model forward without a KV cache
 
-Sources: [RULER generators and tasks](https://github.com/NVIDIA/RULER), [LongBench](https://github.com/THUDM/LongBench).
+Run A/B with identical tokens, batch size, dtype, output selection, and mask semantics, using eval mode and no gradients, `use_cache=false`. Measure the complete model forward and separately identify attention cost. This is the closest initial probe of the forward computation used by training/logprob evaluation.
 
-## Implementation milestones and open questions
+Load BF16 weights once per test process. A 31B checkpoint consumes roughly 58 GiB for weights alone, so full-model 40k execution on the current card is a measurement target, not an assumed fit. If it fails, retain the attention-only results and report the first failing model length and allocation category.
 
-1. Pin compatible verl, Transformers, PyTorch, vLLM, and attention-kernel versions; identify any required model patches. General framework support is not proof of this exact combination.
-2. Validate attention outputs and gradients at short lengths against a trusted baseline, then test global/local kernels at 40k on H100.
-3. Validate full-model loading and sensible generation before training; check trainer/generator log-probability agreement and weight synchronization.
-4. Run full-parameter forward/backward/optimizer smoke tests at increasing lengths: 8k → 16k → 32k → 40k. These are engineering checks; the intended training target remains 40k.
-5. Complete one end-to-end RL update at 40k: generation → reward → policy/reference log probabilities as required → backward → optimizer step → rollout weight synchronization → fresh generation.
-6. Record peak memory and time separately for each phase, numerical stability, reward distribution, and validation accuracy. Test checkpoint save/resume before a long run.
-7. Use those measurements to choose offloading, node count, and GPU placement; do not procure another node based only on parameter-count arithmetic.
+### 1C. Cached generation as a separate experiment
 
-Unresolved: meaning of the 40k requirement, general reasoning versus SQL, final algorithm and KL/reference choice, supported FlexAttention/sequence-parallel integration, and additional-node interconnect. No claim of a working 40k full-parameter training configuration has been made.
+After 1B, measure prompt prefill plus a fixed short decode, for example 128 tokens, with `use_cache=true`. Report prefill/TTFT, decode milliseconds per token, and KV-cache memory separately. Ensure the selected backend supports cached unequal query/key lengths. Use fixed-length decoding or report actual generated lengths if EOS ends early.
 
-## Alternative: Nemotron 3.5 Lightning
+Later repeat generation in the chosen rollout engine. Its serving kernels and TP layout can differ from AutoModel; a vLLM result does not validate the trainer's FFPA or CP implementation.
 
-The concrete comparison target is **`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`**. NVIDIA identifies the BF16 release as the customization/post-training checkpoint. The requirement remains full-parameter RL, without adapters. NVFP4 serving recipes and single-GPU inference claims are not training-memory estimates.
+### Measurement protocol
 
-### What changes architecturally
+- Warm up each backend/shape until compilation and allocation settle; start with five warmups and twenty measured repetitions, increasing only if needed. Record cold compilation time separately.
+- Synchronize CUDA at timing boundaries. Record model-only device time and end-to-end wall time, including mask construction where applicable. Keep profiling separate from timed repetitions.
+- After warmup, release previous outputs, record live allocated/reserved memory, reset peak counters, run the measured operation, and record peak allocated/reserved memory plus device-level usage. Use fresh processes for clean backend/length comparisons; also retain cold-start peak memory.
+- Report incremental peak allocated memory above the live pre-forward baseline. Keep allocator configuration fixed and log allocation retries/OOMs. Reserved memory is not live-tensor memory.
+- Save median and p95 latency, tokens/s, numerical error, dispatch evidence, and failures. Use actual non-padding tokens in throughput calculations.
 
-| Property | Gemma 4 31B | Nemotron 3.5 Lightning |
-|---|---|---|
-| Main architecture | Dense transformer with local/global attention | Hybrid Mamba-2, mixture-of-experts (MoE), and attention |
-| Advertised parameter scale | About 31B dense | About 30B total, 3B active per token |
-| Attention head dimension | 256 local / 512 global | 128 for attention; Mamba has separate dimensions |
-| Attention structure | 50 sliding and 10 global layers | Six attention blocks in the 52-block main stack; other blocks are Mamba or MoE |
-| Vocabulary | 262,144 | 131,072 |
-| First training backend to investigate | FSDP2 with a compatible attention path | Megatron via a pinned Lightning-compatible verl integration |
+Fit the incremental memory trend to `a + b*S`, examine doubling-length increments and residuals, and compare with a quadratic trend. A fixed weight offset can conceal growth in total memory. Several lengths plus a profiler trace are needed; one ratio does not establish asymptotic complexity. Compilation, mask construction, and logits must be accounted for separately.
 
-The inspected Lightning config has 128 routed experts, six selected per token, and one shared expert. A router chooses a subset of expert networks for each token. Mamba blocks maintain and transform sequence state rather than building a full token-to-token attention matrix. These differences give a reason to expect lower computation for many workloads, but do not establish a speedup factor on our machine. Some global attention remains, as do activation and communication costs.
+**Exit gate:** output parity passes at short lengths, dispatched kernels are known, and the memory curve shows no unexplained quadratic score/mask allocation. Report speedup or slowdown relative to Flex at each length; no speedup is guaranteed.
 
-Gemma's specific 512-dimensional-head obstacle is absent. A supported Transformer Engine fused/FlashAttention path is the first candidate for Lightning's attention blocks, alongside optimized Mamba and MoE kernels. Every part of the hybrid model still needs a compatible backward pass; a generic transformer attention patch is insufficient.
+## Stage 2 — CP=2 forward on two nodes
 
-The model card advertises up to one million tokens; the inspected HF config defaults `max_position_embeddings` to 262,144. Neither number proves training feasibility. Our 40k target is below both. Regenerate/tokenize datasets using Lightning's own tokenizer and native chat template, including an explicit thinking-mode choice.
+Design the future launcher around `NNODES=2`, `GPUS_PER_NODE=G`, `NODE_RANK`, rendezvous address/port, CP size, backend, and sequence length. No launcher is implemented yet.
 
-Sources: [BF16 model card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16), [configuration](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16/blob/main/config.json), [native template guidance](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/examples/models/nemotron/nemotron_3/lightning/README.md).
+| Future allocation | World size | With TP=PP=1 and CP=2 | Implication |
+|---|---:|---|---|
+| Two nodes × one GPU | 2 | One context-parallel pair | Tests cross-node CP; full training likely needs substantial offload/state-memory changes. |
+| Two nodes × eight GPUs | 16 | Eight logical data-parallel groups, each with a CP pair | Candidate full-training allocation; verify actual FSDP sharding groups in the pinned mesh. |
 
-### Active parameters reduce computation, not total training-state storage
+CP degree counts ranks, not nodes. With multiple GPUs per node, keep CP partners on fast intra-node links initially, and use both nodes for the wider training mesh. Test cross-node CP placement separately. With one GPU per node the pair necessarily communicates over the network. Print group membership and GPU placement; never infer them from world size alone.
 
-“3B active” does not mean a 3B model's optimizer-memory requirement. Full tuning retains all expert weights and their training state; different tokens select different experts. Full-parameter training makes the policy parameters trainable, although an individual token only exercises its routed subset.
+First validate rendezvous/NCCL collectives and measure inter-node bandwidth. One physical GPU cannot provide a meaningful real CP2 correctness or speed result; two processes on that card are not a substitute.
 
-At the same illustrative 16 bytes per parameter used above, 30B parameters imply about 480 decimal GB of state, not 48 GB. NVIDIA's conversion verification reports approximately 32.9B checkpoint parameters including auxiliary components; budgeting all of those at 16 bytes would be about 527 GB. Actual trainable components, precision, optimizer state, and sharding determine the real allocation. This remains similar in order of magnitude to Gemma.
+Then:
 
-The smaller vocabulary halves the hypothetical full-sequence logits allocation: at 40,960 positions, BF16 logits would be 10 GiB instead of 20 GiB. Efficient response-logprob computation is still worthwhile.
+1. Run a small two-rank attention forward parity test using global reference outputs and each rank's actual token mapping. Include tokens whose causal/window dependencies cross the rank boundary.
+2. Run C versus D at the same length and placement, starting at 2k/4k. Confirm FFPA actually executes on eligible global ring chunks.
+3. Compare CP1 and CP2 at identical full sequence length, effective examples, dtype, outputs, and total GPU allocation where feasible. Record changes in logical DP and adjust accumulation to preserve the effective batch.
+4. Measure both fixed-length latency (strong scaling) and maximum feasible sequence length. Report per-rank peak memory, worst-rank elapsed time, useful global tokens/s, and communication time. Do not count the same sequence twice because two CP ranks cooperate on it.
+5. Grow to 8k, 16k, 32k, and 40,960 total tokens. Add padding/packing only after single-document parity passes.
 
-**Expert parallelism (EP)** becomes useful: different GPUs own different experts, and tokens are routed to the appropriate devices. This distributes expert storage and computation but creates all-to-all communication. Plan placement around NVLink and the cross-node network. EP groups overlap with other parallelism dimensions in Megatron; do not multiply TP, CP, and EP sizes together as if they were independent GPU counts. See [Megatron parallelism guide](https://docs.nvidia.com/nemo/megatron-bridge/latest/parallelisms.html).
+Where CP1 cannot fit the full model at a shared length, report that capacity result; use smaller lengths or attention-only tests for a direct parity/speed comparison. CP communication can make short sequences slower. CP's first benefit may be capacity rather than latency.
 
-### What is actually supported and verified
+**Exit gate:** CP2 agrees with CP1/reference, the intended kernels execute, and memory/latency/communication are measured on real separate GPUs.
 
-There are three distinct pieces of evidence:
+## Stage 3 — backward and optimizer checks
 
-1. **Megatron Bridge training:** NVIDIA records full-parameter BF16 SFT at 32,768 tokens on two eight-H100 nodes, using TP=2, CP=2, EP=8, and expert TP=1, with full recomputation. This establishes a working context-parallel training path for Lightning, unlike the examined Gemma dense provider. It is SFT at 32k, not our 40k verl RL workload. [Verification card](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/examples/model_verification_cards/nemotron-3.5-lightning/card.yaml)
-2. **NVIDIA's NeMo RL reference:** its Lightning RLVR recipe uses a 73,728-token maximum and TP=4, CP=4, EP=16, PP=1. It runs on a much larger GB200 deployment, including 128 training GPUs. This demonstrates long-context RL support in that stack, not feasibility on eight or sixteen H100s. NeMo RL is an alternative framework; switching to it has not been requested. [Reference recipe](https://github.com/NVIDIA-NeMo/RL/blob/main/docs/guides/nemotron-3.5-lightning.md)
-3. **verl integration:** PR #7192 was open and draft when checked. Its author reports full-parameter H100 GRPO validation on a v0.7 backport, while the rebased main-branch implementation still needs GPU validation. Pin the tested revision rather than assuming this work is available in a released verl version. [PR and validation scope](https://github.com/verl-project/verl/pull/7192)
+Use the validated forward configuration and introduce one change at a time:
 
-The PR records H100-tested backport `dc3421cf63fbfbf7aecb191bbca1e0fb0707e90d`; rebased PR head `1ba0bcbef9697acc20ff5863f592a096c5d75474`; and model revision `d468880b6ad3c6e0d21377ce7242adaea4cc884d`. These are reproduction references, not versions installed in this workspace.
+1. **Attention backward:** compare Q/K/V gradients for Flex versus FFPA and CP1 versus CP2 at small lengths. Cover local-window boundaries, causal offsets, padding, and later packed-document isolation. Check gradients contributed by remote ranks.
+2. **Model backward:** compute a deterministic token loss without an optimizer. Compare token log probabilities, scalar loss, selected parameter gradients, and gradient norms. Verify label shifting and final-logit softcapping.
+3. **Activation checkpointing:** repeat with the actual production checkpoint policy. FFPA's integration has selective-save behavior; do not assume identical recomputation or memory savings across backends.
+4. **Optimizer step:** enable full language-model updates with an explicitly selected optimizer/state dtype and sharding/offload policy. Run multiple steps so lazily allocated optimizer state is included. Compare one deterministic update across CP layouts.
+5. **Length growth:** repeat at 8k → 16k → 32k → 40k only after short-length correctness passes. Record forward, backward, optimizer, communication, and peak memory separately.
+6. **Recovery:** save and restore model, optimizer, scheduler, and RNG state; compare the next update with uninterrupted execution.
 
-The examined backport launcher defaults to two eight-H100 nodes, actor TP=2 / CP=1 / PP=1 / EP=8 / expert TP=1, with offloading. Its prompt and response defaults are 2,048 tokens each. That supplied configuration is not a 40k validation. The same launcher requires **CP=1 when R3 router replay is enabled**. [Pinned launcher](https://github.com/Phlip79/verl/blob/dc3421cf63fbfbf7aecb191bbca1e0fb0707e90d/examples/grpo_trainer/run_nemotron_3_5_lightning_30b_a3b_megatron.sh)
+Use the upstream numerical-test tolerances as a starting reference, calibrate against the same BF16 baseline, and fix tolerances before performance evaluation. Record absolute/relative errors and nonfinite values; a finite loss alone is insufficient.
 
-Router replay records and reuses expert-routing decisions to reduce discrepancies between rollout and training computations. At 40k we must determine whether CP=1 fits, or validate a CP-compatible routing strategy. Simply disabling replay to allow CP changes numerical behavior and requires checking actor/rollout probability agreement and training stability.
+For a rough capacity check, a conventional mixed-precision Adam layout at 16 bytes per trainable parameter is about 496 decimal GB for 31B parameters before activations and temporary buffers. Two 96-GiB cards cannot hold that whole layout on-device. CP alone does not fix it. Actual optimizer precision, FSDP groups, CPU offload, and additional GPUs determine feasibility. An offloaded run must include transfer/CPU time in its performance report.
 
-Consequently, Lightning has stronger evidence for useful model parallelism, but **CP support in Bridge does not imply every verl RL feature combination supports CP**. The cited recipes use PP=1; they are not proof that arbitrary pipeline layouts or PP combined with MTP work. Keep PP=1 initially.
+**Exit gate:** correct distributed gradients and updates, stable multi-step memory including optimizer state, and successful resume. Keep CP2+Flex as the fallback if FFPA backward is blocked.
 
-### Full-training approach on our hardware
+## Stage 4 — integrate into verl
 
-| Available hardware | Proposed Lightning plan and evidence limit |
+This is a concrete engineering task, not a configuration-only promise. The inspected verl [AutoModel documentation](https://github.com/verl-project/verl/blob/dc709afb7a74fd2645640a4e5f2fdf40166b4fbb/docs/workers/automodel_workers.rst) describes SFT examples and older dependency requirements. Its [utilities](https://github.com/verl-project/verl/blob/dc709afb7a74fd2645640a4e5f2fdf40166b4fbb/verl/workers/engine/automodel/utils.py) use older mesh/model-setup interfaces. Its [engine batch path](https://github.com/verl-project/verl/blob/dc709afb7a74fd2645640a4e5f2fdf40166b4fbb/verl/workers/engine/automodel/transformer_impl.py) does not show the newer model-owned sharder invocation. These observations are integration gaps to resolve, not proof that all verl RL use is impossible.
+
+The newer [NeMo RL integration design](https://docs.nvidia.com/nemo/rl/nightly/design-docs/automodel-context-parallel.html) provides a useful reference: construct the distributed setup, delegate model-specific CP layout to AutoModel, and use that layout to map token tensors. Its documented compatible stack uses AutoModel v0.6.0 and Transformers 5.12.1, which differs from the inspected AutoModel main. Choose a compatible pin rather than mixing those examples unchanged.
+
+Required adapter work to investigate:
+
+- Load the correct Gemma model class and preserve checkpoint weight names/tied weights. Pass text-config overrides through the verl configuration to AutoModel.
+- Update distributed/model-setup APIs for the selected pin, with explicit CP/FSDP groups.
+- Use AutoModel's [ContextParallelSharder](https://github.com/NVIDIA-NeMo/Automodel/blob/65866fbce209938cd153f2bc26f01fa0d34cc61e/nemo_automodel/components/distributed/context_parallel/sharder.py) and Gemma's [batch preparation](https://github.com/NVIDIA-NeMo/Automodel/blob/65866fbce209938cd153f2bc26f01fa0d34cc61e/nemo_automodel/components/models/gemma4_moe/cp_batch.py), including document IDs and model-owned input handling. Current Gemma handling leaves primary input preparation partly inside the model; do not add a second manual token split.
+- Map response masks, shifted targets, advantages, old/reference log probabilities, and returned log probabilities through the exact layout. Avoid gathering full-vocabulary prompt logits just to compute response probabilities.
+- Verify CP/DP loss normalization and gradient reduction against CP1 with the same global batch. Do not copy a scaling factor without checking the adapter's reduction semantics.
+- Validate actor/reference forward-only paths, offload lifecycle, checkpointing, and full-policy weight export to the chosen rollout engine.
+- Start with unpacked single-document batches; generic remove-padding/packing paths need separate document-isolation tests.
+
+First reproduce the earlier deterministic forward/backward test through verl's engine. Next perform one tiny RL update with a simple deterministic reward, followed by rollout weight synchronization and fresh generation. Compare actor/rollout probabilities on identical tokens with matching temperature and distribution settings. Introduce GRPO/GSPO settings, reference/KL choice, and response-group size explicitly.
+
+**Exit gate:** one complete, correct, resumable verl RL cycle. A standalone AutoModel SFT result does not satisfy this gate.
+
+## Stage 5 — NL2SQL after the systems gates
+
+Only now adapt the `consensus` data and reward logic to verl. Preserve a separate implementation boundary between the validated backend and SQL task code.
+
+Use real schema/documentation contexts, executable SQL rewards, held-out databases, and bounded response lengths. Begin at short context, then extend to examples whose required evidence spans the long input. Many short documents packed into 40k tokens test execution capacity but do not establish reasoning over one 40k schema/context.
+
+The earlier 40k goal is retained as a provisional benchmark target: **40,960 total forward tokens**. Also record prompt and response lengths separately. If the eventual requirement is 40,960 input tokens plus a response, test that larger total explicitly before claiming it fits.
+
+Measure the entire RL iteration: rollout, actor/reference logprob passes, update, weight transfer, and checkpointing. Kernel speedups may be small in end-to-end RL if another phase dominates.
+
+## Planned benchmark artifacts and acceptance record
+
+The next coding pass should create these in order, sharing configuration and result formats:
+
+| Artifact | Responsibility |
 |---|---|
-| One node / 8 H100s | Attempt a reduced Megatron configuration with expert parallelism, BF16, recomputation, and offload as needed. TP=1 / EP=8 / CP=1 / PP=1 is a candidate to test, not a verified 40k configuration. Alternate generation and training. |
-| Two nodes total / 16 H100s | Prefer all 16 for initial full training. Reproduce the reported short-context verl setup first, then grow sequence length. The NVIDIA TP2/CP2/EP8 SFT recipe is a separate long-context starting point; reconcile CP with the selected RL routing path before combining them. |
-| Three nodes total / 24 H100s | Consider 16 training GPUs plus eight rollout GPUs after full-policy synchronization and throughput are measured. |
+| Environment manifest | Exact dependencies/model revision and hardware inventory |
+| Attention benchmark | Local/global forward parity, memory, and latency; backward added in Stage 3 |
+| Model forward benchmark | No-cache forward first, cached generation separately |
+| Two-node launcher | Parameterized allocation, topology/group logging, CP1/CP2 and Flex/FFPA selection |
+| Training smoke benchmark | Backward, optimizer state, checkpointing, and resume |
+| verl adapter/test | Same validated behavior inside the requested framework |
 
-The initial alternative-model recommendation was to prioritize a **Lightning + Megatron feasibility study**, particularly with two H100 nodes. It removes Gemma's unusual attention-head constraint and brings published hybrid/MoE training evidence. The subsequent CP investigation above qualifies that recommendation: assess Gemma's already implemented AutoModel CP path as well before choosing a model. Neither route has been benchmarked here, and architecture/support evidence does not establish task accuracy or a training-speed winner.
+For every run, save resolved configuration, seed/input identity, batch and token counts, model/kernel revisions, actual kernel dispatch, cold/warm timing, median/p95, peak allocated/reserved/device memory, allocator retries, communication timing, numerical errors, and OOM/fallback status. Distributed metrics include every rank and the worst-rank summary.
 
-Full-policy model/optimizer storage remains large. Eight H100s are a pilot target, not a guaranteed 40k training configuration. With two nodes, CP can potentially reduce per-sequence activation pressure in addition to distributing model states, provided the exact RL path supports it. Interconnect quality matters for both expert dispatch and CP communication.
+Produce three first-stage plots: sequence length versus incremental memory, versus forward latency, and versus FFPA/Flex speedup. Add CP1/CP2 plots when the second GPU allocation exists. Keep measured results empty until execution; upstream numbers belong in source context only.
 
-### Extra correctness checks and data choices
+## Reference recipes and tests to reuse carefully
 
-- Preserve Mamba state resets between packed examples. Incorrect packing can leak information across training samples.
-- Track expert-load balance and router precision, plus actor/rollout log-probability differences. Start with the pinned reproduction's settings before tuning.
-- Treat multi-token prediction (MTP) training and speculative generation as separate choices. For a minimal baseline, ordinary generation avoids speculative plumbing; reproducing the cited validated recipe instead requires its exact MTP settings. Explicitly decide how auxiliary MTP weights are trained/preserved and exported. Do not silently freeze the main policy or substitute adapters.
-- Revalidate save/resume and model export, including experts, Mamba state-space parameters, and any MTP components. Support for training does not by itself prove checkpoint restoration.
-- Keep the proposed RULER-style retrieval, tracing, and aggregation pilot. Baseline and difficulty calibration must be rerun because the model and tokenizer changed. Keep necessary evidence distributed through the full 40k input and use independent held-out examples.
-- Lightning's open RL training blend and math recipes can inform reward formats, but do not assume they contain 40k input examples. Short math data with padding does not replace the long-context requirement.
+- [AutoModel FFPA CP1 8k recipe](https://github.com/NVIDIA-NeMo/Automodel/blob/65866fbce209938cd153f2bc26f01fa0d34cc61e/examples/vlm_finetune/gemma4/gemma4_31b_ffpa_mock_8k.yaml) and [packed FFPA CP8 16k recipe](https://github.com/NVIDIA-NeMo/Automodel/blob/65866fbce209938cd153f2bc26f01fa0d34cc61e/examples/vlm_finetune/gemma4/gemma4_31b_ffpa_mock_packing_cp8_16k.yaml): backend and distributed configuration references. Their synthetic VLM data, packing, and disabled checkpoint defaults need adaptation for our text tests.
+- [FFPA parity tests](https://github.com/NVIDIA-NeMo/Automodel/blob/65866fbce209938cd153f2bc26f01fa0d34cc61e/tests/functional_tests/models/gemma4/test_ffpa_cp_ring_parity.py): short reference checks, including CP1 ring forward/backward. CP1 coverage does not establish two-rank correctness.
+- [Distributed FFPA/Flex throughput comparison](https://github.com/NVIDIA-NeMo/Automodel/blob/65866fbce209938cd153f2bc26f01fa0d34cc61e/tests/functional_tests/models/gemma4/run_ffpa_vs_flex_throughput_cp.py): multi-rank attention comparison and worst-rank timing patterns. Validate its shapes, scenarios, and assertions for our CP2 tests before reuse.
+- [Gemma long-context validation](https://github.com/NVIDIA-NeMo/Automodel/blob/65866fbce209938cd153f2bc26f01fa0d34cc61e/examples/long_context_validation/gemma4_31B/README.md): later long-context reference; its large-cluster SFT results do not establish our cluster's RL capacity.
 
-No Lightning weights have been downloaded and no Lightning training run has been launched for this comparison. Gemma remains the original target until the user chooses otherwise.
-
-## Recipe and resource index
-
-These links collect the implementation examples behind the discussion. **There is no verified drop-in recipe here for full-parameter Gemma 4 31B RL at 40k on eight H100s in verl.** Each example supplies part of the path. Links to `main`, `latest`, or `nightly` move over time; record exact commits before reproducing a run. Upstream results below have not been reproduced in this workspace.
-
-### Gemma: examples closest to the proposed implementation
-
-| Resource | Why it helps | Scope and adaptations |
-|---|---|---|
-| [AutoModel Gemma 31B Tulu-3 CP8, 16k YAML](https://github.com/NVIDIA-NeMo/Automodel/blob/main/examples/vlm_finetune/gemma4/gemma4_31b_tulu3_text_cp8_16k.yaml) | Single-node, eight-GPU text SFT example using FSDP2 and Gemma's ring CP; a useful first engineering reference for our GPU count. | Uses packed 16k sequences and freezes embeddings. Enable training for all language-model parameters, including embeddings/tied output weights, and remeasure memory. This is neither 40k nor RL. |
-| [AutoModel FFPA CP8, 16k mock-data YAML](https://github.com/NVIDIA-NeMo/Automodel/blob/main/examples/vlm_finetune/gemma4/gemma4_31b_ffpa_mock_packing_cp8_16k.yaml) | Shows the optional D512 FFPA backend combined with CP and packing. | Synthetic VLM workload for execution/performance checks; its mock examples are not the proposed text RL dataset. |
-| [AutoModel Gemma 64k validation README](https://github.com/NVIDIA-NeMo/Automodel/blob/main/examples/long_context_validation/gemma4_31B/README.md) and [CoderForge CP8 YAML](https://github.com/NVIDIA-NeMo/Automodel/blob/main/examples/long_context_validation/gemma4_31B/gemma4_31b_base_coderforge_cp8_64k_1e5_800steps.yaml) | Long-context SFT configuration, including loss/memory handling. | Base model, 16 nodes / 128 GPUs. Architectural reference; not evidence that this fits our node or that the data contains individual 64k reasoning problems. |
-| [NeMo RL Gemma guide](https://docs.nvidia.com/nemo/rl/nightly/guides/models/gemma/gemma4.html), [DAPO base YAML](https://github.com/NVIDIA-NeMo/RL/blob/main/examples/configs/recipes/llm/dapo-gemma4-31b-it-4n8g-fsdp2-automodel.yaml), and [CP2 override](https://github.com/NVIDIA-NeMo/RL/blob/main/examples/configs/recipes/llm/dapo-gemma4-31b-it-4n8g-fsdp2cp2-automodel.yaml) | Demonstrates the AutoModel training path within RL, with a CP comparison. | Four eight-GPU nodes and 4,096-token total sequences. Useful integration reference; using this framework would require a separate decision to relax the verl requirement. |
-
-Start with the single-node Tulu-3 example to understand model construction and CP, then inspect the FFPA variant and NeMo RL integration. Use the 64k recipe to study long-context choices after the shorter correctness checks pass. This reading order is a proposed development sequence, not a claim that changing a length field produces a working RL trainer.
-
-### verl: integration, algorithms, and data interfaces
-
-| Resource | How to use it here |
-|---|---|
-| [AutoModel backend documentation](https://verl.readthedocs.io/en/latest/workers/automodel_workers.html) and [small Qwen SFT launcher](https://github.com/verl-project/verl/blob/main/examples/sft/gsm8k/run_qwen2_5_0_5b_automodel.sh) | Understand engine configuration and the existing SFT integration. The example's model and CP settings do not validate Gemma RL or Gemma ring CP. |
-| [AutoModel engine implementation](https://github.com/verl-project/verl/blob/main/verl/workers/engine/automodel/transformer_impl.py) and [utilities](https://github.com/verl-project/verl/blob/main/verl/workers/engine/automodel/utils.py) | Inspect where the model, distributed groups, loss/log probabilities, and batch handling connect. These are starting points for determining whether Gemma-specific CP hooks need integration work. |
-| [verl configuration reference](https://verl.readthedocs.io/en/latest/examples/config.html) | Trace prompt/response limits, rollout settings, microbatches, offload, and actor/reference configuration in the chosen version. SFT settings do not cover every RL memory allocation. |
-| [GSPO examples and explanation](https://github.com/verl-project/verl/blob/main/examples/gspo_trainer/README.md), [Qwen FSDP launcher](https://github.com/verl-project/verl/blob/main/examples/gspo_trainer/run_qwen3_8b_fsdp.sh), and [Qwen MoE Megatron launcher](https://github.com/verl-project/verl/blob/main/examples/gspo_trainer/run_qwen3_30b_a3b_megatron.sh) | References for sequence-level importance ratios and trainer wiring. Transfer the algorithmic structure only after validating the selected model/backend; Qwen launchers are not Gemma or Lightning recipes. |
-| [Router replay guide](https://github.com/verl-project/verl/blob/main/examples/router_replay/README.md) and [rollout correction guide](https://github.com/verl-project/verl/blob/main/docs/algo/rollout_corr.md) | Understand MoE routing consistency and differences between generation and training probabilities. Particularly relevant to Lightning; neither guide removes the tested Lightning launcher's R3/CP restriction. |
-| [Preparing data](https://verl.readthedocs.io/en/latest/preparation/prepare_data.html) and [custom reward functions](https://verl.readthedocs.io/en/latest/preparation/reward_function.html) | Convert generated tasks into the expected message/Parquet format and implement deterministic answer checks. Verify the schema and reward-call signature against the pinned checkout. |
-
-### Nemotron 3.5 Lightning: reproduce before extending
-
-| Resource | Scope and use |
-|---|---|
-| [BF16 model card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16) | Architecture, checkpoint selection, and model-specific usage. The BF16 checkpoint is the post-training reference discussed here. |
-| [H100-tested verl backport launcher](https://github.com/Phlip79/verl/blob/dc3421cf63fbfbf7aecb191bbca1e0fb0707e90d/examples/grpo_trainer/run_nemotron_3_5_lightning_30b_a3b_megatron.sh) and [integration PR #7192](https://github.com/verl-project/verl/pull/7192) | Closest cited full-parameter verl GRPO example: two eight-H100 nodes, short-context defaults, CP1 with R3. Start from its tested dependency/model revisions; the rebased draft is a different validation target. |
-| [Bridge model verification card](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/examples/model_verification_cards/nemotron-3.5-lightning/card.yaml) and [Lightning examples README](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/examples/models/nemotron/nemotron_3/lightning/README.md) | Reference for the two-node H100 32k SFT configuration and model conversion/training setup. Establishes a useful CP training path, separate from verl RL compatibility. |
-| [NeMo RL Lightning guide](https://github.com/NVIDIA-NeMo/RL/blob/main/docs/guides/nemotron-3.5-lightning.md) | Reference for the 73,728-token RL setup on a substantially larger GB200 cluster. Study its settings and validation requirements without treating its throughput or memory as H100 measurements. |
-| [Megatron parallelism guide](https://docs.nvidia.com/nemo/megatron-bridge/latest/parallelisms.html) | Explains TP, CP, PP, DP, and EP placement. Useful when choosing between 8, 16, and 24 GPUs, especially because expert and dense parallelism groups are not independent factors to multiply blindly. |
-
-### Synthetic long-context data and evaluation
-
-| Resource | Proposed use |
-|---|---|
-| [NVIDIA RULER](https://github.com/NVIDIA/RULER) and [synthetic task configuration](https://github.com/NVIDIA/RULER/blob/main/scripts/synthetic.yaml) | Starting point for controllable retrieval, tracing, and aggregation tasks with known answers. Adapt task generation for training; retain independent held-out instances and report task-specific results. |
-| [Needle retrieval generator](https://github.com/NVIDIA/RULER/blob/main/scripts/data/synthetic/niah.py) and [variable-tracking generator](https://github.com/NVIDIA/RULER/blob/main/scripts/data/synthetic/variable_tracking.py) | Build early debugging tasks, then increase difficulty with multiple relevant facts, dependencies, and distractors spread across the context. A single easy needle is insufficient as the entire curriculum. |
-| [Common-word extraction](https://github.com/NVIDIA/RULER/blob/main/scripts/data/synthetic/common_words_extraction.py), [frequency extraction](https://github.com/NVIDIA/RULER/blob/main/scripts/data/synthetic/freq_words_extraction.py), and [evaluation code](https://github.com/NVIDIA/RULER/blob/main/scripts/eval/evaluate.py) | References for aggregation tasks and answer normalization. Audit the scorer for partial answers, duplicates, and reward shortcuts before using it for RL. |
-| [LongBench](https://github.com/THUDM/LongBench) | Complement synthetic held-out evaluation with broader long-context tasks. Keep benchmark evaluation separate from the training blend and check task length, license, and scoring requirements. |
-
-For our pilot, generate individual examples whose required evidence spans approximately 40k tokens, measured with the selected model's tokenizer and chat template. Record actual prompt and response lengths separately. Use deterministic answer verification and calibrate difficulty against the untrained policy: groups where every rollout receives the same reward provide little useful relative learning signal. The dataset and reward implementation remain proposed work.
-
-### Attention implementation and correctness references
-
-| Resource | What to inspect |
-|---|---|
-| [Gemma AutoModel CP implementation](https://github.com/NVIDIA-NeMo/Automodel/blob/main/nemo_automodel/components/models/gemma4_moe/cp_attention.py) and [FFPA integration discussion](https://github.com/NVIDIA-NeMo/Automodel/discussions/2928) | Ring communication, local/global masks, packed document boundaries, and optional FFPA dispatch. Despite the directory name, the earlier dense Gemma discussion points to this shared implementation. |
-| [FFPA kernel project](https://github.com/xlite-dev/ffpa-attn) and [PyTorch FlexAttention documentation](https://docs.pytorch.org/docs/stable/nn.attention.flex_attention.html) | Large-head-dimension attention and programmable masking references. Validate forward/backward, dtype, GPU architecture, and the exact integrated dispatch path rather than choosing a kernel by its name. |
-| [Gemma CP unit tests](https://github.com/NVIDIA-NeMo/Automodel/blob/main/tests/unit_tests/models/gemma4/test_cp_attention.py) and [FFPA ring parity test](https://github.com/NVIDIA-NeMo/Automodel/blob/main/tests/functional_tests/models/gemma4/test_ffpa_cp_ring_parity.py) | Examples of mask and numerical checks. The inspected FFPA parity test uses a single-card CP1 ring, including packed cases; its filename does not establish distributed CP2/CP4 correctness. Add separate multi-rank parity checks for our selected path. |
-| [Bridge CP guard #5895](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/5895), [TE proposal #6120](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/6120), [hybrid proposal #6213](https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/6213), and [TE D512 work #3527](https://github.com/NVIDIA/TransformerEngine/pull/3527) | Watchlist for changes to the limitation investigated above. Recheck merge status, hardware support, and full-model tests before revising the recommendation. |
-
-### Practical lessons when adapting the examples
-
-- **Audit trainable parameters.** “No adapters” does not guarantee that every language-model weight is trained. The linked single-node Tulu-3 recipe freezes embeddings. Log trainable parameter names/counts, and verify embeddings, tied output weights, attention, and MLP parameters receive gradients. Freezing unused vision/audio towers is consistent with our text-only scope.
-- **Distinguish packed length from example length.** A 40k buffer containing many isolated short examples tests memory and packing, not reasoning across a single 40k document. Validate both execution length and task dependency length.
-- **Distinguish a performance recipe from a resumable training run.** The linked 16k Tulu-3 and FFPA mock examples disable checkpointing. Enable and test save/resume before a real run; account for checkpoint-time memory and storage. Compare optimizer precision and offload settings before reusing memory estimates.
-- **Measure the whole RL iteration.** Capture peak allocated/reserved GPU memory and timings separately for rollout, actor/reference log probabilities, backward/optimizer updates, policy-weight transfer, and checkpointing. Include the chosen number of responses per prompt and response cap in every measurement.
-- **Verify semantics before scaling length.** Compare short-context loss, token log probabilities, and gradients against a trusted reference; then check CP1 versus distributed CP, padding/packing boundaries, and generation-versus-training probabilities. A successful optimizer step alone is not enough to establish correct RL training.
-- **Create a reproducibility manifest before running.** Record model revision; verl, AutoModel or Bridge, Megatron Core, and rollout-engine commits; PyTorch/CUDA/Transformer Engine/kernel versions; GPU topology; optimizer precision; trainable-parameter policy; parallelism; seeds; data generator revision; and the resolved configuration. Independently current `main` revisions are not automatically a compatible software stack.
-- **Use the existing milestones as gates.** Reproduce a small correctness case, then increase to 8k/16k/32k/40k with full language-model training enabled. Decide whether to add nodes from measured memory and iteration time, including generation, rather than model-loading success or upstream SFT memory alone.
-
-## Earlier environment setup
-
-At the user's request, `consensus` was checked out in a separate worktree at `/home/ubuntu/verl-fun/nl2sql-gspo-gemma4-consensus`; the VS Code worktree remained on `verl`. A Python 3.12.3 `.venv` was created there.
-
-`python -u temp.py` was launched in a detached GNU screen named `consensus-temp`. It was verified at setup to run four CPU workers targeting approximately 2% of the host's 192 logical CPUs. This script is unrelated to GPU model training.
-
-The session identifier at setup was `13223.consensus-temp`. While it remains running:
-
-```bash
-screen -r 13223.consensus-temp
-```
-
-Detach with Ctrl+A, then D; stop the script with Ctrl+C. Use `screen -ls` to check current session state. This note records the earlier verification, not a guarantee that the process remains running indefinitely.
-
-## Decision history
-
-- Explained verl as the RL coordinator, Megatron/FSDP as training backends, and vLLM/SGLang as generation engines.
-- Inspected the eight-H100 node, cached model weights, and heterogeneous attention configuration.
-- Initially suggested LoRA for memory headroom. **Superseded:** the user requires full-parameter RL.
-- Identified CP/PP limitations in the examined Megatron Bridge Gemma 4 dense provider; these are implementation-specific.
-- Revised the starting plan to full-parameter FSDP2 with memory-efficient attention, checkpointing, and measured offloading requirements.
-- Authorized this single running Markdown document and ongoing commits/pushes to `origin/verl` for important discussion updates.
-- Added Nemotron 3.5 Lightning as an alternative: its hybrid/MoE architecture and 128-dimensional attention heads make Megatron more attractive, while full training-state memory remains substantial. Documented the separate evidence for Bridge CP training, large-scale NeMo RL, and draft verl integration, including the tested launcher’s R3/CP restriction and short-context defaults. No model switch has been decided.
-- Investigated the Gemma CP restriction through source, history, developer responses, and pending fixes. Confirmed local-attention wiring, D512 distributed-kernel gaps, and explicit project-priority constraints. Found merged AutoModel CP support and NeMo RL CP2 functional evidence; revised the plan to evaluate that existing path while preserving the full-parameter, 40k, and verl requirements. Recorded why neither the 4k RL recipe nor the large-cluster 64k SFT recipe validates our target hardware/workload.
-- Added a curated recipe/resource index covering Gemma AutoModel/NeMo RL, verl integration and GSPO, Lightning reproduction, synthetic data, attention kernels, and correctness tests. Recorded frozen-embedding and checkpoint defaults, packed-versus-individual context length, single-card parity-test limits, and a reproducibility/measurement checklist. These resources guide future implementation; no training run was launched.
+The immediate next deliverable is the Stage 0/1 benchmark implementation and measured single-GPU results. The two-node interface should be designed alongside it; distributed claims wait for real multi-GPU execution.

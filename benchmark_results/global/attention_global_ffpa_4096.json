@@ -1,0 +1,100 @@
+{
+  "worker": true,
+  "kind": "attention",
+  "backend": "ffpa",
+  "layer": "global",
+  "length": 4096,
+  "lengths": [
+    1024,
+    2048,
+    4096,
+    8192,
+    16384,
+    32768,
+    40960
+  ],
+  "backends": [
+    "flex",
+    "ffpa"
+  ],
+  "warmup": 5,
+  "repeats": 20,
+  "timeout": 600,
+  "output": "benchmark_results/global/attention_global_ffpa_4096.json",
+  "model_path": "/home/ec2-user/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+  "status": "ok",
+  "cp": 1,
+  "seed": 42,
+  "dtype": "bfloat16",
+  "torch": "2.10.0+cu130",
+  "cuda": "13.0",
+  "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+  "capability": [
+    12,
+    0
+  ],
+  "versions": {
+    "transformers": "5.18.0",
+    "ffpa-attn": "0.2.4",
+    "triton": "3.6.0",
+    "nvidia-cutlass-dsl": "4.6.2",
+    "quack-kernels": "0.6.4"
+  },
+  "head_dim": 512,
+  "query_heads": 32,
+  "kv_heads": 4,
+  "scale": 0.04419417382415922,
+  "scope": "synthetic attention kernel; not model dispatch",
+  "use_cache": false,
+  "parity": {
+    "max_abs": 0.009405374526977539,
+    "relative_l2": 0.0018997612642124295,
+    "atol": 0.02,
+    "rtol": 0.02
+  },
+  "mask_build_s": 0.00011013799996817397,
+  "cold_s": 0.005148012000063318,
+  "cold_peak_allocated_bytes": 478806016,
+  "baseline_allocated_bytes": 176291840,
+  "peak_allocated_bytes": 478806016,
+  "peak_reserved_bytes": 501219328,
+  "incremental_peak_bytes": 302514176,
+  "median_wall_ms": 4.614142999969317,
+  "p95_wall_ms": 4.641384000024118,
+  "median_cuda_ms": 4.596159934997559,
+  "wall_samples_ms": [
+    4.641384000024118,
+    4.618241999992279,
+    4.610043999946356,
+    4.5945819999815285,
+    4.618243999971128,
+    4.636175999962688,
+    4.601091999916207,
+    4.629430000022694,
+    4.603099000064503,
+    4.591643000026124,
+    4.605599999990773,
+    4.570841000031578,
+    4.635641000049873,
+    4.576126999950247,
+    4.63321300003372,
+    4.647142000067106,
+    4.6087030000308005,
+    4.623274999971727,
+    4.573451999931422,
+    4.625459999942905
+  ],
+  "tokens_per_s": 887705.4742402299,
+  "allocation_retries": 0,
+  "cuda_kernels": [
+    "kernel_cutlass_kernel_ffpa_attncute_fwd_generic_sm80FFPAAttnFwdSm80SplitD_object_at__tensorptrbf16gmemalign16oi64div81i64div8i64div8_tensorptrbf16gmemalign16oi64div81i64div8i64div8_tensor_0",
+    "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1} const&)::{lambda(int)#1})",
+    "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul> >(int, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul>)",
+    "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*, 1ul>)"
+  ],
+  "attention_ops": [
+    "_FFPAAttnFunc",
+    "ffpa_attn::_fwd_cute",
+    "kernel_cutlass_kernel_ffpa_attncute_fwd_generic_sm80FFPAAttnFwdSm80SplitD_object_at__tensorptrbf16gmemalign16oi64div81i64div8i64div8_tensorptrbf16gmemalign16oi64div81i64div8i64div8_tensor_0"
+  ]
+}

@@ -1,0 +1,12 @@
+quack-kernels 0.6.4 requires torch-c-dlpack-ext, which is not installed.
+ffpa-attn 0.2.4 requires ninja, which is not installed.
+ffpa-attn 0.2.4 requires ray, which is not installed.
+nvidia-cutlass-dsl-libs-cu12 4.6.2 requires cuda-python, which is not installed.
+nvidia-cutlass-dsl-libs-cu12 4.6.2 requires nvidia-cuda-nvdisasm, which is not installed.
+nvidia-cutlass-dsl-libs-base 4.6.2 requires cuda-python, which is not installed.
+nvidia-cutlass-dsl-libs-base 4.6.2 requires nvidia-cuda-nvdisasm, which is not installed.
+nvidia-cutlass-dsl-libs-core 4.6.2 requires cuda-python, which is not installed.
+nvidia-cutlass-dsl-libs-core 4.6.2 requires nvidia-cuda-nvdisasm, which is not installed.
+numba 0.65.1 has requirement numpy<2.5,>=1.22, but you have numpy 2.5.4.
+pyiceberg 0.11.1 has requirement rich<15.0.0,>=10.11.0, but you have rich 15.0.0.
+sagemaker-core 2.9.0 has requirement rich<15.0.0,>=13.0.0, but you have rich 15.0.0.

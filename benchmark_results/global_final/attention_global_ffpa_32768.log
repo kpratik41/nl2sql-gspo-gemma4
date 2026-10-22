@@ -1,0 +1,3 @@
+/opt/pytorch/lib/python3.13/site-packages/torch/profiler/profiler.py:217: UserWarning: Warning: Profiler clears events at the end of each cycle.Only events from the current cycle will be reported.To keep events across cycles, set acc_events=True.
+  _warn_once(
+{"kind": "attention", "backend": "ffpa", "layer": "global", "length": 32768, "status": "ok", "median_wall_ms": 205.4602055000032, "incremental_peak_bytes": 2420113408}

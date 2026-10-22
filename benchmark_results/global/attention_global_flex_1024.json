@@ -1,0 +1,51 @@
+{
+  "worker": true,
+  "kind": "attention",
+  "backend": "flex",
+  "layer": "global",
+  "length": 1024,
+  "lengths": [
+    1024,
+    2048,
+    4096,
+    8192,
+    16384,
+    32768,
+    40960
+  ],
+  "backends": [
+    "flex",
+    "ffpa"
+  ],
+  "warmup": 5,
+  "repeats": 20,
+  "timeout": 600,
+  "output": "benchmark_results/global/attention_global_flex_1024.json",
+  "model_path": "/home/ec2-user/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+  "status": "error",
+  "cp": 1,
+  "seed": 42,
+  "dtype": "bfloat16",
+  "torch": "2.10.0+cu130",
+  "cuda": "13.0",
+  "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+  "capability": [
+    12,
+    0
+  ],
+  "versions": {
+    "transformers": "5.18.0",
+    "ffpa-attn": "0.2.4",
+    "triton": "3.6.0",
+    "nvidia-cutlass-dsl": "4.6.2",
+    "quack-kernels": "0.6.4"
+  },
+  "head_dim": 512,
+  "query_heads": 32,
+  "kv_heads": 4,
+  "scale": 0.04419417382415922,
+  "scope": "synthetic attention kernel; not model dispatch",
+  "use_cache": false,
+  "error": "InductorError('RuntimeError: No valid triton configs. OutOfMemoryError: out of resource: triton_tem_fused_flex_attention_0 Required: 200704 Hardware limit:101376 Reducing block sizes or `num_stages` may help.\\n\\nSet TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you\\'re reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS=\"+dynamo\"\\n')",
+  "traceback": "Traceback (most recent call last):\n  File \"/home/ec2-user/nemo-lightning/nl2sql-gspo-gemma4/benchmarks/gemma_attention.py\", line 74, in worker\n    actual = call(sq,sk,sv,small_mask)\n  File \"/home/ec2-user/nemo-lightning/nl2sql-gspo-gemma4/benchmarks/gemma_attention.py\", line 65, in call\n    return compiled(q,k,v,block_mask=bm,enable_gqa=True,scale=d**-0.5)\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_dynamo/eval_frame.py\", line 967, in compile_wrapper\n    raise e.remove_dynamo_frames() from None  # see TORCHDYNAMO_VERBOSE=1\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/compile_fx.py\", line 1019, in _compile_fx_inner\n    raise InductorError(e, currentframe()).with_traceback(\n        e.__traceback__\n    ) from None\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/compile_fx.py\", line 1003, in _compile_fx_inner\n    mb_compiled_graph = fx_codegen_and_compile(\n        gm, example_inputs, inputs_to_check, **graph_kwargs\n    )\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/compile_fx.py\", line 1766, in fx_codegen_and_compile\n    return scheme.codegen_and_compile(gm, example_inputs, inputs_to_check, graph_kwargs)\n           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/compile_fx.py\", line 1537, in codegen_and_compile\n    compiled_module = graph.compile_to_module()\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/graph.py\", line 2416, in compile_to_module\n    return self._compile_to_module()\n           ~~~~~~~~~~~~~~~~~~~~~~~^^\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/graph.py\", line 2426, in _compile_to_module\n    mod = self._compile_to_module_lines(wrapper_code)\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/graph.py\", line 2501, in _compile_to_module_lines\n    mod = PyCodeCache.load_by_key_path(\n        key,\n    ...<6 lines>...\n        },\n    )\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/codecache.py\", line 3674, in load_by_key_path\n    mod = _reload_python_module(key, path, set_sys_modules=in_toplevel)\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/runtime/compile_tasks.py\", line 35, in _reload_python_module\n    exec(code, mod.__dict__, mod.__dict__)\n    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/torchinductor_ec2-user/kh/ckhochocm45t6jad2lxr3z3kopbn5a77dla6ksl7cdc2f7uozg6e.py\", line 576, in <module>\n    async_compile.wait(globals())\n    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/async_compile.py\", line 649, in wait\n    self._wait_futures(scope)\n    ~~~~~~~~~~~~~~~~~~^^^^^^^\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/async_compile.py\", line 669, in _wait_futures\n    kernel = result.result()\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/codecache.py\", line 4417, in result\n    return self.result_fn()\n           ~~~~~~~~~~~~~~^^\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/async_compile.py\", line 447, in get_result\n    kernel.precompile(\n    ~~~~~~~~~~~~~~~~~^\n        warm_cache_only=False,\n        ^^^^^^^^^^^^^^^^^^^^^^\n        reload_kernel=reload_kernel_in_parent,\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        static_triton_bundle_key=CompiledTritonKernels.key(source_code),\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/runtime/triton_heuristics.py\", line 444, in precompile\n    self._make_launchers()\n    ~~~~~~~~~~~~~~~~~~~~^^\n  File \"/opt/pytorch/lib/python3.13/site-packages/torch/_inductor/runtime/triton_heuristics.py\", line 613, in _make_launchers\n    raise RuntimeError(f\"No valid triton configs. {type(exc).__name__}: {exc}\")\ntorch._inductor.exc.InductorError: RuntimeError: No valid triton configs. OutOfMemoryError: out of resource: triton_tem_fused_flex_attention_0 Required: 200704 Hardware limit:101376 Reducing block sizes or `num_stages` may help.\n\nSet TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS=\"+dynamo\"\n\n"
+}

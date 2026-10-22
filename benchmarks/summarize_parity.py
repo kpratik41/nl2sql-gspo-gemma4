@@ -1,0 +1,29 @@
+import json
+from pathlib import Path
+rows=json.loads(Path('benchmark_results/model_parity/results.json').read_text())
+lines=['# Gemma full-model numerical parity investigation','', 'Date: 2026-10-22 (America/New_York).','',
+'## Test design','',
+'One locally cached 31B checkpoint is loaded once in BF16. The backend is switched in place; weights and token IDs are shared. Inference uses eval mode, no cache, explicit token hashes, and teacher forcing rather than sampled generation. The versioned SQL schema/question/answer fixture is repeated to reach 128, 1,023, 1,024, 1,025, and 2,048 tokens. This is a controlled synthetic fixture, not a held-out NL2SQL accuracy benchmark; no external dataset is needed for initial implementation parity.', '',
+'For every length, BF16 eager supplies a candidate reference, then eager repeats as a determinism control. Compare all next-token target log probabilities, mean negative log likelihood (NLL), sampled vocabulary-distribution KL, top-1 agreement, and sampled hidden states from all 60 decoder layers. Same-QKV checks independently calculate FP32 causal/windowed attention at sampled queries in layers 0, 5, 6, and 59 using the actual model scaling and Q/K/V tensors.', '',
+'## Investigation gates','',
+'Predeclared screening thresholds: absolute mean NLL delta ≤0.01 nats/token, maximum target log-probability delta ≤0.1 nat, and maximum sampled KL ≤0.001 nat. These are conservative investigation gates, not universal BF16 accuracy guarantees. Failure triggers reference/precision isolation; it does not establish which backend is incorrect. Do not relax thresholds after viewing results merely to claim success.', '',
+'## Results','', '| Tokens | Backend | NLL delta | Max target logprob error | Max sampled KL | Last-layer relative L2 | Gate |','|---:|---|---:|---:|---:|---:|---|']
+for r in rows: lines.append(f"| {r['length']} | {r['backend']} | {r['nll_delta']:.6f} | {r['max_logprob_abs_error']:.4f} | {r['sampled_max_kl']:.6f} | {r['layers'][-1]['relative_l2']:.6f} | {'pass' if r['investigation_gate_pass'] else 'investigate'} |")
+checks=[c for r in rows for c in r.get('same_qkv_fp32_attention_checks',[])]
+if checks:
+ lines += ['', '## Independent same-QKV attention reference','', '| Backend | Maximum sampled absolute error | Maximum sampled relative L2 |','|---|---:|---:|']
+ for b in ['eager','sdpa','flex_attention']:
+  cc=[c for r in rows if r['backend']==b for c in r.get('same_qkv_fp32_attention_checks',[])]
+  lines.append(f"| {b} | {max(c['max_abs'] for c in cc):.6f} | {max(c['relative_l2'] for c in cc):.6f} |")
+ lines += ['', 'Actual model attention scale in these checks: '+str(sorted(set(c['scale'] for c in checks)))+'. The earlier random-QKV benchmark used head_dim**-0.5, so it is a separate kernel exercise and cannot substitute for this test. FP32 calculations here use BF16 input Q/K/V; they isolate attention arithmetic but do not provide a full-FP32 model reference.']
+lines += ['', '## Interpretation and next tests','', 'Completed follow-up: [GEMMA4_LAYER_REPLAY_RESULTS.md](GEMMA4_LAYER_REPLAY_RESULTS.md). It contains FP32 decoder-layer controls and causality/window-isolation results; the replay recommendation below is retained as investigation history.', '', 'The fixed-input FP32 decoder replay has now been executed: [GEMMA4_LAYER_REPLAY_RESULTS.md](GEMMA4_LAYER_REPLAY_RESULTS.md). It passes the tested causality/window checks; native mask equivalence and full-model logprob agreement remain open.', '',
+'- Repeated eager execution is the determinism control. Inspect the table rather than assuming a finite loss establishes parity. Small average NLL differences can conceal large individual-token changes relevant to RL importance ratios.',
+'- In the sampled same-QKV checks, optimized attention has lower worst relative error against FP32 than BF16 eager. This is evidence that BF16 eager is not an exact reference; it does not by itself explain the full-model discrepancy or establish correctness at untested positions.',
+'- Both optimized backends differ from BF16 eager on this fixture. Eager BF16 is not a definitive gold standard. Same-QKV FP32 comparisons help distinguish local attention arithmetic from accumulated model-level drift; they do not prove mask correctness at every position.',
+'- Completed follow-up (see linked report): replay an early decoder layer on identical saved hidden states with FP32 weights/activations. Compare eager FP32, SDPA math FP32, and optimized BF16 against that reference. Repeat across global/sliding layers and the first layer where hidden-state error grows. A single full-FP32 31B model exceeds this GPU memory, while one-layer replay is feasible.',
+'- Add explicit semantic invariants: perturb suffix tokens and verify earlier-position outputs do not change; compare an unpadded example with a padded batch; test unequal lengths and document boundaries separately. Preserve correct window semantics at 1,023/1,024/1,025 tokens.',
+'- After those controls pass, evaluate multiple independent natural-language and SQL documents with held-out teacher-forced tokens. Report distributions of NLL/logprob/KL errors and investigate worst cases. A corpus-level loss improvement alone does not establish implementation equivalence.',
+'- Only then extend length and validate backward/CP. Generation text is a secondary check because tiny numerical changes can change a greedy token and all subsequent outputs.', '',
+'## Reproduction','', '```bash','.venv-bench/bin/python benchmarks/model_parity.py','.venv-bench/bin/python benchmarks/summarize_parity.py','```','',
+'Raw results, per-layer errors, input hashes, and fixture: [benchmark_results/model_parity](benchmark_results/model_parity/). Environment details: [GEMMA4_BENCHMARK_RESULTS.md](GEMMA4_BENCHMARK_RESULTS.md).','']
+Path('GEMMA4_MODEL_PARITY.md').write_text('\n'.join(lines))

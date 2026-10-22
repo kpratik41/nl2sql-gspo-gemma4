@@ -1,0 +1,2 @@
+/home/ec2-user/nemo-lightning/nl2sql-gspo-gemma4/benchmarks/mask_memory.py:27: DeprecationWarning: _compile flag on create_block_mask was originally added to work around a torch.compile limitation. That limitation has since been addressed. So, to compile create_block_mask, we suggest doing torch.compile(create_block_mask). This still works for now, but will be removed in the future.
+  bm=create_block_mask(mask,1,1,a.length,a.length,device='cuda',_compile=a.compiled)

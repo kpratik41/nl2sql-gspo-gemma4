@@ -1,0 +1,111 @@
+{
+  "worker": true,
+  "kind": "attention",
+  "backend": "flex",
+  "layer": "global",
+  "length": 8192,
+  "lengths": [
+    1024,
+    2048,
+    4096,
+    8192,
+    16384,
+    32768,
+    40960
+  ],
+  "backends": [
+    "flex",
+    "ffpa"
+  ],
+  "warmup": 5,
+  "repeats": 20,
+  "timeout": 600,
+  "output": "benchmark_results/global_final/attention_global_flex_8192.json",
+  "model_path": "/home/ec2-user/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+  "status": "ok",
+  "cp": 1,
+  "seed": 42,
+  "dtype": "bfloat16",
+  "torch": "2.10.0+cu130",
+  "cuda": "13.0",
+  "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+  "capability": [
+    12,
+    0
+  ],
+  "versions": {
+    "transformers": "5.18.0",
+    "ffpa-attn": "0.2.4",
+    "triton": "3.6.0",
+    "nvidia-cutlass-dsl": "4.6.2",
+    "quack-kernels": "0.6.4"
+  },
+  "flex_kernel_options": {
+    "BLOCK_M": 32,
+    "BLOCK_N": 32,
+    "num_stages": 1
+  },
+  "head_dim": 512,
+  "query_heads": 32,
+  "kv_heads": 4,
+  "scale": 0.04419417382415922,
+  "scope": "synthetic attention kernel; not model dispatch",
+  "use_cache": false,
+  "parity": {
+    "max_abs": 0.009405374526977539,
+    "relative_l2": 0.001887011807411909,
+    "atol": 0.02,
+    "rtol": 0.02
+  },
+  "mask_build_s": 0.019526419999920108,
+  "cold_s": 1.1671643979999544,
+  "cold_peak_allocated_bytes": 614668288,
+  "sampled_full_length_parity": {
+    "positions": [
+      0,
+      1023,
+      1024,
+      8191
+    ],
+    "max_abs": 0.0006770491600036621,
+    "relative_l2": 0.00017106255108956248
+  },
+  "baseline_allocated_bytes": 344135680,
+  "peak_allocated_bytes": 614668288,
+  "peak_reserved_bytes": 645922816,
+  "incremental_peak_bytes": 270532608,
+  "median_wall_ms": 19.31841900005793,
+  "p95_wall_ms": 19.328902000097514,
+  "median_cuda_ms": 19.29896068572998,
+  "wall_samples_ms": [
+    19.32392300000174,
+    19.31846500008305,
+    19.32075500008068,
+    19.33233099998688,
+    19.305124999959844,
+    19.32225899997775,
+    19.315338999945197,
+    19.328902000097514,
+    19.320804000017233,
+    19.328044999952,
+    19.30541699994137,
+    19.318373000032807,
+    19.300775000033354,
+    19.3079549999311,
+    19.324322999977994,
+    19.314151999992646,
+    19.32218299998567,
+    19.299428000067564,
+    19.305604000010135,
+    19.300490000091486
+  ],
+  "tokens_per_s": 424051.2642352066,
+  "allocation_retries": 0,
+  "cuda_kernels": [
+    "## Call CompiledFxGraph fbsowenacallmanvslgt2zy5fuayb5la6mbi5icladurx253owkw ##",
+    "triton_tem_fused_flex_attention_0"
+  ],
+  "attention_ops": [
+    "triton_tem_fused_flex_attention_0"
+  ]
+}

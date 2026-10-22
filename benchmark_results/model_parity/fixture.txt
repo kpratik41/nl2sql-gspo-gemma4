@@ -1,0 +1,4 @@
+Database schema: customers(customer_id, name, city); orders(order_id, customer_id, amount, order_date).
+Question: Which customers placed at least three orders in 2025? Return their names and total order amounts.
+SQL: SELECT c.name, SUM(o.amount) FROM customers c JOIN orders o ON c.customer_id = o.customer_id WHERE o.order_date >= '2025-01-01' AND o.order_date < '2026-01-01' GROUP BY c.customer_id, c.name HAVING COUNT(*) >= 3;
+Explanation: Join on the customer key, filter dates before aggregation, and apply the count condition with HAVING.

@@ -1,0 +1,13 @@
+{
+  "python": "3.13.12",
+  "torch": "2.10.0+cu130",
+  "cuda": "13.0",
+  "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+  "capability": [
+    12,
+    0
+  ],
+  "torch_base": "/opt/pytorch/lib/python3.13/site-packages",
+  "cp": 1,
+  "model_revision": "842da3794eaa0b77d5f08bae87a17459d91ff475"
+}

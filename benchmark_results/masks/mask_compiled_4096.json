@@ -1,0 +1,10 @@
+{
+  "length": 4096,
+  "compiled": true,
+  "torch": "2.10.0+cu130",
+  "status": "ok",
+  "cold_s": 2.6929312209999807,
+  "baseline_bytes": 0,
+  "peak_bytes": 26624,
+  "live_mask_bytes": 18432
+}
