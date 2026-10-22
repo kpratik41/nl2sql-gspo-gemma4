@@ -1,0 +1,261 @@
+{
+  "dataset": "Old BIRD dev, dev_20240627, 1534 samples",
+  "model": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+  "model_revision": "a9904d24bcc1d289a1950fa9d2b978c47cf903b9",
+  "settings": {
+    "temperature": 0,
+    "max_tool_rounds": 8,
+    "max_model_len": 43000,
+    "max_tokens": 8192,
+    "concurrency": 8,
+    "chat_template_kwargs": {
+      "enable_thinking": true,
+      "force_nonempty_content": true,
+      "truncate_history_thinking": false
+    },
+    "tensor_parallel_size": 4,
+    "shards": 2,
+    "prompt_profile": "baseline",
+    "stats_profile": "extended",
+    "few_shots": 3,
+    "prompt_trimming": false
+  },
+  "evaluation": {
+    "requested_samples": 1534,
+    "samples": 1404,
+    "correct": 827,
+    "filtered_count": 130,
+    "execution_accuracy": 0.5890313390313391,
+    "gold_errors": 1,
+    "prediction_errors": 15
+  },
+  "coverage": {
+    "requested": 1534,
+    "eligible": 1404,
+    "fraction": 0.9152542372881356,
+    "filtered": 130,
+    "correct_over_all_requested": 0.5391134289439374
+  },
+  "statuses": {
+    "completed": 1393,
+    "turn_limit": 11,
+    "filtered_context_length": 130
+  },
+  "baseline_full_run": {
+    "samples": 1534,
+    "correct": 907,
+    "execution_accuracy": 0.5912646675358539,
+    "filtered_count": 0
+  },
+  "baseline_comparison_same_questions": {
+    "samples": 1404,
+    "previous_correct": 824,
+    "current_correct": 827,
+    "previous_accuracy": 0.5868945868945868,
+    "current_accuracy": 0.5890313390313391,
+    "gained_questions": 75,
+    "lost_questions": 72
+  },
+  "per_database": [
+    {
+      "db_id": "california_schools",
+      "requested": 89,
+      "eligible": 88,
+      "filtered": 1,
+      "correct": 46,
+      "execution_accuracy": 0.5227272727272727,
+      "correct_over_requested": 0.5168539325842697,
+      "previous_correct_on_same_questions": 41,
+      "previous_accuracy_on_same_questions": 0.4659090909090909,
+      "missing_sql_eligible": 1,
+      "prediction_errors": 1,
+      "gold_errors": 0
+    },
+    {
+      "db_id": "financial",
+      "requested": 106,
+      "eligible": 106,
+      "filtered": 0,
+      "correct": 62,
+      "execution_accuracy": 0.5849056603773585,
+      "correct_over_requested": 0.5849056603773585,
+      "previous_correct_on_same_questions": 65,
+      "previous_accuracy_on_same_questions": 0.6132075471698113,
+      "missing_sql_eligible": 2,
+      "prediction_errors": 3,
+      "gold_errors": 0
+    },
+    {
+      "db_id": "toxicology",
+      "requested": 145,
+      "eligible": 145,
+      "filtered": 0,
+      "correct": 82,
+      "execution_accuracy": 0.5655172413793104,
+      "correct_over_requested": 0.5655172413793104,
+      "previous_correct_on_same_questions": 85,
+      "previous_accuracy_on_same_questions": 0.5862068965517241,
+      "missing_sql_eligible": 0,
+      "prediction_errors": 0,
+      "gold_errors": 0
+    },
+    {
+      "db_id": "card_games",
+      "requested": 191,
+      "eligible": 191,
+      "filtered": 0,
+      "correct": 104,
+      "execution_accuracy": 0.5445026178010471,
+      "correct_over_requested": 0.5445026178010471,
+      "previous_correct_on_same_questions": 103,
+      "previous_accuracy_on_same_questions": 0.5392670157068062,
+      "missing_sql_eligible": 0,
+      "prediction_errors": 1,
+      "gold_errors": 0
+    },
+    {
+      "db_id": "codebase_community",
+      "requested": 186,
+      "eligible": 186,
+      "filtered": 0,
+      "correct": 120,
+      "execution_accuracy": 0.6451612903225806,
+      "correct_over_requested": 0.6451612903225806,
+      "previous_correct_on_same_questions": 124,
+      "previous_accuracy_on_same_questions": 0.6666666666666666,
+      "missing_sql_eligible": 0,
+      "prediction_errors": 2,
+      "gold_errors": 1
+    },
+    {
+      "db_id": "superhero",
+      "requested": 129,
+      "eligible": 129,
+      "filtered": 0,
+      "correct": 100,
+      "execution_accuracy": 0.7751937984496124,
+      "correct_over_requested": 0.7751937984496124,
+      "previous_correct_on_same_questions": 97,
+      "previous_accuracy_on_same_questions": 0.751937984496124,
+      "missing_sql_eligible": 0,
+      "prediction_errors": 0,
+      "gold_errors": 0
+    },
+    {
+      "db_id": "formula_1",
+      "requested": 174,
+      "eligible": 174,
+      "filtered": 0,
+      "correct": 87,
+      "execution_accuracy": 0.5,
+      "correct_over_requested": 0.5,
+      "previous_correct_on_same_questions": 86,
+      "previous_accuracy_on_same_questions": 0.4942528735632184,
+      "missing_sql_eligible": 3,
+      "prediction_errors": 3,
+      "gold_errors": 0
+    },
+    {
+      "db_id": "european_football_2",
+      "requested": 129,
+      "eligible": 0,
+      "filtered": 129,
+      "correct": 0,
+      "execution_accuracy": null,
+      "correct_over_requested": 0.0,
+      "previous_correct_on_same_questions": 0,
+      "previous_accuracy_on_same_questions": null,
+      "missing_sql_eligible": 0,
+      "prediction_errors": 0,
+      "gold_errors": 0
+    },
+    {
+      "db_id": "thrombosis_prediction",
+      "requested": 163,
+      "eligible": 163,
+      "filtered": 0,
+      "correct": 75,
+      "execution_accuracy": 0.4601226993865031,
+      "correct_over_requested": 0.4601226993865031,
+      "previous_correct_on_same_questions": 73,
+      "previous_accuracy_on_same_questions": 0.44785276073619634,
+      "missing_sql_eligible": 2,
+      "prediction_errors": 2,
+      "gold_errors": 0
+    },
+    {
+      "db_id": "student_club",
+      "requested": 158,
+      "eligible": 158,
+      "filtered": 0,
+      "correct": 117,
+      "execution_accuracy": 0.740506329113924,
+      "correct_over_requested": 0.740506329113924,
+      "previous_correct_on_same_questions": 116,
+      "previous_accuracy_on_same_questions": 0.7341772151898734,
+      "missing_sql_eligible": 2,
+      "prediction_errors": 2,
+      "gold_errors": 0
+    },
+    {
+      "db_id": "debit_card_specializing",
+      "requested": 64,
+      "eligible": 64,
+      "filtered": 0,
+      "correct": 34,
+      "execution_accuracy": 0.53125,
+      "correct_over_requested": 0.53125,
+      "previous_correct_on_same_questions": 34,
+      "previous_accuracy_on_same_questions": 0.53125,
+      "missing_sql_eligible": 1,
+      "prediction_errors": 1,
+      "gold_errors": 0
+    }
+  ],
+  "tool_calls": {
+    "sqlite_query": 2978,
+    "sqlite_peek": 362,
+    "bm_25_search": 437
+  },
+  "tool_errors": {
+    "OperationalError": 60,
+    "ValueError": 35
+  },
+  "token_usage": {
+    "prompt_tokens": 88087246,
+    "completion_tokens": 1823635,
+    "total_tokens": 89910881,
+    "reasoning_tokens": 1439085
+  },
+  "timing": {
+    "inference_seconds": 1420.9677103910071,
+    "evaluation_seconds": 198.20071546398685
+  },
+  "filtered_initial_count": 129,
+  "filtered_after_tool_rounds_count": 1,
+  "missing_final_sql_count": 11,
+  "final_sql_execution_error_count": 4,
+  "gold_error_ids": [
+    701
+  ],
+  "token_preflight_mismatch_count": 0,
+  "input_sha256": "dc96ae4ba4dd31583db7c057c188988bbff2cd2e69cd1ebb79ae6fc4ebeb0734",
+  "pipeline_sha256": {
+    "run.py": "e7be9e3f27a58c14504d2bd1be686f3b77678218607ee1dc62269b22d8f23940",
+    "tools.py": "aceaa680224f45c3bd43bf76bcdd89c645cd3f047b74238e85a09183f6cead2c",
+    "database.py": "ab271e6ae4951e4280264f05d9420206e73b7d5c16f78443022033c6127d7eda"
+  },
+  "data_sha256": {
+    "dev.json": "630272f2b1c44d8cef2c3b246f623355cf0bbc1e832c81061df895530dfc2f06",
+    "dev_tables.json": "35e7f73f2bc3a3bc4def9466215f7617ff8b37e9b2837f03539a42c9e9c69d97",
+    "train-6601.jsonl": "2ee64aa593e1adc59be7d5b9ce2395372a8ee27fdd94a3fb4d2fe09f3cd34bc8"
+  },
+  "notes": [
+    "No prompt or history trimming; the full 8192-token output allowance is retained for every attempted turn.",
+    "Filtered questions are excluded from eligible execution accuracy. Correct / 1534 is reported separately with filtered questions receiving no credit.",
+    "Missing SQL, prediction execution errors and gold execution errors remain incorrect within the eligible denominator.",
+    "Both extended statistics and sqlite_peek argument handling differ from the baseline. This comparison does not isolate either change.",
+    "Temperature-zero batched inference is not necessarily bitwise reproducible.",
+    "Token usage sums all API turns, including repeated prompt/history tokens."
+  ]
+}
