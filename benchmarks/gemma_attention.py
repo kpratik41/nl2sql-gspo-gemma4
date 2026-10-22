@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# Main objective: Gemma 4 31B CP=2 + FFPA (or validated efficient attention)
+# for long-context full-parameter NL2SQL RL in verl. CP reduces per-rank
+# sequence pressure; efficient attention avoids quadratic score storage.
+# Gates: forward memory/speed -> numerical/semantic parity -> real CP2
+# -> backward/optimizer/resume -> verl RL -> NL2SQL. FFPA is optional.
+# This file: Measure single-GPU forward latency/memory and kernel correctness before real CP2 or backward tests.
+# See GEMMA4_LONG_CONTEXT_RL.md for the objective and complete roadmap.
 """Fresh-process BF16 Gemma-shaped attention/model forward benchmarks.
 
 Does not implement AutoModel dispatch or distributed CP. Results identify that scope.

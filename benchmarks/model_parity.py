@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# Main objective: Gemma 4 31B CP=2 + FFPA (or validated efficient attention)
+# for long-context full-parameter NL2SQL RL in verl. CP reduces per-rank
+# sequence pressure; efficient attention avoids quadratic score storage.
+# Gates: forward memory/speed -> numerical/semantic parity -> real CP2
+# -> backward/optimizer/resume -> verl RL -> NL2SQL. FFPA is optional.
+# This file: Check same-weight teacher-forced probabilities and layer outputs before accepting full-model backend equivalence.
+# See GEMMA4_LONG_CONTEXT_RL.md for the objective and complete roadmap.
 """Same-weight teacher-forced Gemma parity diagnostic; no generation sampling."""
 import hashlib,json,time
 from pathlib import Path

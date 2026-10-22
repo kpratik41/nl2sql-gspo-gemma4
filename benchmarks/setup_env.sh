@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Main objective: Gemma 4 31B CP=2 + FFPA (or validated efficient attention)
+# for long-context full-parameter NL2SQL RL in verl. CP reduces per-rank
+# sequence pressure; efficient attention avoids quadratic score storage.
+# Gates: forward memory/speed -> numerical/semantic parity -> real CP2
+# -> backward/optimizer/resume -> verl RL -> NL2SQL. FFPA is optional.
+# This file: Recreate the measured benchmark environment before validating kernels and model execution.
+# See GEMMA4_LONG_CONTEXT_RL.md for the objective and complete roadmap.
 # Recreate the measured overlay without modifying the system/project environments.
 set -euo pipefail
 cd "$(dirname "$0")/.."

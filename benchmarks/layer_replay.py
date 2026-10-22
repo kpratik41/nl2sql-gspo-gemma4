@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# Main objective: Gemma 4 31B CP=2 + FFPA (or validated efficient attention)
+# for long-context full-parameter NL2SQL RL in verl. CP reduces per-rank
+# sequence pressure; efficient attention avoids quadratic score storage.
+# Gates: forward memory/speed -> numerical/semantic parity -> real CP2
+# -> backward/optimizer/resume -> verl RL -> NL2SQL. FFPA is optional.
+# This file: Isolate local precision and mask behavior with fixed decoder inputs and FP32 references before scaling training.
+# See GEMMA4_LONG_CONTEXT_RL.md for the objective and complete roadmap.
 """Replay real Gemma decoder inputs against FP32, with causal/window invariants."""
 import copy,hashlib,json
 from pathlib import Path
