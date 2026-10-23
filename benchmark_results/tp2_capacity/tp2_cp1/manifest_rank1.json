@@ -1,0 +1,24 @@
+{
+  "rank": 1,
+  "tp_rank": 1,
+  "cp_rank": 0,
+  "tp_group": [
+    0,
+    1
+  ],
+  "cp_group": [
+    1
+  ],
+  "local_parameter_GiB": 29.66277226805687,
+  "dtensor_parameters": 411,
+  "max_position_embeddings": 262144,
+  "dtype": "bfloat16",
+  "attention": "ring Flex BF16",
+  "compiled_masks": true,
+  "matmul_policy": "cuBLASLt, BF16 reduced reduction=False, split-K=False",
+  "fsdp": false,
+  "gradients": false,
+  "kv_cache": false,
+  "batch_size": 1,
+  "logits": "all sequence positions; vocabulary sharded over TP2"
+}

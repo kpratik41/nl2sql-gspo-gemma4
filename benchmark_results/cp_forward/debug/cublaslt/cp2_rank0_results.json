@@ -1,0 +1,180 @@
+[
+  {
+    "tokens": 128,
+    "ranks": [
+      {
+        "cp_size": 2,
+        "rank": 0,
+        "tokens": 128,
+        "matmul_policy": "cublaslt-full",
+        "local_tokens": 64,
+        "input_sha256": "7e79c59df01f3c72f80c007419373d9964b195bdc1e01eb7260be3f730eddcea",
+        "weight_fingerprint": "a4a17468c0e800c999ea7541120ddf15a18964341ba6d489d6f88b2ac89fe022",
+        "model_class": "<class 'nemo_automodel.components.models.gemma4_moe.model.Gemma4ForConditionalGeneration'>",
+        "backend": "model-owned ring Flex",
+        "median_ms": 163.6487470004795,
+        "times_ms": [
+          164.19874599887407,
+          163.6487470004795,
+          162.37056600039068
+        ],
+        "baseline_GiB": 58.30523443222046,
+        "peak_allocated_GiB": 58.370482444763184,
+        "incremental_peak_MiB": 66.81396484375,
+        "peak_reserved_GiB": 61.22265625,
+        "ring_dispatch_calls": 240,
+        "ring_cp_sizes_observed": [
+          2
+        ],
+        "ring_kernel_options": {
+          "BLOCK_M": 32,
+          "BLOCK_N": 32,
+          "BLOCK_M1": 32,
+          "BLOCK_N1": 32,
+          "BLOCK_M2": 32,
+          "BLOCK_N2": 32,
+          "num_stages": 1,
+          "num_warps": 4,
+          "FORCE_USE_FLEX_ATTENTION": true
+        },
+        "scope": "forward only; replicated BF16 weights; no FSDP, optimizer, packing or cache"
+      },
+      {
+        "cp_size": 2,
+        "rank": 1,
+        "tokens": 128,
+        "matmul_policy": "cublaslt-full",
+        "local_tokens": 64,
+        "input_sha256": "7e79c59df01f3c72f80c007419373d9964b195bdc1e01eb7260be3f730eddcea",
+        "weight_fingerprint": "a4a17468c0e800c999ea7541120ddf15a18964341ba6d489d6f88b2ac89fe022",
+        "model_class": "<class 'nemo_automodel.components.models.gemma4_moe.model.Gemma4ForConditionalGeneration'>",
+        "backend": "model-owned ring Flex",
+        "median_ms": 163.84094999921217,
+        "times_ms": [
+          164.36111700022593,
+          163.84094999921217,
+          162.56483899996965
+        ],
+        "baseline_GiB": 58.30523443222046,
+        "peak_allocated_GiB": 58.370482444763184,
+        "incremental_peak_MiB": 66.81396484375,
+        "peak_reserved_GiB": 61.22265625,
+        "ring_dispatch_calls": 240,
+        "ring_cp_sizes_observed": [
+          2
+        ],
+        "ring_kernel_options": {
+          "BLOCK_M": 32,
+          "BLOCK_N": 32,
+          "BLOCK_M1": 32,
+          "BLOCK_N1": 32,
+          "BLOCK_M2": 32,
+          "BLOCK_N2": 32,
+          "num_stages": 1,
+          "num_warps": 4,
+          "FORCE_USE_FLEX_ATTENTION": true
+        },
+        "scope": "forward only; replicated BF16 weights; no FSDP, optimizer, packing or cache"
+      }
+    ],
+    "comparison": {
+      "nll_cp1": 2.386164665222168,
+      "nll_cp2": 2.3857011795043945,
+      "nll_delta": -0.0004634857177734375,
+      "max_target_logprob_error": 0.3635272979736328,
+      "mean_target_logprob_error": 0.013118300586938858,
+      "max_sampled_kl": 0.0001378529705107212,
+      "sampled_top1_agreement": 1.0,
+      "screening_pass": false
+    }
+  },
+  {
+    "tokens": 1024,
+    "ranks": [
+      {
+        "cp_size": 2,
+        "rank": 0,
+        "tokens": 1024,
+        "matmul_policy": "cublaslt-full",
+        "local_tokens": 512,
+        "input_sha256": "b096ca2fc710d24a333803b9eec50e304519b00a866cfa2fc872cc2ccec07724",
+        "weight_fingerprint": "a4a17468c0e800c999ea7541120ddf15a18964341ba6d489d6f88b2ac89fe022",
+        "model_class": "<class 'nemo_automodel.components.models.gemma4_moe.model.Gemma4ForConditionalGeneration'>",
+        "backend": "model-owned ring Flex",
+        "median_ms": 225.14071300065552,
+        "times_ms": [
+          224.90065999954822,
+          225.14071300065552,
+          225.1558899988595
+        ],
+        "baseline_GiB": 58.359572887420654,
+        "peak_allocated_GiB": 58.881553173065186,
+        "incremental_peak_MiB": 534.5078125,
+        "peak_reserved_GiB": 61.22265625,
+        "ring_dispatch_calls": 480,
+        "ring_cp_sizes_observed": [
+          2
+        ],
+        "ring_kernel_options": {
+          "BLOCK_M": 32,
+          "BLOCK_N": 32,
+          "BLOCK_M1": 32,
+          "BLOCK_N1": 32,
+          "BLOCK_M2": 32,
+          "BLOCK_N2": 32,
+          "num_stages": 1,
+          "num_warps": 4,
+          "FORCE_USE_FLEX_ATTENTION": true
+        },
+        "scope": "forward only; replicated BF16 weights; no FSDP, optimizer, packing or cache"
+      },
+      {
+        "cp_size": 2,
+        "rank": 1,
+        "tokens": 1024,
+        "matmul_policy": "cublaslt-full",
+        "local_tokens": 512,
+        "input_sha256": "b096ca2fc710d24a333803b9eec50e304519b00a866cfa2fc872cc2ccec07724",
+        "weight_fingerprint": "a4a17468c0e800c999ea7541120ddf15a18964341ba6d489d6f88b2ac89fe022",
+        "model_class": "<class 'nemo_automodel.components.models.gemma4_moe.model.Gemma4ForConditionalGeneration'>",
+        "backend": "model-owned ring Flex",
+        "median_ms": 225.15998699964257,
+        "times_ms": [
+          224.90889599976072,
+          225.15998699964257,
+          225.16174600059458
+        ],
+        "baseline_GiB": 58.359572887420654,
+        "peak_allocated_GiB": 58.881553173065186,
+        "incremental_peak_MiB": 534.5078125,
+        "peak_reserved_GiB": 61.22265625,
+        "ring_dispatch_calls": 480,
+        "ring_cp_sizes_observed": [
+          2
+        ],
+        "ring_kernel_options": {
+          "BLOCK_M": 32,
+          "BLOCK_N": 32,
+          "BLOCK_M1": 32,
+          "BLOCK_N1": 32,
+          "BLOCK_M2": 32,
+          "BLOCK_N2": 32,
+          "num_stages": 1,
+          "num_warps": 4,
+          "FORCE_USE_FLEX_ATTENTION": true
+        },
+        "scope": "forward only; replicated BF16 weights; no FSDP, optimizer, packing or cache"
+      }
+    ],
+    "comparison": {
+      "nll_cp1": 0.427421510219574,
+      "nll_cp2": 0.4294717311859131,
+      "nll_delta": 0.0020502209663391113,
+      "max_target_logprob_error": 2.3650150299072266,
+      "mean_target_logprob_error": 0.00841148104518652,
+      "max_sampled_kl": 9.747548028826714e-05,
+      "sampled_top1_agreement": 1.0,
+      "screening_pass": false
+    }
+  }
+]

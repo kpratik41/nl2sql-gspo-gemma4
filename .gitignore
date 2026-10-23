@@ -1,6 +1,7 @@
 # Local Python environments and bytecode
 .venv/
 .venv-bench/
+.venv-verl*/
 __pycache__/
 *.py[cod]
 
@@ -9,3 +10,12 @@ __pycache__/
 /data/
 /logs/
 /outputs/
+/databases/
+
+# Local full-vocabulary samples used by CP parity comparisons; JSON/logs stay tracked.
+/benchmark_results/cp_forward/**/*.pt
+/benchmark_results/tp2_capacity/**/*.pt
+
+# Obsolete diagnostic precision runs retained only on this host.
+/benchmark_results/cp_forward/debug/fp64_reference/
+/benchmark_results/cp_forward/debug/natural_fp64/

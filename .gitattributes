@@ -1,0 +1,2 @@
+# Preserve generated measurement artifacts verbatim without source whitespace checks.
+benchmark_results/** -whitespace

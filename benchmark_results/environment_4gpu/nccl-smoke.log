@@ -1,0 +1,8 @@
+W1022 21:35:54.263000 32834 torch/distributed/run.py:852] 
+W1022 21:35:54.263000 32834 torch/distributed/run.py:852] *****************************************
+W1022 21:35:54.263000 32834 torch/distributed/run.py:852] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W1022 21:35:54.263000 32834 torch/distributed/run.py:852] *****************************************
+{"rank": 3, "nccl_all_reduce": "pass", "sum": 10.0}{"rank": 0, "nccl_all_reduce": "pass", "sum": 10.0}{"rank": 1, "nccl_all_reduce": "pass", "sum": 10.0}
+
+
+{"rank": 2, "nccl_all_reduce": "pass", "sum": 10.0}

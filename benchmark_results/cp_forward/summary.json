@@ -1,0 +1,118 @@
+[
+  {
+    "tokens": 128,
+    "comparisons": {
+      "native_to_ring1": {
+        "reference_nll": 2.1028027534484863,
+        "candidate_nll": 2.099107265472412,
+        "nll_delta": -0.0036954879760742188,
+        "mean_target_logprob_error": 0.02289501763880253,
+        "max_target_logprob_error": 0.5278778076171875,
+        "worst_query_position": 86,
+        "target_logprob_error_p50_p95_p99": [
+          0.0,
+          0.12454738467931747,
+          0.40176689624786377
+        ],
+        "max_sampled_kl": 0.0007297609117813408,
+        "sampled_top1_agreement": 1.0,
+        "screening_pass": false
+      },
+      "native_to_ring2": {
+        "reference_nll": 2.1028027534484863,
+        "candidate_nll": 3.151768445968628,
+        "nll_delta": 1.0489656925201416,
+        "mean_target_logprob_error": 1.2313306331634521,
+        "max_target_logprob_error": 22.990882873535156,
+        "worst_query_position": 1,
+        "target_logprob_error_p50_p95_p99": [
+          0.000156402587890625,
+          7.129799842834473,
+          12.095979690551758
+        ],
+        "max_sampled_kl": 0.10499988496303558,
+        "sampled_top1_agreement": 1.0,
+        "screening_pass": false
+      },
+      "ring1_to_ring2": {
+        "reference_nll": 2.099107265472412,
+        "candidate_nll": 3.151768445968628,
+        "nll_delta": 1.0526611804962158,
+        "mean_target_logprob_error": 1.2332526445388794,
+        "max_target_logprob_error": 22.990882873535156,
+        "worst_query_position": 1,
+        "target_logprob_error_p50_p95_p99": [
+          0.000156402587890625,
+          7.129799842834473,
+          12.095979690551758
+        ],
+        "max_sampled_kl": 0.08649218827486038,
+        "sampled_top1_agreement": 1.0,
+        "screening_pass": false
+      }
+    },
+    "native_cp1_median_ms": 75.8827410008962,
+    "ring_cp1_median_ms": 112.09022699949855,
+    "cp2_worst_rank_median_ms": 169.1368660012813,
+    "native_cp1_peak_allocated_GiB": 58.425414085388184,
+    "cp2_worst_rank_peak_allocated_GiB": 58.369505882263184
+  },
+  {
+    "tokens": 1024,
+    "comparisons": {
+      "native_to_ring1": {
+        "reference_nll": 0.5340955853462219,
+        "candidate_nll": 0.5326936841011047,
+        "nll_delta": -0.0014019012451171875,
+        "mean_target_logprob_error": 0.00859694741666317,
+        "max_target_logprob_error": 1.1799373626708984,
+        "worst_query_position": 828,
+        "target_logprob_error_p50_p95_p99": [
+          0.0,
+          0.01602308824658394,
+          0.24896495044231415
+        ],
+        "max_sampled_kl": 3.933765401598066e-05,
+        "sampled_top1_agreement": 1.0,
+        "screening_pass": false
+      },
+      "native_to_ring2": {
+        "reference_nll": 0.5340955853462219,
+        "candidate_nll": 0.3790441155433655,
+        "nll_delta": -0.15505146980285645,
+        "mean_target_logprob_error": 0.1957305669784546,
+        "max_target_logprob_error": 16.71596336364746,
+        "worst_query_position": 1,
+        "target_logprob_error_p50_p95_p99": [
+          0.0,
+          0.6255459785461426,
+          4.893202304840088
+        ],
+        "max_sampled_kl": 0.3110574185848236,
+        "sampled_top1_agreement": 0.875,
+        "screening_pass": false
+      },
+      "ring1_to_ring2": {
+        "reference_nll": 0.5326936841011047,
+        "candidate_nll": 0.3790441155433655,
+        "nll_delta": -0.15364956855773926,
+        "mean_target_logprob_error": 0.19499428570270538,
+        "max_target_logprob_error": 16.71596336364746,
+        "worst_query_position": 1,
+        "target_logprob_error_p50_p95_p99": [
+          0.0,
+          0.5637476444244385,
+          4.893202304840088
+        ],
+        "max_sampled_kl": 0.3115473687648773,
+        "sampled_top1_agreement": 0.875,
+        "screening_pass": false
+      }
+    },
+    "native_cp1_median_ms": 249.61639399953128,
+    "ring_cp1_median_ms": 273.14298400051484,
+    "cp2_worst_rank_median_ms": 226.4504129998386,
+    "native_cp1_peak_allocated_GiB": 59.32973861694336,
+    "cp2_worst_rank_peak_allocated_GiB": 58.880576610565186
+  }
+]

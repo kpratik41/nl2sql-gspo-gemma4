@@ -1,0 +1,37 @@
+{
+  "repository": "https://github.com/kpratik41/nl2sql-gspo-gemma4",
+  "branch": "consensus",
+  "commit": "588e1378777c64fa1a48d2548efccd51edd29270",
+  "files": {
+    "gen_tools.py": {
+      "source": "gen_tools.py",
+      "sha256_original": "38721cd85e75d53bdac4457232fb602875e52bbaed0e70a01c94f219118a11d6",
+      "changes": "trailing whitespace normalized; behavior unchanged"
+    },
+    "prompts.py": {
+      "source": "prompts.py",
+      "sha256_original": "344c776a77e7c34b6f29026e0ebf734a96ca56038244eca977156e741ba94e88",
+      "changes": "none"
+    },
+    "sql_utils.py": {
+      "source": "src/nl2sql_gspo/sql_utils.py",
+      "sha256_original": "bfc902301fe60ced7aacb68de28988778e4e3f2d587b6d3f8ecde06309db0247",
+      "changes": "none"
+    },
+    "schema_utils.py": {
+      "source": "src/nl2sql_gspo/schema_utils.py",
+      "sha256_original": "7efade40a143b18231e90084b64a9ab9220a405aee01f96ad9553d57785651e2",
+      "changes": "none"
+    },
+    "rewards.py": {
+      "source": "src/nl2sql_gspo/rewards.py",
+      "sha256_original": "41e54a5c0a9851e5d91009975f77546a95935cdd94e681d681ecbaba517757ba",
+      "changes": "package-relative imports only"
+    },
+    "tool_calling.py": {
+      "source": "src/nl2sql_gspo/tool_calling.py",
+      "sha256_original": "9237a12d541dd3f0dec84a4b019ebe615117c242166d49836c14bc493665b52a",
+      "changes": "none"
+    }
+  }
+}

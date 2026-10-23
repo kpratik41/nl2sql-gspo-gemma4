@@ -1,0 +1,11 @@
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/megatron_fsdp/mixed_precision.py:115: UserWarning: Transformer Engine and Apex are not installed. Falling back to local implementations of multi_tensor_applier and multi_tensor_scale
+  warnings.warn(
+{"versions": {"torch": "2.10.0+cu130", "transformers": "5.18.0", "nemo-automodel": "0.8.0+65866fbce", "ffpa-attn": "0.2.4", "nvidia-cutlass-dsl": "4.6.2"}}
+{"gpu": 0, "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition", "bf16_matmul": "pass"}
+{"gpu": 1, "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition", "bf16_matmul": "pass"}
+{"gpu": 2, "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition", "bf16_matmul": "pass"}
+{"gpu": 3, "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition", "bf16_matmul": "pass"}
+FFPA dense BF16 D512 GQA forward: pass
+FFPA dense backward finite gradients: pass (not gradient parity)
+AutoModel dense/varlen FFPA forward and finite backward: pass
+FlexAttention compiled BF16 D512 GQA forward: pass

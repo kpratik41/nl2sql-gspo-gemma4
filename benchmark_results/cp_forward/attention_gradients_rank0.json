@@ -1,0 +1,72 @@
+[
+  {
+    "layer": "global",
+    "rank": 0,
+    "tokens": 128,
+    "head_dim": 512,
+    "query_heads": 32,
+    "kv_heads": 4,
+    "window": null,
+    "reference": "full-sequence FP32 SDPA math with BF16 QKV values",
+    "atol": 0.03,
+    "rtol": 0.03,
+    "metrics": {
+      "output": {
+        "max_abs": 0.009269237518310547,
+        "relative_l2": 0.0018977647414430976,
+        "pass": true
+      },
+      "dq": {
+        "max_abs": 0.041230201721191406,
+        "relative_l2": 0.002524740295484662,
+        "pass": true
+      },
+      "dk": {
+        "max_abs": 0.07118415832519531,
+        "relative_l2": 0.0030702988151460886,
+        "pass": true
+      },
+      "dv": {
+        "max_abs": 0.06900978088378906,
+        "relative_l2": 0.0028047324158251286,
+        "pass": true
+      }
+    },
+    "tile_policy": "32x32 forward, 16x16 backward, one stage, four warps, forced Flex"
+  },
+  {
+    "layer": "sliding",
+    "rank": 0,
+    "tokens": 1280,
+    "head_dim": 256,
+    "query_heads": 32,
+    "kv_heads": 16,
+    "window": 1024,
+    "reference": "full-sequence FP32 SDPA math with BF16 QKV values",
+    "atol": 0.03,
+    "rtol": 0.03,
+    "metrics": {
+      "output": {
+        "max_abs": 0.008899450302124023,
+        "relative_l2": 0.0020284245256334543,
+        "pass": true
+      },
+      "dq": {
+        "max_abs": 0.020377159118652344,
+        "relative_l2": 0.0024555204436182976,
+        "pass": true
+      },
+      "dk": {
+        "max_abs": 0.03162670135498047,
+        "relative_l2": 0.003035598434507847,
+        "pass": true
+      },
+      "dv": {
+        "max_abs": 0.027348995208740234,
+        "relative_l2": 0.0028711685445159674,
+        "pass": true
+      }
+    },
+    "tile_policy": "32x32 forward, 16x16 backward, one stage, four warps, forced Flex"
+  }
+]

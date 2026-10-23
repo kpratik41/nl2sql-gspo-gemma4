@@ -1,0 +1,15 @@
+defaults:
+  - base
+  - _self_
+
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+
+# Explicit sequence-ratio variant; all task rewards/batch reward scaling stay the same.
+actor_rollout_ref:
+  actor:
+    policy_loss:
+      loss_mode: gspo
+trainer:
+  experiment_name: tp2-cp2-gspo

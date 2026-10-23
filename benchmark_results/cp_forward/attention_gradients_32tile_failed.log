@@ -1,0 +1,784 @@
+W1022 21:48:38.358000 39703 torch/distributed/run.py:852] 
+W1022 21:48:38.358000 39703 torch/distributed/run.py:852] *****************************************
+W1022 21:48:38.358000 39703 torch/distributed/run.py:852] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W1022 21:48:38.358000 39703 torch/distributed/run.py:852] *****************************************
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/megatron_fsdp/mixed_precision.py:115: UserWarning: Transformer Engine and Apex are not installed. Falling back to local implementations of multi_tensor_applier and multi_tensor_scale
+  warnings.warn(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/megatron_fsdp/mixed_precision.py:115: UserWarning: Transformer Engine and Apex are not installed. Falling back to local implementations of multi_tensor_applier and multi_tensor_scale
+  warnings.warn(
+[rank 0] global: ring forward/backward
+[rank 1] global: ring forward/backward
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/attention/flex_attention.py:1559: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/attention/flex_attention.py:1559: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2] failed to eagerly compile backwards for dynamic, suppressing in case backwards not needed
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2] Traceback (most recent call last):
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/graph_compile.py", line 1912, in _aot_stage2b_bw_compile
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     compiled_bw_func = aot_config.bw_compiler(
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         bw_module_copy, placeholder_list
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/schemas.py", line 1249, in __call__
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return self.compiler_fn(gm, example_inputs)
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]            ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/backends/common.py", line 83, in _wrapped_bw_compiler
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     disable(
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ~~~~~~~~
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         bw_compiler_fn, reason="do not trace backward compiler function"
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )(*args, **kwargs),  # type: ignore[misc]
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ~^^^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/eval_frame.py", line 1181, in _fn
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return fn(*args, **kwargs)
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_utils_internal.py", line 97, in wrapper_function
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return function(*args, **kwargs)
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 2716, in bw_compiler
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return compile_fx_backward(
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         gm,
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ...<2 lines>...
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         inner_compile=inner_compile,
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 2396, in compile_fx_backward
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return inner_compile(
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         gm,
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ...<5 lines>...
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         boxed_forward_device_index=compiler_config_extra.forward_device,
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 806, in compile_fx_inner
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return wrap_compiler_debug(_compile_fx_inner, compiler_name="inductor")(
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         gm,
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         ^^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         example_inputs,
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         ^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         **kwargs,
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         ^^^^^^^^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/repro/after_aot.py", line 146, in debug_wrapper
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     inner_compiled_fn = compiler_fn(gm, example_inputs)
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1019, in _compile_fx_inner
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     raise InductorError(e, currentframe()).with_traceback(
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         e.__traceback__
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ) from None
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1003, in _compile_fx_inner
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     mb_compiled_graph = fx_codegen_and_compile(
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         gm, example_inputs, inputs_to_check, **graph_kwargs
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1766, in fx_codegen_and_compile
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return scheme.codegen_and_compile(gm, example_inputs, inputs_to_check, graph_kwargs)
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]            ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1537, in codegen_and_compile
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     compiled_module = graph.compile_to_module()
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2416, in compile_to_module
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return self._compile_to_module()
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]            ~~~~~~~~~~~~~~~~~~~~~~~^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2426, in _compile_to_module
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     mod = self._compile_to_module_lines(wrapper_code)
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2501, in _compile_to_module_lines
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     mod = PyCodeCache.load_by_key_path(
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         key,
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ...<6 lines>...
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         },
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/codecache.py", line 3674, in load_by_key_path
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     mod = _reload_python_module(key, path, set_sys_modules=in_toplevel)
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/compile_tasks.py", line 35, in _reload_python_module
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     exec(code, mod.__dict__, mod.__dict__)
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/tmp/torchinductor_ec2-user/g4/cg45g66aen2ls6kdd5sxjlwhjdk4mgdkbfcugv4pxuotpubm7zmc.py", line 943, in <module>
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     async_compile.wait(globals())
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 649, in wait
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     self._wait_futures(scope)
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ~~~~~~~~~~~~~~~~~~^^^^^^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 669, in _wait_futures
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     kernel = result.result()
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/codecache.py", line 4417, in result
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return self.result_fn()
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]            ~~~~~~~~~~~~~~^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 447, in get_result
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     kernel.precompile(
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ~~~~~~~~~~~~~~~~~^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         warm_cache_only=False,
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         ^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         reload_kernel=reload_kernel_in_parent,
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         static_triton_bundle_key=CompiledTritonKernels.key(source_code),
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/triton_heuristics.py", line 444, in precompile
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     self._make_launchers()
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ~~~~~~~~~~~~~~~~~~~~^^
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/triton_heuristics.py", line 613, in _make_launchers
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     raise RuntimeError(f"No valid triton configs. {type(exc).__name__}: {exc}")
+[rank0]:W1022 21:48:53.359000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2] torch._inductor.exc.InductorError: RuntimeError: No valid triton configs. OutOfMemoryError: out of resource: triton_tem_fused_flex_attention_backward_mul_1 Required: 131072 Hardware limit:101376 Reducing block sizes or `num_stages` may help.
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2] failed to eagerly compile backwards for dynamic, suppressing in case backwards not needed
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2] Traceback (most recent call last):
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/graph_compile.py", line 1912, in _aot_stage2b_bw_compile
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     compiled_bw_func = aot_config.bw_compiler(
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         bw_module_copy, placeholder_list
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/schemas.py", line 1249, in __call__
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return self.compiler_fn(gm, example_inputs)
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]            ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/backends/common.py", line 83, in _wrapped_bw_compiler
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     disable(
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ~~~~~~~~
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         bw_compiler_fn, reason="do not trace backward compiler function"
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )(*args, **kwargs),  # type: ignore[misc]
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ~^^^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/eval_frame.py", line 1181, in _fn
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return fn(*args, **kwargs)
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_utils_internal.py", line 97, in wrapper_function
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return function(*args, **kwargs)
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 2716, in bw_compiler
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return compile_fx_backward(
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         gm,
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ...<2 lines>...
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         inner_compile=inner_compile,
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 2396, in compile_fx_backward
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return inner_compile(
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         gm,
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ...<5 lines>...
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         boxed_forward_device_index=compiler_config_extra.forward_device,
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 806, in compile_fx_inner
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return wrap_compiler_debug(_compile_fx_inner, compiler_name="inductor")(
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         gm,
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         ^^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         example_inputs,
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         ^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         **kwargs,
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         ^^^^^^^^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/repro/after_aot.py", line 146, in debug_wrapper
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     inner_compiled_fn = compiler_fn(gm, example_inputs)
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1019, in _compile_fx_inner
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     raise InductorError(e, currentframe()).with_traceback(
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         e.__traceback__
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ) from None
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1003, in _compile_fx_inner
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     mb_compiled_graph = fx_codegen_and_compile(
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         gm, example_inputs, inputs_to_check, **graph_kwargs
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1766, in fx_codegen_and_compile
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return scheme.codegen_and_compile(gm, example_inputs, inputs_to_check, graph_kwargs)
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]            ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1537, in codegen_and_compile
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     compiled_module = graph.compile_to_module()
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2416, in compile_to_module
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return self._compile_to_module()
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]            ~~~~~~~~~~~~~~~~~~~~~~~^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2426, in _compile_to_module
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     mod = self._compile_to_module_lines(wrapper_code)
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2501, in _compile_to_module_lines
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     mod = PyCodeCache.load_by_key_path(
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         key,
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ...<6 lines>...
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         },
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/codecache.py", line 3674, in load_by_key_path
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     mod = _reload_python_module(key, path, set_sys_modules=in_toplevel)
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/compile_tasks.py", line 35, in _reload_python_module
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     exec(code, mod.__dict__, mod.__dict__)
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/tmp/torchinductor_ec2-user/xb/cxbpwh422v3nvw2rmpri232vsywpmxy25az5qewpu5radjudqtd5.py", line 943, in <module>
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     async_compile.wait(globals())
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 649, in wait
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     self._wait_futures(scope)
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ~~~~~~~~~~~~~~~~~~^^^^^^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 669, in _wait_futures
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     kernel = result.result()
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/codecache.py", line 4417, in result
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     return self.result_fn()
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]            ~~~~~~~~~~~~~~^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 447, in get_result
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     kernel.precompile(
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ~~~~~~~~~~~~~~~~~^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         warm_cache_only=False,
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         ^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         reload_kernel=reload_kernel_in_parent,
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         static_triton_bundle_key=CompiledTritonKernels.key(source_code),
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     )
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/triton_heuristics.py", line 444, in precompile
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     self._make_launchers()
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     ~~~~~~~~~~~~~~~~~~~~^^
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/triton_heuristics.py", line 613, in _make_launchers
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2]     raise RuntimeError(f"No valid triton configs. {type(exc).__name__}: {exc}")
+[rank1]:W1022 21:48:53.415000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/2] torch._inductor.exc.InductorError: RuntimeError: No valid triton configs. OutOfMemoryError: out of resource: triton_tem_fused_flex_attention_backward_mul_1 Required: 131072 Hardware limit:101376 Reducing block sizes or `num_stages` may help.
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3] failed to eagerly compile backwards for dynamic, suppressing in case backwards not needed
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3] Traceback (most recent call last):
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/graph_compile.py", line 1912, in _aot_stage2b_bw_compile
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     compiled_bw_func = aot_config.bw_compiler(
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         bw_module_copy, placeholder_list
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/schemas.py", line 1249, in __call__
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return self.compiler_fn(gm, example_inputs)
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]            ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/backends/common.py", line 83, in _wrapped_bw_compiler
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     disable(
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ~~~~~~~~
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         bw_compiler_fn, reason="do not trace backward compiler function"
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )(*args, **kwargs),  # type: ignore[misc]
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ~^^^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/eval_frame.py", line 1181, in _fn
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return fn(*args, **kwargs)
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_utils_internal.py", line 97, in wrapper_function
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return function(*args, **kwargs)
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 2716, in bw_compiler
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return compile_fx_backward(
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         gm,
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ...<2 lines>...
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         inner_compile=inner_compile,
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 2396, in compile_fx_backward
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return inner_compile(
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         gm,
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ...<5 lines>...
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         boxed_forward_device_index=compiler_config_extra.forward_device,
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 806, in compile_fx_inner
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return wrap_compiler_debug(_compile_fx_inner, compiler_name="inductor")(
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         gm,
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         ^^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         example_inputs,
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         ^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         **kwargs,
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         ^^^^^^^^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/repro/after_aot.py", line 146, in debug_wrapper
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     inner_compiled_fn = compiler_fn(gm, example_inputs)
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1019, in _compile_fx_inner
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     raise InductorError(e, currentframe()).with_traceback(
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         e.__traceback__
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ) from None
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1003, in _compile_fx_inner
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     mb_compiled_graph = fx_codegen_and_compile(
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         gm, example_inputs, inputs_to_check, **graph_kwargs
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1766, in fx_codegen_and_compile
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return scheme.codegen_and_compile(gm, example_inputs, inputs_to_check, graph_kwargs)
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]            ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1537, in codegen_and_compile
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     compiled_module = graph.compile_to_module()
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2416, in compile_to_module
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return self._compile_to_module()
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]            ~~~~~~~~~~~~~~~~~~~~~~~^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2426, in _compile_to_module
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     mod = self._compile_to_module_lines(wrapper_code)
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2501, in _compile_to_module_lines
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     mod = PyCodeCache.load_by_key_path(
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         key,
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ...<6 lines>...
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         },
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/codecache.py", line 3674, in load_by_key_path
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     mod = _reload_python_module(key, path, set_sys_modules=in_toplevel)
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/compile_tasks.py", line 35, in _reload_python_module
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     exec(code, mod.__dict__, mod.__dict__)
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/tmp/torchinductor_ec2-user/qo/cqojdbayvngbo5cuxvdg55sekic5knixdtpeg37jefufvew2krhx.py", line 944, in <module>
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     async_compile.wait(globals())
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 649, in wait
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     self._wait_futures(scope)
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ~~~~~~~~~~~~~~~~~~^^^^^^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 669, in _wait_futures
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     kernel = result.result()
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/codecache.py", line 4417, in result
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return self.result_fn()
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]            ~~~~~~~~~~~~~~^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 447, in get_result
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     kernel.precompile(
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ~~~~~~~~~~~~~~~~~^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         warm_cache_only=False,
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         ^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         reload_kernel=reload_kernel_in_parent,
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         static_triton_bundle_key=CompiledTritonKernels.key(source_code),
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/triton_heuristics.py", line 444, in precompile
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     self._make_launchers()
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ~~~~~~~~~~~~~~~~~~~~^^
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/triton_heuristics.py", line 613, in _make_launchers
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     raise RuntimeError(f"No valid triton configs. {type(exc).__name__}: {exc}")
+[rank0]:W1022 21:48:58.956000 39782 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3] torch._inductor.exc.InductorError: RuntimeError: No valid triton configs. OutOfMemoryError: out of resource: triton_tem_fused_flex_attention_backward_mul_1 Required: 131072 Hardware limit:101376 Reducing block sizes or `num_stages` may help.
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3] failed to eagerly compile backwards for dynamic, suppressing in case backwards not needed
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3] Traceback (most recent call last):
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/graph_compile.py", line 1912, in _aot_stage2b_bw_compile
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     compiled_bw_func = aot_config.bw_compiler(
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         bw_module_copy, placeholder_list
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/schemas.py", line 1249, in __call__
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return self.compiler_fn(gm, example_inputs)
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]            ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/backends/common.py", line 83, in _wrapped_bw_compiler
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     disable(
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ~~~~~~~~
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         bw_compiler_fn, reason="do not trace backward compiler function"
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )(*args, **kwargs),  # type: ignore[misc]
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ~^^^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/eval_frame.py", line 1181, in _fn
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return fn(*args, **kwargs)
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_utils_internal.py", line 97, in wrapper_function
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return function(*args, **kwargs)
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 2716, in bw_compiler
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return compile_fx_backward(
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         gm,
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ...<2 lines>...
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         inner_compile=inner_compile,
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 2396, in compile_fx_backward
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return inner_compile(
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         gm,
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ...<5 lines>...
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         boxed_forward_device_index=compiler_config_extra.forward_device,
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 806, in compile_fx_inner
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return wrap_compiler_debug(_compile_fx_inner, compiler_name="inductor")(
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         gm,
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         ^^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         example_inputs,
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         ^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         **kwargs,
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         ^^^^^^^^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/repro/after_aot.py", line 146, in debug_wrapper
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     inner_compiled_fn = compiler_fn(gm, example_inputs)
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1019, in _compile_fx_inner
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     raise InductorError(e, currentframe()).with_traceback(
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         e.__traceback__
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ) from None
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1003, in _compile_fx_inner
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     mb_compiled_graph = fx_codegen_and_compile(
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         gm, example_inputs, inputs_to_check, **graph_kwargs
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1766, in fx_codegen_and_compile
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return scheme.codegen_and_compile(gm, example_inputs, inputs_to_check, graph_kwargs)
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]            ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1537, in codegen_and_compile
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     compiled_module = graph.compile_to_module()
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2416, in compile_to_module
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return self._compile_to_module()
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]            ~~~~~~~~~~~~~~~~~~~~~~~^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2426, in _compile_to_module
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     mod = self._compile_to_module_lines(wrapper_code)
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2501, in _compile_to_module_lines
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     mod = PyCodeCache.load_by_key_path(
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         key,
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ...<6 lines>...
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         },
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/codecache.py", line 3674, in load_by_key_path
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     mod = _reload_python_module(key, path, set_sys_modules=in_toplevel)
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/compile_tasks.py", line 35, in _reload_python_module
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     exec(code, mod.__dict__, mod.__dict__)
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/tmp/torchinductor_ec2-user/5r/c5rppes56ljbz3ghysdl7atd3rxlea5execqswoe4x6w4xsbxxaq.py", line 944, in <module>
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     async_compile.wait(globals())
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 649, in wait
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     self._wait_futures(scope)
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ~~~~~~~~~~~~~~~~~~^^^^^^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 669, in _wait_futures
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     kernel = result.result()
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/codecache.py", line 4417, in result
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     return self.result_fn()
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]            ~~~~~~~~~~~~~~^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 447, in get_result
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     kernel.precompile(
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ~~~~~~~~~~~~~~~~~^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         warm_cache_only=False,
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         ^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         reload_kernel=reload_kernel_in_parent,
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         static_triton_bundle_key=CompiledTritonKernels.key(source_code),
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     )
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/triton_heuristics.py", line 444, in precompile
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     self._make_launchers()
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     ~~~~~~~~~~~~~~~~~~~~^^
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/triton_heuristics.py", line 613, in _make_launchers
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3]     raise RuntimeError(f"No valid triton configs. {type(exc).__name__}: {exc}")
+[rank1]:W1022 21:48:59.009000 39783 torch/_functorch/_aot_autograd/graph_compile.py:1932] [0/3] torch._inductor.exc.InductorError: RuntimeError: No valid triton configs. OutOfMemoryError: out of resource: triton_tem_fused_flex_attention_backward_mul_1 Required: 131072 Hardware limit:101376 Reducing block sizes or `num_stages` may help.
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/cp_attention_gradients.py", line 80, in <module>
+[rank0]:     main()
+[rank0]:     ~~~~^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/cp_attention_gradients.py", line 54, in main
+[rank0]:     actual.backward(upstream_grad[:, :, start:end].contiguous())
+[rank0]:     ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_tensor.py", line 630, in backward
+[rank0]:     torch.autograd.backward(
+[rank0]:     ~~~~~~~~~~~~~~~~~~~~~~~^
+[rank0]:         self, gradient, retain_graph, create_graph, inputs=inputs
+[rank0]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:     )
+[rank0]:     ^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/autograd/__init__.py", line 364, in backward
+[rank0]:     _engine_run_backward(
+[rank0]:     ~~~~~~~~~~~~~~~~~~~~^
+[rank0]:         tensors,
+[rank0]:         ^^^^^^^^
+[rank0]:     ...<5 lines>...
+[rank0]:         accumulate_grad=True,
+[rank0]:         ^^^^^^^^^^^^^^^^^^^^^
+[rank0]:     )
+[rank0]:     ^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/autograd/graph.py", line 865, in _engine_run_backward
+[rank0]:     return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+[rank0]:            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:         t_outputs, *args, **kwargs
+[rank0]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:     )  # Calls into the C++ engine to run the backward pass
+[rank0]:     ^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/autograd/function.py", line 317, in apply
+[rank0]:     return user_fn(self, *args)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 1112, in backward
+[rank0]:     grads = torch.autograd.grad(out_acc, grad_targets, grad_output, allow_unused=True)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/autograd/__init__.py", line 515, in grad
+[rank0]:     result = _engine_run_backward(
+[rank0]:         outputs,
+[rank0]:     ...<5 lines>...
+[rank0]:         accumulate_grad=False,
+[rank0]:     )
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/autograd/graph.py", line 865, in _engine_run_backward
+[rank0]:     return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+[rank0]:            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:         t_outputs, *args, **kwargs
+[rank0]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:     )  # Calls into the C++ engine to run the backward pass
+[rank0]:     ^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/autograd/function.py", line 317, in apply
+[rank0]:     return user_fn(self, *args)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/runtime_wrappers.py", line 2338, in backward
+[rank0]:     return impl_fn()
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/runtime_wrappers.py", line 2324, in impl_fn
+[rank0]:     out = CompiledFunction._backward_impl(ctx, all_args)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/runtime_wrappers.py", line 2465, in _backward_impl
+[rank0]:     CompiledFunction.compiled_bw = aot_config.bw_compiler(
+[rank0]:                                    ~~~~~~~~~~~~~~~~~~~~~~^
+[rank0]:         copy.deepcopy(bw_module), placeholder_list
+[rank0]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:     )
+[rank0]:     ^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/schemas.py", line 1249, in __call__
+[rank0]:     return self.compiler_fn(gm, example_inputs)
+[rank0]:            ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/backends/common.py", line 83, in _wrapped_bw_compiler
+[rank0]:     disable(
+[rank0]:     ~~~~~~~~
+[rank0]:         bw_compiler_fn, reason="do not trace backward compiler function"
+[rank0]:         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[rank0]:     )(*args, **kwargs),  # type: ignore[misc]
+[rank0]:     ~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/eval_frame.py", line 1181, in _fn
+[rank0]:     return fn(*args, **kwargs)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_utils_internal.py", line 97, in wrapper_function
+[rank0]:     return function(*args, **kwargs)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 2716, in bw_compiler
+[rank0]:     return compile_fx_backward(
+[rank0]:         gm,
+[rank0]:     ...<2 lines>...
+[rank0]:         inner_compile=inner_compile,
+[rank0]:     )
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 2396, in compile_fx_backward
+[rank0]:     return inner_compile(
+[rank0]:         gm,
+[rank0]:     ...<5 lines>...
+[rank0]:         boxed_forward_device_index=compiler_config_extra.forward_device,
+[rank0]:     )
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 806, in compile_fx_inner
+[rank0]:     return wrap_compiler_debug(_compile_fx_inner, compiler_name="inductor")(
+[rank0]:            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+[rank0]:         gm,
+[rank0]:         ^^^
+[rank0]:         example_inputs,
+[rank0]:         ^^^^^^^^^^^^^^^
+[rank0]:         **kwargs,
+[rank0]:         ^^^^^^^^^
+[rank0]:     )
+[rank0]:     ^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/repro/after_aot.py", line 146, in debug_wrapper
+[rank0]:     inner_compiled_fn = compiler_fn(gm, example_inputs)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1019, in _compile_fx_inner
+[rank0]:     raise InductorError(e, currentframe()).with_traceback(
+[rank0]:         e.__traceback__
+[rank0]:     ) from None
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1003, in _compile_fx_inner
+[rank0]:     mb_compiled_graph = fx_codegen_and_compile(
+[rank0]:         gm, example_inputs, inputs_to_check, **graph_kwargs
+[rank0]:     )
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1766, in fx_codegen_and_compile
+[rank0]:     return scheme.codegen_and_compile(gm, example_inputs, inputs_to_check, graph_kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1537, in codegen_and_compile
+[rank0]:     compiled_module = graph.compile_to_module()
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2416, in compile_to_module
+[rank0]:     return self._compile_to_module()
+[rank0]:            ~~~~~~~~~~~~~~~~~~~~~~~^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2426, in _compile_to_module
+[rank0]:     mod = self._compile_to_module_lines(wrapper_code)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2501, in _compile_to_module_lines
+[rank0]:     mod = PyCodeCache.load_by_key_path(
+[rank0]:         key,
+[rank0]:     ...<6 lines>...
+[rank0]:         },
+[rank0]:     )
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/codecache.py", line 3674, in load_by_key_path
+[rank0]:     mod = _reload_python_module(key, path, set_sys_modules=in_toplevel)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/compile_tasks.py", line 35, in _reload_python_module
+[rank0]:     exec(code, mod.__dict__, mod.__dict__)
+[rank0]:     ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/tmp/torchinductor_ec2-user/qo/cqojdbayvngbo5cuxvdg55sekic5knixdtpeg37jefufvew2krhx.py", line 944, in <module>
+[rank0]:     async_compile.wait(globals())
+[rank0]:     ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 649, in wait
+[rank0]:     self._wait_futures(scope)
+[rank0]:     ~~~~~~~~~~~~~~~~~~^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 669, in _wait_futures
+[rank0]:     kernel = result.result()
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/codecache.py", line 4417, in result
+[rank0]:     return self.result_fn()
+[rank0]:            ~~~~~~~~~~~~~~^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 447, in get_result
+[rank0]:     kernel.precompile(
+[rank0]:     ~~~~~~~~~~~~~~~~~^
+[rank0]:         warm_cache_only=False,
+[rank0]:         ^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:         reload_kernel=reload_kernel_in_parent,
+[rank0]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:         static_triton_bundle_key=CompiledTritonKernels.key(source_code),
+[rank0]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:     )
+[rank0]:     ^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/triton_heuristics.py", line 444, in precompile
+[rank0]:     self._make_launchers()
+[rank0]:     ~~~~~~~~~~~~~~~~~~~~^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/triton_heuristics.py", line 613, in _make_launchers
+[rank0]:     raise RuntimeError(f"No valid triton configs. {type(exc).__name__}: {exc}")
+[rank0]: torch._inductor.exc.InductorError: RuntimeError: No valid triton configs. OutOfMemoryError: out of resource: triton_tem_fused_flex_attention_backward_mul_1 Required: 131072 Hardware limit:101376 Reducing block sizes or `num_stages` may help.
+[rank1]: Traceback (most recent call last):
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/cp_attention_gradients.py", line 80, in <module>
+[rank1]:     main()
+[rank1]:     ~~~~^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/cp_attention_gradients.py", line 54, in main
+[rank1]:     actual.backward(upstream_grad[:, :, start:end].contiguous())
+[rank1]:     ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_tensor.py", line 630, in backward
+[rank1]:     torch.autograd.backward(
+[rank1]:     ~~~~~~~~~~~~~~~~~~~~~~~^
+[rank1]:         self, gradient, retain_graph, create_graph, inputs=inputs
+[rank1]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:     )
+[rank1]:     ^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/autograd/__init__.py", line 364, in backward
+[rank1]:     _engine_run_backward(
+[rank1]:     ~~~~~~~~~~~~~~~~~~~~^
+[rank1]:         tensors,
+[rank1]:         ^^^^^^^^
+[rank1]:     ...<5 lines>...
+[rank1]:         accumulate_grad=True,
+[rank1]:         ^^^^^^^^^^^^^^^^^^^^^
+[rank1]:     )
+[rank1]:     ^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/autograd/graph.py", line 865, in _engine_run_backward
+[rank1]:     return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+[rank1]:            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:         t_outputs, *args, **kwargs
+[rank1]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:     )  # Calls into the C++ engine to run the backward pass
+[rank1]:     ^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/autograd/function.py", line 317, in apply
+[rank1]:     return user_fn(self, *args)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 1112, in backward
+[rank1]:     grads = torch.autograd.grad(out_acc, grad_targets, grad_output, allow_unused=True)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/autograd/__init__.py", line 515, in grad
+[rank1]:     result = _engine_run_backward(
+[rank1]:         outputs,
+[rank1]:     ...<5 lines>...
+[rank1]:         accumulate_grad=False,
+[rank1]:     )
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/autograd/graph.py", line 865, in _engine_run_backward
+[rank1]:     return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+[rank1]:            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:         t_outputs, *args, **kwargs
+[rank1]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:     )  # Calls into the C++ engine to run the backward pass
+[rank1]:     ^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/autograd/function.py", line 317, in apply
+[rank1]:     return user_fn(self, *args)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/runtime_wrappers.py", line 2338, in backward
+[rank1]:     return impl_fn()
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/runtime_wrappers.py", line 2324, in impl_fn
+[rank1]:     out = CompiledFunction._backward_impl(ctx, all_args)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/runtime_wrappers.py", line 2465, in _backward_impl
+[rank1]:     CompiledFunction.compiled_bw = aot_config.bw_compiler(
+[rank1]:                                    ~~~~~~~~~~~~~~~~~~~~~~^
+[rank1]:         copy.deepcopy(bw_module), placeholder_list
+[rank1]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:     )
+[rank1]:     ^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_functorch/_aot_autograd/schemas.py", line 1249, in __call__
+[rank1]:     return self.compiler_fn(gm, example_inputs)
+[rank1]:            ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/backends/common.py", line 83, in _wrapped_bw_compiler
+[rank1]:     disable(
+[rank1]:     ~~~~~~~~
+[rank1]:         bw_compiler_fn, reason="do not trace backward compiler function"
+[rank1]:         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[rank1]:     )(*args, **kwargs),  # type: ignore[misc]
+[rank1]:     ~^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/eval_frame.py", line 1181, in _fn
+[rank1]:     return fn(*args, **kwargs)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_utils_internal.py", line 97, in wrapper_function
+[rank1]:     return function(*args, **kwargs)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 2716, in bw_compiler
+[rank1]:     return compile_fx_backward(
+[rank1]:         gm,
+[rank1]:     ...<2 lines>...
+[rank1]:         inner_compile=inner_compile,
+[rank1]:     )
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 2396, in compile_fx_backward
+[rank1]:     return inner_compile(
+[rank1]:         gm,
+[rank1]:     ...<5 lines>...
+[rank1]:         boxed_forward_device_index=compiler_config_extra.forward_device,
+[rank1]:     )
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 806, in compile_fx_inner
+[rank1]:     return wrap_compiler_debug(_compile_fx_inner, compiler_name="inductor")(
+[rank1]:            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+[rank1]:         gm,
+[rank1]:         ^^^
+[rank1]:         example_inputs,
+[rank1]:         ^^^^^^^^^^^^^^^
+[rank1]:         **kwargs,
+[rank1]:         ^^^^^^^^^
+[rank1]:     )
+[rank1]:     ^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/repro/after_aot.py", line 146, in debug_wrapper
+[rank1]:     inner_compiled_fn = compiler_fn(gm, example_inputs)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1019, in _compile_fx_inner
+[rank1]:     raise InductorError(e, currentframe()).with_traceback(
+[rank1]:         e.__traceback__
+[rank1]:     ) from None
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1003, in _compile_fx_inner
+[rank1]:     mb_compiled_graph = fx_codegen_and_compile(
+[rank1]:         gm, example_inputs, inputs_to_check, **graph_kwargs
+[rank1]:     )
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1766, in fx_codegen_and_compile
+[rank1]:     return scheme.codegen_and_compile(gm, example_inputs, inputs_to_check, graph_kwargs)
+[rank1]:            ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1537, in codegen_and_compile
+[rank1]:     compiled_module = graph.compile_to_module()
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2416, in compile_to_module
+[rank1]:     return self._compile_to_module()
+[rank1]:            ~~~~~~~~~~~~~~~~~~~~~~~^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2426, in _compile_to_module
+[rank1]:     mod = self._compile_to_module_lines(wrapper_code)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 2501, in _compile_to_module_lines
+[rank1]:     mod = PyCodeCache.load_by_key_path(
+[rank1]:         key,
+[rank1]:     ...<6 lines>...
+[rank1]:         },
+[rank1]:     )
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/codecache.py", line 3674, in load_by_key_path
+[rank1]:     mod = _reload_python_module(key, path, set_sys_modules=in_toplevel)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/compile_tasks.py", line 35, in _reload_python_module
+[rank1]:     exec(code, mod.__dict__, mod.__dict__)
+[rank1]:     ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/tmp/torchinductor_ec2-user/5r/c5rppes56ljbz3ghysdl7atd3rxlea5execqswoe4x6w4xsbxxaq.py", line 944, in <module>
+[rank1]:     async_compile.wait(globals())
+[rank1]:     ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 649, in wait
+[rank1]:     self._wait_futures(scope)
+[rank1]:     ~~~~~~~~~~~~~~~~~~^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 669, in _wait_futures
+[rank1]:     kernel = result.result()
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/codecache.py", line 4417, in result
+[rank1]:     return self.result_fn()
+[rank1]:            ~~~~~~~~~~~~~~^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/async_compile.py", line 447, in get_result
+[rank1]:     kernel.precompile(
+[rank1]:     ~~~~~~~~~~~~~~~~~^
+[rank1]:         warm_cache_only=False,
+[rank1]:         ^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:         reload_kernel=reload_kernel_in_parent,
+[rank1]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:         static_triton_bundle_key=CompiledTritonKernels.key(source_code),
+[rank1]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:     )
+[rank1]:     ^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/triton_heuristics.py", line 444, in precompile
+[rank1]:     self._make_launchers()
+[rank1]:     ~~~~~~~~~~~~~~~~~~~~^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/runtime/triton_heuristics.py", line 613, in _make_launchers
+[rank1]:     raise RuntimeError(f"No valid triton configs. {type(exc).__name__}: {exc}")
+[rank1]: torch._inductor.exc.InductorError: RuntimeError: No valid triton configs. OutOfMemoryError: out of resource: triton_tem_fused_flex_attention_backward_mul_1 Required: 131072 Hardware limit:101376 Reducing block sizes or `num_stages` may help.
+W1022 21:49:00.552000 39703 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 39783 closing signal SIGTERM
+E1022 21:49:00.616000 39703 torch/distributed/elastic/multiprocessing/api.py:984] failed (exitcode: 1) local_rank: 0 (pid: 39782) of binary: /home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/bin/python
+Traceback (most recent call last):
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/bin/torchrun", line 6, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 362, in wrapper
+    return f(*args, **kwargs)
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/run.py", line 991, in main
+    run(args)
+    ~~~^^^^^^
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/run.py", line 982, in run
+    elastic_launch(
+    ~~~~~~~~~~~~~~~
+        config=config,
+        ~~~~~~~~~~~~~~
+        entrypoint=cmd,
+        ~~~~~~~~~~~~~~~
+    )(*cmd_args)
+    ~^^^^^^^^^^^
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/launcher/api.py", line 170, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/launcher/api.py", line 317, in launch_agent
+    raise ChildFailedError(
+    ...<2 lines>...
+    )
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+benchmarks/cp_attention_gradients.py FAILED
+------------------------------------------------------------
+Failures:
+[1]:
+  time      : 2026-10-22_21:49:00
+  host      : ip-172-31-3-40.us-east-2.compute.internal
+  rank      : 1 (local_rank: 1)
+  exitcode  : 1 (pid: 39783)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-10-22_21:49:00
+  host      : ip-172-31-3-40.us-east-2.compute.internal
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 39782)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

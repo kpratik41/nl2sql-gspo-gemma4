@@ -1,5 +1,294 @@
 # Gemma 4 benchmark results
 
+## TP=2 forward comparison and capacity measurement — 2026-10-23
+
+The new requested layouts are TP2/CP1 on GPUs 0–1 and TP2/CP2 on GPUs 0–3.
+Each GPU holds approximately 29.663 GiB of parameters. The harness applies
+AutoModel's Gemma-owned TP plan with the standard tied-weight/head handling,
+then the model-owned ring sharder. TP groups in the four-rank layout are
+`[0,1]`/`[2,3]`; CP groups are `[0,2]`/`[1,3]`. There is no FSDP or CPU offload.
+The plan comes from the pinned AutoModel source; NVIDIA also publishes
+[Gemma 4 tensor-parallel recipes](https://docs.nvidia.com/nemo/automodel/latest/model-coverage/vision-language-models/gemma-4).
+
+All runs use batch size one, BF16 weights and ring Flex attention, the tested
+cuBLASLt/full-reduction settings, no gradients and no KV cache. **All-token
+logits are retained, vocabulary-sharded over TP2** (131,072 vocabulary entries
+per rank). The tests do not gather full-vocabulary logits at long lengths.
+Compiled BlockMask construction avoids eager quadratic mask temporaries. The
+input mask mapping skips redundant HF dense masks discarded by the installed
+ring hooks; the ring still constructs the actual causal/window/document masks.
+All of this is benchmark-local; installed model/library code is unchanged.
+
+The same deterministic SQL token fixture is used in both layouts. Target
+logprobs are normalized across both TP vocabulary shards in bounded chunks;
+CP results are aligned by global token position. At eight sampled positions,
+full vocabulary distributions are compared. No dataset or checkpoint download
+was required.
+
+| Tokens | TP2/CP1 NLL | TP2/CP2 NLL | NLL delta | Max target-logprob delta | Max sampled KL | Screening |
+|---:|---:|---:|---:|---:|---:|---|
+| 128 | 2.329394341 | 2.325230837 | -0.004163504 | 0.356054306 | 1.08150e-7 | fail max-token gate |
+| 1,024 | 0.418384522 | 0.418499798 | +0.000115275 | 0.069376543 | 6.66617e-7 | pass |
+
+Sampled top-1 agreement is 100% in both cases. At query position 828 in the
+1,024-token example, the target probability is 0.849756376 for CP1 and
+0.792801717 for CP2. At position 86 in the 128-token example it is
+0.000146723 for CP1 and 0.000209475 for CP2 (ratio 1.427685). Matching likely
+tokens can therefore coexist with differences in the probabilities used by RL.
+
+| Tokens | CP1 warm forward ms | CP2 warm forward ms | CP1 peak allocated GiB/rank | CP2 peak allocated GiB/rank |
+|---:|---:|---:|---:|---:|
+| 128 | 183.258 | 225.709 | 29.833 | 29.829 |
+| 1,024 | 272.463 | 270.135 | 30.299 | 29.997 |
+
+Timings are the worst rank's median of three warm forwards. The short
+probability screening uses the existing gates: absolute mean NLL delta ≤0.01,
+max target-logprob delta ≤0.1 and max sampled KL ≤0.001 (all in nats).
+
+The completed all-token capacity search measured:
+
+| Layout | GPUs | Largest successful total tokens | Next tested step (OOM) | Peak allocated GiB/rank at largest success | Peak reserved GiB/rank |
+|---|---:|---:|---:|---:|---:|
+| TP2 / CP1 | 2 | 104,448 | 105,472 | 91.575715065 | 94.005859375 |
+| TP2 / CP2 | 4 | 199,680 | 200,704 | 88.999472141 | 93.814453125 |
+
+The search resolution is 1,024 tokens; an exact single-token maximum was not
+measured. Lengths are the total tokens in one example, not tokens per rank.
+At the largest CP2 success, each rank retains 99,840 token positions × 131,072
+vocabulary entries. The four-GPU layout fits 1.912 times as many tokens in
+these tests. This is forward capacity with all-token logits, not a training
+limit. No dataset/model download was needed. The generated `report.json`
+consolidates the short comparison, capacity bounds, exact per-rank peaks and
+nearest-bound OOM details; `memory_curve.csv` contains the measured length curve.
+
+Raw per-rank memory/timing results, probability comparisons, capacity logs and
+the final capacity summary are under `benchmark_results/tp2_capacity/`.
+`benchmarks/tp_cp_forward.py` executes a layout; `benchmarks/compare_tp_cp.py`
+compares the short results; `benchmarks/sweep_tp_capacity.py` increases length
+and bisects real out-of-memory failures to a 1,024-token interval. Unsupported
+kernels, compiler failures and timeouts are reported separately from memory
+limits. A successful long forward is a capacity observation, not a long-context
+probability/gradient validation or a training capacity measurement.
+
+The allocator configuration stays at its default throughout. The coarse sweep
+reuses a loaded model while increasing length; each bisection probe starts
+fresh ranks, executes 128 tokens, then tests the candidate length. Allocation
+history and fragmentation affect the boundary, so these are measured limits
+for this harness and allocator, not universal hardware maxima.
+
+Reproduce the short comparison with:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 .venv-bench/bin/torchrun --standalone --nnodes=1 --nproc-per-node=2 benchmarks/tp_cp_forward.py --cp 1 --lengths 128 1024
+CUDA_VISIBLE_DEVICES=0,1,2,3 .venv-bench/bin/torchrun --standalone --nnodes=1 --nproc-per-node=4 benchmarks/tp_cp_forward.py --cp 2 --lengths 128 1024
+.venv-bench/bin/python benchmarks/compare_tp_cp.py
+```
+
+Run the capacity search with `.venv-bench/bin/python benchmarks/sweep_tp_capacity.py`,
+then consolidate it with `.venv-bench/bin/python benchmarks/summarize_tp_capacity.py`.
+Capacity probes refresh the 128-token per-rank measurements; the original short
+comparison, including its timings, is retained in `probability_comparison.json`.
+
+This turn's source/document changes can be reversed using
+`outputs/tp-capacity-baseline/tp-capacity-changes.patch`; see the adjacent
+`ROLLBACK.txt`. That patch preserves the earlier CP debugging work. Generated
+results remain available after reverting the harness changes.
+
+## Four-GPU environment update — 2026-10-22
+
+The current host exposes four RTX PRO 6000 Blackwell Server Edition GPUs, each
+with 97,887 MiB. The single-GPU measurements below are historical results; they
+have not been rerun as distributed/model benchmarks on this host.
+
+A standalone `.venv-bench` now uses Python 3.13.12, PyTorch 2.10.0+cu130,
+TorchAO 0.16.0+cu130, Transformers 5.18.0, FFPA 0.2.4, CuTeDSL 4.6.2, and
+AutoModel revision `65866fbce209938cd153f2bc26f01fa0d34cc61e`. It does not
+inherit system site-packages. Use `bash benchmarks/setup_automodel_env.sh` to
+install this stack; `benchmarks/setup_env.sh` remains the historical overlay
+recipe. Activate with `source .venv-bench/bin/activate`.
+
+The resolved dependency lock and hardware inventory are in
+`benchmark_results/environment_4gpu/`. For exact dependency reproduction after
+creating a clean venv and installing the CUDA 13 PyTorch/TorchAO wheels, install
+`benchmark_results/environment_4gpu/requirements-lock.txt`. `pip check` passes.
+The four-rank NCCL all-reduce and BF16 matmul on every GPU pass. On GPU 0,
+FFPA dense GQA, AutoModel's dense/varlen forward entry points, and compiled
+FlexAttention pass short BF16 D512 comparisons against FP32 SDPA math. Dense
+and varlen FFPA backward execution produces finite gradients; gradient parity
+has not been tested. The varlen smoke case is one unpadded document, not a
+document-isolation test. Logs are in the same environment directory. Reproduce
+the environment checks with:
+
+```bash
+.venv-bench/bin/python benchmarks/environment_smoke.py
+.venv-bench/bin/torchrun --standalone --nnodes=1 --nproc-per-node=4 benchmarks/environment_smoke.py --distributed-only
+```
+
+These are environment checks, not full-model probability, gradient parity,
+context-parallelism, or training validation. Optional Transformer Engine/Apex
+are absent; Megatron-FSDP reports that it uses its local fallback routines.
+
+## Real CP=2 update — 2026-10-22
+
+Executed on GPUs 0–1 using the cached 31B snapshot and the clean four-GPU
+environment above. The harness loads through `NeMoAutoModelForImageTextToText`,
+then uses Gemma's model-owned `ContextParallelSharder`; it retains synthesized
+document IDs. CP1 uses native FlexAttention; CP2 enters through SDPA and dispatches
+to ring FlexAttention. Dispatch instrumentation observed all 60 attention layers
+using CP size 2 (240 calls per rank after warmup + three measured forwards at
+128 tokens, 480 cumulative after the second length). Inputs and sampled embedding
+weight fingerprints match. This is a repeated SQL fixture, not NL2SQL evaluation.
+
+| Total tokens | Native CP1 median ms | CP2 worst-rank median ms | CP1 peak allocated GiB | CP2 peak allocated GiB/rank | Max target-logprob difference (nats) | Screening |
+|---:|---:|---:|---:|---:|---:|---|
+| 128 | 75.88 | 169.14 | 58.425 | 58.370 | 22.991 | fail |
+| 1,024 | 249.62 | 226.45 | 59.330 | 58.881 | 16.716 | fail |
+
+The existing screening gates remain unchanged: absolute mean NLL delta ≤0.01
+nats/token, max target-logprob delta ≤0.1 nat, max sampled KL ≤0.001 nat. Native
+CP1 to CP2 mean NLL deltas are +1.049 and -0.155; max KL over eight sampled
+positions is 0.105 and 0.311. All target positions except the final position
+(which has no next-token label) are checked. Timings are short diagnostics with
+one warmup and three measured runs, not production performance claims.
+
+A separate one-rank **ring CP1** control has mean NLL deltas of only -0.00370
+and -0.00140 versus native CP1, but still fails the strict max-token gates
+(0.528 and 1.180 nats). Comparing ring CP1 directly with ring CP2 still gives
+22.991 and 16.716 nats max error. The worst query position is 1 at both lengths.
+This establishes a substantial discrepancy after sequence splitting; it does
+not determine whether masking, model plumbing, shape-dependent BF16 arithmetic,
+or another cause is responsible.
+
+**Independent two-rank attention backward checks pass** for synthetic global
+D512 (32/4 Q/KV heads, 128 total tokens) and sliding D256 (32/16 heads, 1,280
+total tokens, window 1,024). Outputs and dQ/dK/dV on each rank pass predeclared
+`atol=0.03, rtol=0.03` against full-sequence FP32 SDPA math using the identical
+BF16 QKV values and a shared global output gradient. Worst relative L2 across
+these checks is approximately 0.00338. These tests include remote-rank gradient
+contributions, but are not full-model gradients, training, or packed/padded tests.
+
+Hardware-specific benchmark overrides were required. Default D256 ring tiles
+requested 114,688 shared-memory bytes versus the card's 101,376-byte limit;
+32×32 forward tiles with one stage and four warps execute. At 64-token local
+queries, force the regular Flex kernel to avoid the decode kernel's incompatible
+tile constraint. D512 backward with 32×32 tiles requested 131,072 bytes; the
+attention gradient checks execute with 16×16 backward tiles. Overrides live in
+`benchmarks/cp_flex_options.py`; installed AutoModel source was not edited.
+Initial failed attempts are retained alongside final logs.
+
+Weights are replicated BF16 on both ranks; there is no FSDP, optimizer,
+activation checkpointing, KV cache, or FFPA in these runs. All-position logits
+are materialized, so reduced per-rank logits contribute materially to the memory
+reduction. This is not a measurement of training activation savings or a proof
+that full-parameter training fits. Context length was not increased after the
+probability screening failed.
+
+Reproduce with `bash benchmarks/run_cp_checks.sh` (defaults to GPUs 0–1;
+`CP_GPUS=2,3` selects the other pair). It reports a failing exit status when
+whole-model screening fails. Compact comparisons are in
+`benchmark_results/cp_forward/summary.json`; per-rank JSON and logs are in the
+same directory. Local full-vocabulary sample `.pt` files are ignored by Git and
+regenerated by the launcher.
+
+Next: trace identical global token positions through CP1/CP2 decoder layers,
+especially the earliest divergence, and compare fixed-input attention against
+FP32 while checking native/ring mask equivalence. Full-model backward,
+optimizer updates, longer-context capacity and verl integration remain unvalidated.
+
+## CP numerical investigation and opt-in mitigation — 2026-10-22
+
+The largest discrepancy is reproducible **without distributed communication**.
+Run one-rank ring on 128 tokens and the identical 64-token prefix: the prefix's
+max target-logprob difference is the same 22.9909 nats seen with CP2. Read-only
+hooks traced all 60 layers and leaf operations. Embeddings, layer 0 input and
+its input normalization match exactly; the first difference is layer 0
+`self_attn.q_proj` (relative L2 0.002878, max absolute 2.0). The entire CP2 rank-0
+trace is bit-identical to the 64-token one-rank trace. This isolates the original
+large prefix discrepancy to shape-dependent local arithmetic, not a remote-KV
+transport effect in that prefix.
+
+Fixed-input projection replay with checkpoint weights and an FP32 arithmetic
+reference identifies BF16 GEMM reduction policy as a major contributor.
+Disabling reduced-precision reductions improves the 64-vs-128-row projection
+agreement from 67.9% to 99.8%. Selecting cuBLASLt and disabling both reduced
+reduction and split-K makes that replay exactly equal. The tested process-local
+settings are:
+
+```python
+torch.backends.cuda.preferred_blas_library('cublaslt')
+torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = (False, False)
+```
+
+The tuple requires cuBLASLt in this installation. Weights remain BF16. See
+[PyTorch numerical-accuracy guidance](https://docs.pytorch.org/docs/2.14/notes/numerical_accuracy.html#reduced-precision-reduction-for-fp16-and-bf16-gemms)
+and the actual installed PyTorch 2.10 source/API exercised by the replay. The
+cuBLASLt preference API reports itself as experimental.
+
+BF16 remains the target training precision. FP32 accumulation inside a BF16
+matrix multiplication does not change the stored weights or layer activations
+to FP32. The optional FP32 attention diagnostic below additionally upcasts QKV
+temporarily and has a memory/latency cost; it is separate from the GEMM settings.
+
+With those settings, the 128-token one-rank ring prefix comparison and CP2
+rank-0 trace are bit-identical through all 60 decoder layers. CP2 rank 1's first
+remaining difference is now layer 0 attention output, after combining two KV
+chunks (relative L2 0.002242). Q/K/V projection and normalization agree there.
+
+| Comparison policy | Max target-logprob error at 128 | At 1,024 | Existing strict screening |
+|---|---:|---:|---|
+| Original BF16, default GEMM | 22.991 | 16.716 | fail |
+| cuBLASLt/full reduction, BF16 attention | 0.364 | 2.365 | fail |
+| Same GEMM policy, FP32 Flex attention/chunk outputs | 0.264 | 0.223 | fail on maximum token error |
+
+The first two rows compare native CP1 Flex with CP2 ring Flex. The FP32 row
+compares **one-rank ring with two-rank ring at the same precision**. These
+are separate same-policy comparisons, not independent model-accuracy rankings.
+Changing policy changes both runs' token probabilities.
+
+FP32 attention upcasts the captured BF16 QKV only inside Flex; it returns FP32
+chunk outputs/LSE for the existing ring merge before the existing final BF16
+cast. Mean NLL deltas are +0.00182/-0.000388 and max sampled KL is approximately
+2.06e-8/6.88e-7, but max-token errors exceed the unchanged 0.1-nat gate. This is
+substantial mitigation, **not a validated production/RL fix**.
+A fresh inventory SQL fixture at 128 tokens also passes NLL/KL screening with
+FP32 attention but fails max-token screening (0.2043 nat), so the residual is
+not confined to the original repeated fixture.
+
+BF16 execution can retain shape-dependent rounding differences after this
+mitigation. The 0.1-nat maximum-token threshold is a conservative investigation
+gate, not a universal BF16 accuracy guarantee. Failing it does not by itself
+identify an implementation bug; the remaining probability differences still
+need evaluation against the RL probability-consistency requirements.
+
+All changes are additive diagnostics or opt-in flags. Installed Gemma model,
+CP batch, and ring-attention source hashes still match pinned upstream exactly
+(`debug/library_integrity.json`). Default benchmark precision remains unchanged.
+Run the BF16 mitigation and optional FP32 attention comparison with:
+
+```bash
+# Built-in matmul settings; BF16 attention still fails the conservative gate.
+bash benchmarks/run_cp_precision_checks.sh
+# FP32 attention diagnostic; still fails the maximum-token gate on the original fixture.
+CP_ATTENTION_PRECISION=fp32 bash benchmarks/run_cp_precision_checks.sh
+.venv-bench/bin/python benchmarks/summarize_cp_precision.py
+```
+
+`--trace` and `benchmarks/summarize_cp_trace.py` provide per-operation/per-layer
+traces. `benchmarks/projection_precision.py` replays the isolated first projection.
+Raw diagnostics and compact `precision_summary.json` are under
+`benchmark_results/cp_forward/debug/`; local tensor traces are ignored by Git.
+A pre-investigation source/doc backup is in
+`outputs/cp-debug-baseline/before-debug.tar.gz`; the same directory contains a
+reversible patch covering only this investigation's source/doc changes.
+To revert only this investigation, first run
+`git apply --check -R outputs/cp-debug-baseline/debug-changes.patch`, then
+`git apply -R outputs/cp-debug-baseline/debug-changes.patch`. The reverse patch
+was dry-run checked when generated. Keep the raw measurements for history.
+
+The major cause is now identified and mitigated without editing AutoModel.
+An efficient configuration that meets all existing probability gates, full-model
+backward, and RL integration remain open. Thresholds were not relaxed.
+
 ## Main objective and why we are doing this
 
 Enable **CP=2 context parallelism** and **FFPA, or another validated memory-efficient attention backend**, for **`google/gemma-4-31B-it`**, with **verl** as the target framework for eventual **full-parameter NL2SQL RL**. CP=2 distributes one long sequence across two GPU ranks to reduce per-rank sequence/activation pressure. Efficient attention avoids materializing quadratic attention-score tensors; FFPA is a candidate for faster eligible global-attention operations. We want measured capacity and speed improvements while preserving model semantics, token probabilities, and gradients. Global-attention compute/latency is not expected to become linear merely because working memory is approximately linear.

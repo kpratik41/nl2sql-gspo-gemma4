@@ -1,0 +1,17 @@
+{
+  "model.py": {
+    "installed_sha256": "16037f7520968325e723f405bc838c8ef9e39819bbf2c2a8c5e4dabf9f7e31a4",
+    "upstream_sha256": "16037f7520968325e723f405bc838c8ef9e39819bbf2c2a8c5e4dabf9f7e31a4",
+    "matches": true
+  },
+  "cp_attention.py": {
+    "installed_sha256": "705b46345066d861d790bed3e076a414f681af30eade651682a70f14e7deb370",
+    "upstream_sha256": "705b46345066d861d790bed3e076a414f681af30eade651682a70f14e7deb370",
+    "matches": true
+  },
+  "cp_batch.py": {
+    "installed_sha256": "6c9f28b5fb1da5f66cad0c04e7ecea2ea4c7ed5ccfdaf084b45de06f6976a258",
+    "upstream_sha256": "6c9f28b5fb1da5f66cad0c04e7ecea2ea4c7ed5ccfdaf084b45de06f6976a258",
+    "matches": true
+  }
+}

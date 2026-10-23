@@ -1,0 +1,507 @@
+W1022 21:46:54.636000 37962 torch/distributed/run.py:852] 
+W1022 21:46:54.636000 37962 torch/distributed/run.py:852] *****************************************
+W1022 21:46:54.636000 37962 torch/distributed/run.py:852] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W1022 21:46:54.636000 37962 torch/distributed/run.py:852] *****************************************
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/megatron_fsdp/mixed_precision.py:115: UserWarning: Transformer Engine and Apex are not installed. Falling back to local implementations of multi_tensor_applier and multi_tensor_scale
+  warnings.warn(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/megatron_fsdp/mixed_precision.py:115: UserWarning: Transformer Engine and Apex are not installed. Falling back to local implementations of multi_tensor_applier and multi_tensor_scale
+  warnings.warn(
+[rank 1] loading checkpoint CP=2
+[rank 0] loading checkpoint CP=2
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[rank 0] loaded Gemma4ForConditionalGeneration in 13.5s
+[rank 1] loaded Gemma4ForConditionalGeneration in 13.5s
+[rank 0] warmup length=128, local_positions=64
+[rank 1] warmup length=128, local_positions=64
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/attention/flex_attention.py:1559: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/attention/flex_attention.py:1559: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 414, in _run_gemma4_flex_chunk
+[rank0]:     out, lse = _compiled_flex_attention(attention_module)(
+[rank0]:                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+[rank0]:         query_for_flex.contiguous(), key_for_flex, value_for_flex, return_lse=True, **flex_kwargs
+[rank0]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:     )
+[rank0]:     ^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/cp_flex_options.py", line 13, in call
+[rank0]:     return compiled(*args, **kwargs)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/eval_frame.py", line 967, in compile_wrapper
+[rank0]:     raise e.remove_dynamo_frames() from None  # see TORCHDYNAMO_VERBOSE=1
+[rank0]:     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1019, in _compile_fx_inner
+[rank0]:     raise InductorError(e, currentframe()).with_traceback(
+[rank0]:         e.__traceback__
+[rank0]:     ) from None
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1003, in _compile_fx_inner
+[rank0]:     mb_compiled_graph = fx_codegen_and_compile(
+[rank0]:         gm, example_inputs, inputs_to_check, **graph_kwargs
+[rank0]:     )
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1766, in fx_codegen_and_compile
+[rank0]:     return scheme.codegen_and_compile(gm, example_inputs, inputs_to_check, graph_kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1452, in codegen_and_compile
+[rank0]:     graph.run(*example_inputs)
+[rank0]:     ~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 991, in run
+[rank0]:     return super().run(*args)
+[rank0]:            ~~~~~~~~~~~^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/fx/interpreter.py", line 200, in run
+[rank0]:     self.env[node] = self.run_node(node)
+[rank0]:                      ~~~~~~~~~~~~~^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 1732, in run_node
+[rank0]:     result = super().run_node(n)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/fx/interpreter.py", line 295, in run_node
+[rank0]:     return getattr(self, n.op)(n.target, args, kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 1375, in call_function
+[rank0]:     raise LoweringException(e, target, args, kwargs).with_traceback(
+[rank0]:         e.__traceback__
+[rank0]:     ) from None
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 1365, in call_function
+[rank0]:     out = lowerings[target](*args, **kwargs)  # type: ignore[index]
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/lowering.py", line 516, in wrapped
+[rank0]:     out = decomp_fn(*args, **kwargs)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/kernel/flex/flex_attention.py", line 210, in flex_attention
+[rank0]:     return create_flex_decoding_kernel(
+[rank0]:         query,
+[rank0]:     ...<8 lines>...
+[rank0]:         mask_mod_other_buffers,
+[rank0]:     )
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/kernel/flex/flex_decoding.py", line 286, in create_flex_decoding_kernel
+[rank0]:     V.graph.sizevars.check_leq(
+[rank0]:     ~~~~~~~~~~~~~~~~~~~~~~~~~~^
+[rank0]:         seq_len_q * gqa_shared_heads, sympy.Integer(kernel_options["BLOCK_M"])
+[rank0]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:     )
+[rank0]:     ^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/sizevars.py", line 450, in check_leq
+[rank0]:     self.check(sympy.Le(left, right))
+[rank0]:     ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/sizevars.py", line 431, in check
+[rank0]:     assert self.expect_true(expr)
+[rank0]:            ~~~~~~~~~~~~~~~~^^^^^^
+[rank0]: torch._inductor.exc.InductorError: LoweringException: AssertionError: 
+[rank0]:   target: flex_attention
+[rank0]:   args[0]: TensorBox(StorageBox(
+[rank0]:     InputBuffer(name='arg1_1', layout=FixedLayout('cuda:0', torch.bfloat16, size=[1, 32, s50, 256], stride=[8192*s50, 256*s50, 256, 1]))
+[rank0]:   ))
+[rank0]:   args[1]: TensorBox(StorageBox(
+[rank0]:     InputBuffer(name='arg3_1', layout=FixedLayout('cuda:0', torch.bfloat16, size=[1, 16, s0, 256], stride=[4096*s0, 256*s0, 256, 1]))
+[rank0]:   ))
+[rank0]:   args[2]: TensorBox(StorageBox(
+[rank0]:     InputBuffer(name='arg5_1', layout=FixedLayout('cuda:0', torch.bfloat16, size=[1, 16, s43, 256], stride=[4096*s43, 256*s43, 256, 1]))
+[rank0]:   ))
+[rank0]:   args[3]: Subgraph(name='sdpa_score0', graph_module=<lambda>(), graph=None)
+[rank0]:   args[4]: (s37, s71, TensorBox(StorageBox(
+[rank0]:     InputBuffer(name='arg15_1', layout=FixedLayout('cuda:0', torch.int32, size=[1, 1, 1], stride=[1, 1, 1]))
+[rank0]:   )), TensorBox(StorageBox(
+[rank0]:     InputBuffer(name='arg16_1', layout=FixedLayout('cuda:0', torch.int32, size=[1, 1, 1, 1], stride=[1, 1, 1, 1]))
+[rank0]:   )), TensorBox(StorageBox(
+[rank0]:     InputBuffer(name='arg17_1', layout=FixedLayout('cuda:0', torch.int32, size=[1, 1, 1], stride=[1, 1, 1]))
+[rank0]:   )), TensorBox(StorageBox(
+[rank0]:     InputBuffer(name='arg18_1', layout=FixedLayout('cuda:0', torch.int32, size=[1, 1, 1, 1], stride=[1, 1, 1, 1]))
+[rank0]:   )), TensorBox(StorageBox(
+[rank0]:     InputBuffer(name='arg19_1', layout=FixedLayout('cuda:0', torch.int32, size=[1, 1, 1], stride=[1, 1, 1]))
+[rank0]:   )), TensorBox(StorageBox(
+[rank0]:     InputBuffer(name='arg20_1', layout=FixedLayout('cuda:0', torch.int32, size=[1, 1, 1, 1], stride=[1, 1, 1, 1]))
+[rank0]:   )), TensorBox(StorageBox(
+[rank0]:     InputBuffer(name='arg21_1', layout=FixedLayout('cuda:0', torch.int32, size=[1, 1, 1], stride=[1, 1, 1]))
+[rank0]:   )), TensorBox(StorageBox(
+[rank0]:     InputBuffer(name='arg22_1', layout=FixedLayout('cuda:0', torch.int32, size=[1, 1, 1, 1], stride=[1, 1, 1, 1]))
+[rank0]:   )), s59, s33, Subgraph(name='sdpa_mask0', graph_module=<lambda>(), graph=None))
+[rank0]:   args[5]: 1.0
+[rank0]:   args[6]: {'BLOCK_M': s62, 'BLOCK_N': s63, 'BLOCK_M1': s65, 'BLOCK_N1': s51, 'BLOCK_M2': s44, 'BLOCK_N2': s81, 'num_stages': s82, 'num_warps': s25, 'BACKEND': 'AUTO', 'PRESCALE_QK': False, 'ROWS_GUARANTEED_SAFE': False, 'BLOCKS_ARE_CONTIGUOUS': False, 'WRITE_DQ': True, 'OUTPUT_LOGSUMEXP': True, 'OUTPUT_MAX': False}
+[rank0]:   args[7]: ()
+[rank0]:   args[8]: (s42, s32, s27, TensorBox(StorageBox(
+[rank0]:     InputBuffer(name='arg9_1', layout=FixedLayout('cuda:0', torch.int64, size=[1, s27], stride=[s27, 1]))
+[rank0]:   )), s69, s20, TensorBox(StorageBox(
+[rank0]:     InputBuffer(name='arg12_1', layout=FixedLayout('cuda:0', torch.int64, size=[1, s69], stride=[s20, 1]))
+[rank0]:   )))
+
+[rank0]: Set TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS="+dynamo"
+
+
+[rank0]: The above exception was the direct cause of the following exception:
+
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/cp_forward.py", line 184, in <module>
+[rank0]:     main()
+[rank0]:     ~~~~^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/cp_forward.py", line 104, in main
+[rank0]:     logits = forward()
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/cp_forward.py", line 102, in forward
+[rank0]:     return model(**batch, use_cache=False, logits_to_keep=0, **kwargs).logits
+[rank0]:            ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/model.py", line 1284, in forward
+[rank0]:     text_outputs = self.model.language_model(
+[rank0]:         input_ids=None,
+[rank0]:     ...<8 lines>...
+[rank0]:         **kwargs,
+[rank0]:     )
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/transformers/utils/generic.py", line 1068, in wrapper
+[rank0]:     output = func(self, *args, **kwargs)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/transformers/utils/output_capturing.py", line 287, in wrapper
+[rank0]:     outputs = func(self, *args, **kwargs)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/transformers/models/gemma4/modeling_gemma4.py", line 1692, in forward
+[rank0]:     hidden_states = decoder_layer(
+[rank0]:         hidden_states,
+[rank0]:     ...<6 lines>...
+[rank0]:         **kwargs,
+[rank0]:     )
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/transformers/modeling_layers.py", line 110, in __call__
+[rank0]:     return super().__call__(*args, **kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/transformers/models/gemma4/modeling_gemma4.py", line 1398, in forward
+[rank0]:     hidden_states, _ = self.self_attn(
+[rank0]:                        ~~~~~~~~~~~~~~^
+[rank0]:         hidden_states=hidden_states,
+[rank0]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:     ...<5 lines>...
+[rank0]:         **kwargs,
+[rank0]:         ^^^^^^^^^
+[rank0]:     )
+[rank0]:     ^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1882, in _call_impl
+[rank0]:     return inner()
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1830, in inner
+[rank0]:     result = forward_call(*args, **kwargs)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/transformers/models/gemma4/modeling_gemma4.py", line 1261, in forward
+[rank0]:     attn_output, attn_weights = attention_interface(
+[rank0]:                                 ~~~~~~~~~~~~~~~~~~~^
+[rank0]:         self,
+[rank0]:         ^^^^^
+[rank0]:     ...<7 lines>...
+[rank0]:         **kwargs,
+[rank0]:         ^^^^^^^^^
+[rank0]:     )
+[rank0]:     ^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/transformers/integrations/sdpa_attention.py", line 158, in sdpa_attention_forward
+[rank0]:     attn_output = torch.nn.functional.scaled_dot_product_attention(
+[rank0]:         query,
+[rank0]:     ...<6 lines>...
+[rank0]:         **sdpa_kwargs,
+[rank0]:     )
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/eval_frame.py", line 1181, in _fn
+[rank0]:     return fn(*args, **kwargs)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 1286, in _ring_sdpa
+[rank0]:     return _gemma4_cp_manual_attention(
+[rank0]:         attention_module,
+[rank0]:     ...<9 lines>...
+[rank0]:         kwargs=kwargs,
+[rank0]:     )
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 1263, in _gemma4_cp_manual_attention
+[rank0]:     return _run_gemma4_cp_ring_attention(attention_module, ctx)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/cp_forward.py", line 69, in record_ring
+[rank0]:     return original_ring(module, ring_ctx)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 1204, in _run_gemma4_cp_ring_attention
+[rank0]:     return _Gemma4FlexRingAttention.apply(ctx.query, ctx.key, ctx.value, ctx)
+[rank0]:            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/autograd/function.py", line 583, in apply
+[rank0]:     return super().apply(*args, **kwargs)  # type: ignore[misc]
+[rank0]:            ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 1054, in forward
+[rank0]:     out = _run_gemma4_cp_ring_attention_forward(ring_ctx.module, runtime_ctx)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 506, in _run_gemma4_cp_ring_attention_forward
+[rank0]:     out_step, lse_step, empty_query_rows, padded_head_dim = _run_gemma4_flex_chunk(
+[rank0]:                                                             ~~~~~~~~~~~~~~~~~~~~~~^
+[rank0]:         attention_module,
+[rank0]:         ^^^^^^^^^^^^^^^^^
+[rank0]:     ...<4 lines>...
+[rank0]:         kv_global_start=kv_global_start,
+[rank0]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:     )
+[rank0]:     ^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 433, in _run_gemma4_flex_chunk
+[rank0]:     raise RuntimeError(
+[rank0]:     ...<4 lines>...
+[rank0]:     ) from flex_err
+[rank0]: RuntimeError: Gemma4 CP ring requires FlexAttention for local-query/ring-KV attention. FlexAttention failed for Q=(1, 32, 64, 256) K=(1, 16, 64, 256) V=(1, 16, 64, 256) cp_rank=0 seq_local=64 kv_global_start=0.
+[rank1]: Traceback (most recent call last):
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 414, in _run_gemma4_flex_chunk
+[rank1]:     out, lse = _compiled_flex_attention(attention_module)(
+[rank1]:                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+[rank1]:         query_for_flex.contiguous(), key_for_flex, value_for_flex, return_lse=True, **flex_kwargs
+[rank1]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:     )
+[rank1]:     ^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/cp_flex_options.py", line 13, in call
+[rank1]:     return compiled(*args, **kwargs)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/eval_frame.py", line 967, in compile_wrapper
+[rank1]:     raise e.remove_dynamo_frames() from None  # see TORCHDYNAMO_VERBOSE=1
+[rank1]:     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1019, in _compile_fx_inner
+[rank1]:     raise InductorError(e, currentframe()).with_traceback(
+[rank1]:         e.__traceback__
+[rank1]:     ) from None
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1003, in _compile_fx_inner
+[rank1]:     mb_compiled_graph = fx_codegen_and_compile(
+[rank1]:         gm, example_inputs, inputs_to_check, **graph_kwargs
+[rank1]:     )
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1766, in fx_codegen_and_compile
+[rank1]:     return scheme.codegen_and_compile(gm, example_inputs, inputs_to_check, graph_kwargs)
+[rank1]:            ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/compile_fx.py", line 1452, in codegen_and_compile
+[rank1]:     graph.run(*example_inputs)
+[rank1]:     ~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 991, in run
+[rank1]:     return super().run(*args)
+[rank1]:            ~~~~~~~~~~~^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/fx/interpreter.py", line 200, in run
+[rank1]:     self.env[node] = self.run_node(node)
+[rank1]:                      ~~~~~~~~~~~~~^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 1732, in run_node
+[rank1]:     result = super().run_node(n)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/fx/interpreter.py", line 295, in run_node
+[rank1]:     return getattr(self, n.op)(n.target, args, kwargs)
+[rank1]:            ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 1375, in call_function
+[rank1]:     raise LoweringException(e, target, args, kwargs).with_traceback(
+[rank1]:         e.__traceback__
+[rank1]:     ) from None
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/graph.py", line 1365, in call_function
+[rank1]:     out = lowerings[target](*args, **kwargs)  # type: ignore[index]
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/lowering.py", line 516, in wrapped
+[rank1]:     out = decomp_fn(*args, **kwargs)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/kernel/flex/flex_attention.py", line 210, in flex_attention
+[rank1]:     return create_flex_decoding_kernel(
+[rank1]:         query,
+[rank1]:     ...<8 lines>...
+[rank1]:         mask_mod_other_buffers,
+[rank1]:     )
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/kernel/flex/flex_decoding.py", line 286, in create_flex_decoding_kernel
+[rank1]:     V.graph.sizevars.check_leq(
+[rank1]:     ~~~~~~~~~~~~~~~~~~~~~~~~~~^
+[rank1]:         seq_len_q * gqa_shared_heads, sympy.Integer(kernel_options["BLOCK_M"])
+[rank1]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:     )
+[rank1]:     ^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/sizevars.py", line 450, in check_leq
+[rank1]:     self.check(sympy.Le(left, right))
+[rank1]:     ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_inductor/sizevars.py", line 431, in check
+[rank1]:     assert self.expect_true(expr)
+[rank1]:            ~~~~~~~~~~~~~~~~^^^^^^
+[rank1]: torch._inductor.exc.InductorError: LoweringException: AssertionError: 
+[rank1]:   target: flex_attention
+[rank1]:   args[0]: TensorBox(StorageBox(
+[rank1]:     InputBuffer(name='arg1_1', layout=FixedLayout('cuda:1', torch.bfloat16, size=[1, 32, s50, 256], stride=[8192*s50, 256*s50, 256, 1]))
+[rank1]:   ))
+[rank1]:   args[1]: TensorBox(StorageBox(
+[rank1]:     InputBuffer(name='arg3_1', layout=FixedLayout('cuda:1', torch.bfloat16, size=[1, 16, s0, 256], stride=[4096*s0, 256*s0, 256, 1]))
+[rank1]:   ))
+[rank1]:   args[2]: TensorBox(StorageBox(
+[rank1]:     InputBuffer(name='arg5_1', layout=FixedLayout('cuda:1', torch.bfloat16, size=[1, 16, s43, 256], stride=[4096*s43, 256*s43, 256, 1]))
+[rank1]:   ))
+[rank1]:   args[3]: Subgraph(name='sdpa_score0', graph_module=<lambda>(), graph=None)
+[rank1]:   args[4]: (s37, s71, TensorBox(StorageBox(
+[rank1]:     InputBuffer(name='arg16_1', layout=FixedLayout('cuda:1', torch.int32, size=[1, 1, 1], stride=[1, 1, 1]))
+[rank1]:   )), TensorBox(StorageBox(
+[rank1]:     InputBuffer(name='arg17_1', layout=FixedLayout('cuda:1', torch.int32, size=[1, 1, 1, 1], stride=[1, 1, 1, 1]))
+[rank1]:   )), TensorBox(StorageBox(
+[rank1]:     InputBuffer(name='arg18_1', layout=FixedLayout('cuda:1', torch.int32, size=[1, 1, 1], stride=[1, 1, 1]))
+[rank1]:   )), TensorBox(StorageBox(
+[rank1]:     InputBuffer(name='arg19_1', layout=FixedLayout('cuda:1', torch.int32, size=[1, 1, 1, 1], stride=[1, 1, 1, 1]))
+[rank1]:   )), TensorBox(StorageBox(
+[rank1]:     InputBuffer(name='arg20_1', layout=FixedLayout('cuda:1', torch.int32, size=[1, 1, 1], stride=[1, 1, 1]))
+[rank1]:   )), TensorBox(StorageBox(
+[rank1]:     InputBuffer(name='arg21_1', layout=FixedLayout('cuda:1', torch.int32, size=[1, 1, 1, 1], stride=[1, 1, 1, 1]))
+[rank1]:   )), TensorBox(StorageBox(
+[rank1]:     InputBuffer(name='arg22_1', layout=FixedLayout('cuda:1', torch.int32, size=[1, 1, 1], stride=[1, 1, 1]))
+[rank1]:   )), TensorBox(StorageBox(
+[rank1]:     InputBuffer(name='arg23_1', layout=FixedLayout('cuda:1', torch.int32, size=[1, 1, 1, 1], stride=[1, 1, 1, 1]))
+[rank1]:   )), s59, s33, Subgraph(name='sdpa_mask0', graph_module=<lambda>(), graph=None))
+[rank1]:   args[5]: 1.0
+[rank1]:   args[6]: {'BLOCK_M': s62, 'BLOCK_N': s63, 'BLOCK_M1': s65, 'BLOCK_N1': s51, 'BLOCK_M2': s45, 'BLOCK_N2': s81, 'num_stages': s82, 'num_warps': s25, 'BACKEND': 'AUTO', 'PRESCALE_QK': False, 'ROWS_GUARANTEED_SAFE': False, 'BLOCKS_ARE_CONTIGUOUS': False, 'WRITE_DQ': True, 'OUTPUT_LOGSUMEXP': True, 'OUTPUT_MAX': False}
+[rank1]:   args[7]: ()
+[rank1]:   args[8]: (s42, s32, s27, TensorBox(StorageBox(
+[rank1]:     InputBuffer(name='arg9_1', layout=FixedLayout('cuda:1', torch.int64, size=[1, s27], stride=[s27, 1]))
+[rank1]:   )), s69, s20, s44, TensorBox(StorageBox(
+[rank1]:     InputBuffer(name='arg13_1', layout=FixedLayout('cuda:1', torch.int64, size=[1, s69], stride=[s20, 1]))
+[rank1]:   )))
+
+[rank1]: Set TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS="+dynamo"
+
+
+[rank1]: The above exception was the direct cause of the following exception:
+
+[rank1]: Traceback (most recent call last):
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/cp_forward.py", line 184, in <module>
+[rank1]:     main()
+[rank1]:     ~~~~^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/cp_forward.py", line 104, in main
+[rank1]:     logits = forward()
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/cp_forward.py", line 102, in forward
+[rank1]:     return model(**batch, use_cache=False, logits_to_keep=0, **kwargs).logits
+[rank1]:            ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank1]:     return self._call_impl(*args, **kwargs)
+[rank1]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank1]:     return forward_call(*args, **kwargs)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/model.py", line 1284, in forward
+[rank1]:     text_outputs = self.model.language_model(
+[rank1]:         input_ids=None,
+[rank1]:     ...<8 lines>...
+[rank1]:         **kwargs,
+[rank1]:     )
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank1]:     return self._call_impl(*args, **kwargs)
+[rank1]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank1]:     return forward_call(*args, **kwargs)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/transformers/utils/generic.py", line 1068, in wrapper
+[rank1]:     output = func(self, *args, **kwargs)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/transformers/utils/output_capturing.py", line 287, in wrapper
+[rank1]:     outputs = func(self, *args, **kwargs)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/transformers/models/gemma4/modeling_gemma4.py", line 1692, in forward
+[rank1]:     hidden_states = decoder_layer(
+[rank1]:         hidden_states,
+[rank1]:     ...<6 lines>...
+[rank1]:         **kwargs,
+[rank1]:     )
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/transformers/modeling_layers.py", line 110, in __call__
+[rank1]:     return super().__call__(*args, **kwargs)
+[rank1]:            ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank1]:     return self._call_impl(*args, **kwargs)
+[rank1]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank1]:     return forward_call(*args, **kwargs)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/transformers/models/gemma4/modeling_gemma4.py", line 1398, in forward
+[rank1]:     hidden_states, _ = self.self_attn(
+[rank1]:                        ~~~~~~~~~~~~~~^
+[rank1]:         hidden_states=hidden_states,
+[rank1]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:     ...<5 lines>...
+[rank1]:         **kwargs,
+[rank1]:         ^^^^^^^^^
+[rank1]:     )
+[rank1]:     ^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank1]:     return self._call_impl(*args, **kwargs)
+[rank1]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1882, in _call_impl
+[rank1]:     return inner()
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1830, in inner
+[rank1]:     result = forward_call(*args, **kwargs)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/transformers/models/gemma4/modeling_gemma4.py", line 1261, in forward
+[rank1]:     attn_output, attn_weights = attention_interface(
+[rank1]:                                 ~~~~~~~~~~~~~~~~~~~^
+[rank1]:         self,
+[rank1]:         ^^^^^
+[rank1]:     ...<7 lines>...
+[rank1]:         **kwargs,
+[rank1]:         ^^^^^^^^^
+[rank1]:     )
+[rank1]:     ^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/transformers/integrations/sdpa_attention.py", line 158, in sdpa_attention_forward
+[rank1]:     attn_output = torch.nn.functional.scaled_dot_product_attention(
+[rank1]:         query,
+[rank1]:     ...<6 lines>...
+[rank1]:         **sdpa_kwargs,
+[rank1]:     )
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/_dynamo/eval_frame.py", line 1181, in _fn
+[rank1]:     return fn(*args, **kwargs)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 1286, in _ring_sdpa
+[rank1]:     return _gemma4_cp_manual_attention(
+[rank1]:         attention_module,
+[rank1]:     ...<9 lines>...
+[rank1]:         kwargs=kwargs,
+[rank1]:     )
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 1263, in _gemma4_cp_manual_attention
+[rank1]:     return _run_gemma4_cp_ring_attention(attention_module, ctx)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/cp_forward.py", line 69, in record_ring
+[rank1]:     return original_ring(module, ring_ctx)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 1204, in _run_gemma4_cp_ring_attention
+[rank1]:     return _Gemma4FlexRingAttention.apply(ctx.query, ctx.key, ctx.value, ctx)
+[rank1]:            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/autograd/function.py", line 583, in apply
+[rank1]:     return super().apply(*args, **kwargs)  # type: ignore[misc]
+[rank1]:            ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 1054, in forward
+[rank1]:     out = _run_gemma4_cp_ring_attention_forward(ring_ctx.module, runtime_ctx)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 506, in _run_gemma4_cp_ring_attention_forward
+[rank1]:     out_step, lse_step, empty_query_rows, padded_head_dim = _run_gemma4_flex_chunk(
+[rank1]:                                                             ~~~~~~~~~~~~~~~~~~~~~~^
+[rank1]:         attention_module,
+[rank1]:         ^^^^^^^^^^^^^^^^^
+[rank1]:     ...<4 lines>...
+[rank1]:         kv_global_start=kv_global_start,
+[rank1]:         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:     )
+[rank1]:     ^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/cp_attention.py", line 433, in _run_gemma4_flex_chunk
+[rank1]:     raise RuntimeError(
+[rank1]:     ...<4 lines>...
+[rank1]:     ) from flex_err
+[rank1]: RuntimeError: Gemma4 CP ring requires FlexAttention for local-query/ring-KV attention. FlexAttention failed for Q=(1, 32, 64, 256) K=(1, 16, 64, 256) V=(1, 16, 64, 256) cp_rank=1 seq_local=64 kv_global_start=64.
+[rank0]:[W1022 21:47:20.774505753 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+W1022 21:47:20.912000 37962 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 38045 closing signal SIGTERM
+E1022 21:47:21.127000 37962 torch/distributed/elastic/multiprocessing/api.py:984] failed (exitcode: 1) local_rank: 1 (pid: 38046) of binary: /home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/bin/python
+Traceback (most recent call last):
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/bin/torchrun", line 6, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 362, in wrapper
+    return f(*args, **kwargs)
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/run.py", line 991, in main
+    run(args)
+    ~~~^^^^^^
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/run.py", line 982, in run
+    elastic_launch(
+    ~~~~~~~~~~~~~~~
+        config=config,
+        ~~~~~~~~~~~~~~
+        entrypoint=cmd,
+        ~~~~~~~~~~~~~~~
+    )(*cmd_args)
+    ~^^^^^^^^^^^
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/launcher/api.py", line 170, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/launcher/api.py", line 317, in launch_agent
+    raise ChildFailedError(
+    ...<2 lines>...
+    )
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+benchmarks/cp_forward.py FAILED
+------------------------------------------------------------
+Failures:
+[1]:
+  time      : 2026-10-22_21:47:21
+  host      : ip-172-31-3-40.us-east-2.compute.internal
+  rank      : 0 (local_rank: 0)
+  exitcode  : -15 (pid: 38045)
+  error_file: <N/A>
+  traceback : Signal 15 (SIGTERM) received by PID 38045
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-10-22_21:47:20
+  host      : ip-172-31-3-40.us-east-2.compute.internal
+  rank      : 1 (local_rank: 1)
+  exitcode  : 1 (pid: 38046)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

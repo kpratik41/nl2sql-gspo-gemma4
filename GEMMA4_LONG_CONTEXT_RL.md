@@ -1,5 +1,68 @@
 # Gemma 4 31B: incremental validation of CP=2 and FFPA for verl RL
 
+## Tool-calling verl recipe — 2026-10-22 (America/New_York)
+
+The task code from `consensus` has been adapted into
+[`recipes/nl2sql_verl/`](recipes/nl2sql_verl/README.md): prepared parquet inputs,
+the three active SQLite tools, seven weighted rewards, native Gemma tool
+parsing and a local AutoModel TP2/CP2 engine for verl RL. Defaults preserve
+the actual TRL token-ratio/batch-reward-scaling objective; an explicit GSPO
+profile is also provided. It uses BF16 compute,
+FSDP2 CPU master weights/optimizer state, the measured accumulation policy and
+SM120 tiles. Installed libraries and prior benchmark files are unchanged.
+
+Task/config tests, a four-rank synthetic GSPO gradient comparison, and tiny
+Gemma engine training/checkpoint/weight-export checks pass. A complete 31B
+vLLM tool rollout and RL update is not yet validated. The recipe documents
+the verl/AutoModel Transformers version conflict and the source-adapter
+exception; its separate rollout runtime still needs installation/validation.
+Full-model CP probability sensitivity remains open. Earlier experiments used
+NeMo AutoModel directly, not NeMo RL or Megatron-LM training.
+
+## TP=2 measurement update — 2026-10-23
+
+The requested TP2/CP1 (two GPUs) and TP2/CP2 (four GPUs, two GPUs per CP
+partition) now execute with the standard Gemma TP plan and BF16 ring Flex
+attention. With batch one, no gradients/cache, and all-token TP-vocabulary-sharded
+logits, the largest confirmed forwards are **104,448** and **199,680** total
+tokens respectively. The next 1,024-token step fails with CUDA OOM in each
+layout under the default allocator; these are measured forward limits.
+
+The TP2 short probability comparison passes the existing screening gates at
+1,024 tokens but fails the max-token logprob gate at 128 tokens (0.356054 nats).
+The large original BF16 discrepancy is mitigated, but probability sensitivity
+remains. Long forwards measure capacity; they do not validate long-context
+probability parity, whole-model gradients, optimizer steps or RL integration.
+No data download was needed. See the newest section of
+[GEMMA4_BENCHMARK_RESULTS.md](GEMMA4_BENCHMARK_RESULTS.md) and
+`benchmark_results/tp2_capacity/report.json` for exact results and reproduction.
+The earlier dated updates and original allocation assumptions below are historical.
+
+## Current execution update — 2026-10-22
+
+The host now has four RTX PRO 6000 Blackwell GPUs; references below to one GPU
+and waiting for a second node describe the earlier allocation. A clean AutoModel
+environment is installed. Real two-rank ring-Flex CP2 forward runs on GPUs 0–1
+at 128 and 1,024 total tokens now execute, but full-model probability screening
+fails against both native Flex CP1 and a one-rank ring control. Separate two-rank
+global/sliding attention output and Q/K/V gradient checks pass their FP32-reference
+tolerances with explicit SM120 tile overrides. This does not validate whole-model
+gradients or RL. See the measured CP2 update in
+[GEMMA4_BENCHMARK_RESULTS.md](GEMMA4_BENCHMARK_RESULTS.md) and run
+`bash benchmarks/run_cp_checks.sh` to reproduce. Resolve the model probability
+discrepancy before increasing context or integrating training.
+
+Follow-up traced the large difference to shape-dependent BF16 GEMM reductions:
+one GPU on 64 versus 128 tokens reproduces the original worst probability error,
+and the first difference is layer 0 Q projection. Opt-in cuBLASLt with full
+reduction/no split-K mitigates it; remaining ring-chunk precision effects shrink
+further with optional FP32 attention. The target training precision remains
+BF16; FP32 intermediate accumulation is compatible with BF16 weights and
+activations. The efficient profiles still fail the unchanged max-token screening gate.
+Installed AutoModel source is unchanged; the benchmark report records flags,
+raw evidence, reproduction and rollback. Continue validation with BF16 and
+appropriate accumulation precision before treating the path as ready for RL.
+
 ## Main objective and why we are doing this
 
 Enable **CP=2 context parallelism** and **FFPA, or another validated memory-efficient attention backend**, for **`google/gemma-4-31B-it`**, with **verl** as the target framework for eventual **full-parameter NL2SQL RL**. CP=2 distributes one long sequence across two GPU ranks to reduce per-rank sequence/activation pressure. Efficient attention avoids materializing quadratic attention-score tensors; FFPA is a candidate for faster eligible global-attention operations. We want measured capacity and speed improvements while preserving model semantics, token probabilities, and gradients. Global-attention compute/latency is not expected to become linear merely because working memory is approximately linear.

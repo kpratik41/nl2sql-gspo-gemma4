@@ -1,0 +1,1 @@
+START cp=1 lengths=[128, 8192, 16384, 32768, 40960, 65536, 98304, 131072, 196608, 262144] log=benchmark_results/tp2_capacity/tp2_cp1_coarse.log

@@ -1,0 +1,51 @@
+{
+  "python": "3.13.12 (main, Apr  1 2026, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-5)]",
+  "executable": "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/bin/python",
+  "system_site_packages": false,
+  "platform": "Linux-6.1.166-197.305.amzn2023.x86_64-x86_64-with-glibc2.34",
+  "torch": "2.10.0+cu130",
+  "cuda": "13.0",
+  "cudnn": 91501,
+  "gpus": [
+    {
+      "index": 0,
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "capability": [
+        12,
+        0
+      ],
+      "memory_bytes": 101973950464
+    },
+    {
+      "index": 1,
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "capability": [
+        12,
+        0
+      ],
+      "memory_bytes": 101973950464
+    },
+    {
+      "index": 2,
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "capability": [
+        12,
+        0
+      ],
+      "memory_bytes": 101973950464
+    },
+    {
+      "index": 3,
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "capability": [
+        12,
+        0
+      ],
+      "memory_bytes": 101973950464
+    }
+  ],
+  "automodel_revision": "65866fbce209938cd153f2bc26f01fa0d34cc61e",
+  "model_snapshot": "/home/ec2-user/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+  "model_snapshot_exists": true,
+  "scope": "Environment and attention kernel smoke tests; no full model, CP, or training validation."
+}

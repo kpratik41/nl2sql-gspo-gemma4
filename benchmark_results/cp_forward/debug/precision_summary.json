@@ -1,0 +1,108 @@
+{
+  "original": [
+    {
+      "tokens": 128,
+      "comparison": {
+        "nll_cp1": 2.1028027534484863,
+        "nll_cp2": 3.151768445968628,
+        "nll_delta": 1.0489656925201416,
+        "max_target_logprob_error": 22.990882873535156,
+        "mean_target_logprob_error": 1.2313306331634521,
+        "max_sampled_kl": 0.10499988496303558,
+        "sampled_top1_agreement": 1.0,
+        "screening_pass": false
+      },
+      "reference_backend": "native Flex"
+    },
+    {
+      "tokens": 1024,
+      "comparison": {
+        "nll_cp1": 0.5340955853462219,
+        "nll_cp2": 0.3790441155433655,
+        "nll_delta": -0.15505146980285645,
+        "max_target_logprob_error": 16.71596336364746,
+        "mean_target_logprob_error": 0.1957305669784546,
+        "max_sampled_kl": 0.3110574185848236,
+        "sampled_top1_agreement": 0.875,
+        "screening_pass": false
+      },
+      "reference_backend": "native Flex"
+    }
+  ],
+  "matmul_only": [
+    {
+      "tokens": 128,
+      "comparison": {
+        "nll_cp1": 2.386164665222168,
+        "nll_cp2": 2.3857011795043945,
+        "nll_delta": -0.0004634857177734375,
+        "max_target_logprob_error": 0.3635272979736328,
+        "mean_target_logprob_error": 0.013118300586938858,
+        "max_sampled_kl": 0.0001378529705107212,
+        "sampled_top1_agreement": 1.0,
+        "screening_pass": false
+      },
+      "reference_backend": "native Flex"
+    },
+    {
+      "tokens": 1024,
+      "comparison": {
+        "nll_cp1": 0.427421510219574,
+        "nll_cp2": 0.4294717311859131,
+        "nll_delta": 0.0020502209663391113,
+        "max_target_logprob_error": 2.3650150299072266,
+        "mean_target_logprob_error": 0.00841148104518652,
+        "max_sampled_kl": 9.747548028826714e-05,
+        "sampled_top1_agreement": 1.0,
+        "screening_pass": false
+      },
+      "reference_backend": "native Flex"
+    }
+  ],
+  "fp32_attention": [
+    {
+      "tokens": 128,
+      "comparison": {
+        "nll_cp1": 2.32074236869812,
+        "nll_cp2": 2.322563648223877,
+        "nll_delta": 0.001821279525756836,
+        "max_target_logprob_error": 0.26441383361816406,
+        "mean_target_logprob_error": 0.0035498461220413446,
+        "max_sampled_kl": 2.056473391576219e-08,
+        "sampled_top1_agreement": 1.0,
+        "screening_pass": false
+      },
+      "reference_backend": "model-owned ring Flex"
+    },
+    {
+      "tokens": 1024,
+      "comparison": {
+        "nll_cp1": 0.41344696283340454,
+        "nll_cp2": 0.41305914521217346,
+        "nll_delta": -0.0003878176212310791,
+        "max_target_logprob_error": 0.22250938415527344,
+        "mean_target_logprob_error": 0.00047220956184901297,
+        "max_sampled_kl": 6.877202736177424e-07,
+        "sampled_top1_agreement": 1.0,
+        "screening_pass": false
+      },
+      "reference_backend": "model-owned ring Flex"
+    }
+  ],
+  "inventory_fp32": [
+    {
+      "tokens": 128,
+      "comparison": {
+        "nll_cp1": 2.655791997909546,
+        "nll_cp2": 2.6537787914276123,
+        "nll_delta": -0.0020132064819335938,
+        "max_target_logprob_error": 0.2043304443359375,
+        "mean_target_logprob_error": 0.004085495602339506,
+        "max_sampled_kl": 0.0005471084732562304,
+        "sampled_top1_agreement": 1.0,
+        "screening_pass": false
+      },
+      "reference_backend": "model-owned ring Flex"
+    }
+  ]
+}

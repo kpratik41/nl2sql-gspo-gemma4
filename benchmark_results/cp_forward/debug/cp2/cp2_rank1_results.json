@@ -1,0 +1,36 @@
+[
+  {
+    "cp_size": 2,
+    "rank": 1,
+    "tokens": 128,
+    "local_tokens": 64,
+    "input_sha256": "7e79c59df01f3c72f80c007419373d9964b195bdc1e01eb7260be3f730eddcea",
+    "weight_fingerprint": "a4a17468c0e800c999ea7541120ddf15a18964341ba6d489d6f88b2ac89fe022",
+    "model_class": "<class 'nemo_automodel.components.models.gemma4_moe.model.Gemma4ForConditionalGeneration'>",
+    "backend": "model-owned ring Flex",
+    "median_ms": 169.19815500114055,
+    "times_ms": [
+      169.19815500114055
+    ],
+    "baseline_GiB": 58.30425786972046,
+    "peak_allocated_GiB": 58.369505882263184,
+    "incremental_peak_MiB": 66.81396484375,
+    "peak_reserved_GiB": 61.220703125,
+    "ring_dispatch_calls": 120,
+    "ring_cp_sizes_observed": [
+      2
+    ],
+    "ring_kernel_options": {
+      "BLOCK_M": 32,
+      "BLOCK_N": 32,
+      "BLOCK_M1": 32,
+      "BLOCK_N1": 32,
+      "BLOCK_M2": 32,
+      "BLOCK_N2": 32,
+      "num_stages": 1,
+      "num_warps": 4,
+      "FORCE_USE_FLEX_ATTENTION": true
+    },
+    "scope": "forward only; replicated BF16 weights; no FSDP, optimizer, packing or cache"
+  }
+]

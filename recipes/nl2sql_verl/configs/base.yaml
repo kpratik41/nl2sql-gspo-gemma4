@@ -1,0 +1,106 @@
+defaults:
+  - ppo_trainer
+  - override /actor@actor_rollout_ref.actor: nl2sql_actor
+  - _self_
+
+data:
+  train_files: outputs/verl_data/train.parquet
+  val_files: outputs/verl_data/validation.parquet
+  train_batch_size: 4
+  max_prompt_length: 2048
+  max_response_length: 4096
+  return_raw_chat: true
+  filter_overlong_prompts: true
+  truncation: error
+  need_tools_kwargs: true
+
+actor_rollout_ref:
+  model:
+    path: google/gemma-4-31B-it
+    external_lib: recipes.nl2sql_verl.engine
+    use_remove_padding: false
+    use_fused_kernels: false
+    enable_gradient_checkpointing: false
+  actor:
+    ppo_max_token_len_per_gpu: 6144
+  rollout:
+    name: vllm
+    mode: async
+    dtype: bfloat16
+    tensor_model_parallel_size: 2
+    temperature: 1.2
+    top_p: 0.95
+    top_k: -1
+    n: 16
+    max_model_len: 6144
+    max_num_seqs: 8
+    max_num_batched_tokens: 6144
+    gpu_memory_utilization: 0.5
+    enforce_eager: true
+    free_cache_engine: true
+    log_prob_micro_batch_size_per_gpu: 1
+    log_prob_use_dynamic_bsz: false
+    log_prob_max_token_len_per_gpu: 6144
+    calculate_log_probs: true
+    agent:
+      num_workers: 4
+      default_agent_loop: nl2sql_tool_agent
+      agent_loop_config_path: recipes/nl2sql_verl/configs/agent.yaml
+    multi_turn:
+      enable: true
+      format: nl2sql_gemma4
+      tool_config_path: recipes/nl2sql_verl/configs/tools.yaml
+      max_assistant_turns: 9
+      max_parallel_calls: 3
+      max_tool_response_length: 512
+      tool_response_truncate_side: right
+    val_kwargs:
+      do_sample: true
+      temperature: 1.2
+      top_p: 0.95
+      n: 16
+
+algorithm:
+  adv_estimator: nl2sql_batch_grpo
+  norm_adv_by_std_in_grpo: false
+  use_kl_in_reward: false
+  filter_groups:
+    enable: true
+    metric: result
+    max_num_gen_batches: 4
+  rollout_correction:
+    bypass_mode: false
+
+critic:
+  enable: false
+
+reward:
+  num_workers: 4
+  custom_reward_function:
+    path: recipes/nl2sql_verl/reward_entry.py
+    name: compute_score
+
+trainer:
+  nnodes: 1
+  n_gpus_per_node: 4
+  total_epochs: 1
+  total_training_steps: 100
+  project_name: nl2sql-gemma4-verl
+  experiment_name: tp2-cp2-consensus
+  logger: [console]
+  val_before_train: false
+  save_freq: 10
+  test_freq: 10
+  resume_mode: auto
+  default_local_dir: outputs/verl_nl2sql
+  use_v1: true
+
+ray_kwargs:
+  ray_init:
+    runtime_env:
+      env_vars:
+        NL2SQL_DATABASE_DIR: ${oc.env:NL2SQL_DATABASE_DIR,databases}
+        NL2SQL_EXEC_TIMEOUT_S: ${oc.env:NL2SQL_EXEC_TIMEOUT_S,"60"}
+        NL2SQL_LENGTH_MAX: ${oc.env:NL2SQL_LENGTH_MAX,"4096"}
+        NL2SQL_LENGTH_BUFFER: ${oc.env:NL2SQL_LENGTH_BUFFER,"512"}
+        NL2SQL_REWARD_WEIGHTS: ${oc.env:NL2SQL_REWARD_WEIGHTS,"0.2,0.5,2.0,0.5,0.5,0.1,0.1"}

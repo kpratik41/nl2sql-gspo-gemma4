@@ -1,0 +1,9 @@
+{
+  "status": "pass",
+  "tp": 2,
+  "cp": 1,
+  "gradient_norm": 88.28596204261692,
+  "checkpoint_restored": true,
+  "weight_export": "BF16 HF tensors from CPU FSDP/TP shards",
+  "scope": "tiny two-layer Gemma train_batch, CPU-master optimizer, checkpoint restore and weight export; not 31B or rollout"
+}

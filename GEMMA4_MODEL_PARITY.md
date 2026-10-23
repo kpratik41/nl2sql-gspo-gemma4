@@ -1,5 +1,16 @@
 # Gemma full-model numerical parity investigation
 
+## Later CP investigation
+
+The CP follow-up in [GEMMA4_BENCHMARK_RESULTS.md](GEMMA4_BENCHMARK_RESULTS.md)
+now demonstrates that changing only sequence/GEMM shape on one GPU reproduces
+the original large prefix discrepancy. Layer tracing finds the first change in
+layer 0 Q projection. cuBLASLt/full BF16 reductions mitigate that cause, and
+optional FP32 attention reduces remaining ring-chunk differences. BF16 remains
+the training target; efficient profiles still fail the conservative maximum-token
+gate. These are later measurements, not a retroactive acceptance of the earlier
+tables below. No installed model or ring-attention source was changed.
+
 ## Main objective and why we are doing this
 
 Enable **CP=2 context parallelism** and **FFPA, or another validated memory-efficient attention backend**, for **`google/gemma-4-31B-it`**, with **verl** as the target framework for eventual **full-parameter NL2SQL RL**. CP=2 distributes one long sequence across two GPU ranks to reduce per-rank sequence/activation pressure. Efficient attention avoids materializing quadratic attention-score tensors; FFPA is a candidate for faster eligible global-attention operations. We want measured capacity and speed improvements while preserving model semantics, token probabilities, and gradients. Global-attention compute/latency is not expected to become linear merely because working memory is approximately linear.

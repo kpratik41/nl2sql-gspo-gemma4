@@ -1,0 +1,94 @@
+W1023 01:45:17.522000 121040 torch/distributed/run.py:852] 
+W1023 01:45:17.522000 121040 torch/distributed/run.py:852] *****************************************
+W1023 01:45:17.522000 121040 torch/distributed/run.py:852] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W1023 01:45:17.522000 121040 torch/distributed/run.py:852] *****************************************
+[W1023 01:45:20.243590176 Context.cpp:534] Warning: torch.backends.cuda.preferred_blas_library is an experimental feature. If you see any error or unexpected behavior when this flag is set please file an issue on GitHub. (function operator())
+[W1023 01:45:20.244112666 Context.cpp:534] Warning: torch.backends.cuda.preferred_blas_library is an experimental feature. If you see any error or unexpected behavior when this flag is set please file an issue on GitHub. (function operator())
+[W1023 01:45:20.282956755 Context.cpp:534] Warning: torch.backends.cuda.preferred_blas_library is an experimental feature. If you see any error or unexpected behavior when this flag is set please file an issue on GitHub. (function operator())
+[W1023 01:45:20.288044799 Context.cpp:534] Warning: torch.backends.cuda.preferred_blas_library is an experimental feature. If you see any error or unexpected behavior when this flag is set please file an issue on GitHub. (function operator())
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/megatron_fsdp/mixed_precision.py:115: UserWarning: Transformer Engine and Apex are not installed. Falling back to local implementations of multi_tensor_applier and multi_tensor_scale
+  warnings.warn(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/megatron_fsdp/mixed_precision.py:115: UserWarning: Transformer Engine and Apex are not installed. Falling back to local implementations of multi_tensor_applier and multi_tensor_scale
+  warnings.warn(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/megatron_fsdp/mixed_precision.py:115: UserWarning: Transformer Engine and Apex are not installed. Falling back to local implementations of multi_tensor_applier and multi_tensor_scale
+  warnings.warn(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/megatron_fsdp/mixed_precision.py:115: UserWarning: Transformer Engine and Apex are not installed. Falling back to local implementations of multi_tensor_applier and multi_tensor_scale
+  warnings.warn(
+[2] load checkpoint
+[3] load checkpoint
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[1] load checkpoint
+[0] load checkpoint
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/tensor/parallel/api.py:123: UserWarning: Parallelize plan key 'v_proj' could not be resolved: no submodule matching token 'v_proj' in module Gemma4TextAttention(
+  (q_proj): Linear(in_features=5376, out_features=16384, bias=False)
+  (q_norm): Gemma4RMSNorm()
+  (k_norm): Gemma4RMSNorm()
+  (v_norm): Gemma4RMSNorm()
+  (k_proj): Linear(in_features=5376, out_features=2048, bias=False)
+  (o_proj): Linear(in_features=16384, out_features=5376, bias=False)
+), skipping this plan entry.
+  parallelize_module(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/tensor/parallel/api.py:123: UserWarning: Parallelize plan key 'v_proj' could not be resolved: no submodule matching token 'v_proj' in module Gemma4TextAttention(
+  (q_proj): Linear(in_features=5376, out_features=16384, bias=False)
+  (q_norm): Gemma4RMSNorm()
+  (k_norm): Gemma4RMSNorm()
+  (v_norm): Gemma4RMSNorm()
+  (k_proj): Linear(in_features=5376, out_features=2048, bias=False)
+  (o_proj): Linear(in_features=16384, out_features=5376, bias=False)
+), skipping this plan entry.
+  parallelize_module(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/tensor/parallel/api.py:123: UserWarning: Parallelize plan key 'v_proj' could not be resolved: no submodule matching token 'v_proj' in module Gemma4TextAttention(
+  (q_proj): Linear(in_features=5376, out_features=16384, bias=False)
+  (q_norm): Gemma4RMSNorm()
+  (k_norm): Gemma4RMSNorm()
+  (v_norm): Gemma4RMSNorm()
+  (k_proj): Linear(in_features=5376, out_features=2048, bias=False)
+  (o_proj): Linear(in_features=16384, out_features=5376, bias=False)
+), skipping this plan entry.
+  parallelize_module(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/tensor/parallel/api.py:123: UserWarning: Parallelize plan key 'v_proj' could not be resolved: no submodule matching token 'v_proj' in module Gemma4TextAttention(
+  (q_proj): Linear(in_features=5376, out_features=16384, bias=False)
+  (q_norm): Gemma4RMSNorm()
+  (k_norm): Gemma4RMSNorm()
+  (v_norm): Gemma4RMSNorm()
+  (k_proj): Linear(in_features=5376, out_features=2048, bias=False)
+  (o_proj): Linear(in_features=16384, out_features=5376, bias=False)
+), skipping this plan entry.
+  parallelize_module(
+{"rank": 0, "tp_rank": 0, "cp_rank": 0, "tp_group": [0, 1], "cp_group": [0, 2], "local_parameter_GiB": 29.66277226805687, "dtensor_parameters": 411, "max_position_embeddings": 262144, "dtype": "bfloat16", "attention": "ring Flex BF16", "compiled_masks": true, "matmul_policy": "cuBLASLt, BF16 reduced reduction=False, split-K=False", "fsdp": false, "gradients": false, "kv_cache": false, "batch_size": 1, "logits": "all sequence positions; vocabulary sharded over TP2"}
+{"rank": 1, "tp_rank": 1, "cp_rank": 0, "tp_group": [0, 1], "cp_group": [1, 3], "local_parameter_GiB": 29.66277226805687, "dtensor_parameters": 411, "max_position_embeddings": 262144, "dtype": "bfloat16", "attention": "ring Flex BF16", "compiled_masks": true, "matmul_policy": "cuBLASLt, BF16 reduced reduction=False, split-K=False", "fsdp": false, "gradients": false, "kv_cache": false, "batch_size": 1, "logits": "all sequence positions; vocabulary sharded over TP2"}
+{"rank": 2, "tp_rank": 0, "cp_rank": 1, "tp_group": [2, 3], "cp_group": [0, 2], "local_parameter_GiB": 29.66277226805687, "dtensor_parameters": 411, "max_position_embeddings": 262144, "dtype": "bfloat16", "attention": "ring Flex BF16", "compiled_masks": true, "matmul_policy": "cuBLASLt, BF16 reduced reduction=False, split-K=False", "fsdp": false, "gradients": false, "kv_cache": false, "batch_size": 1, "logits": "all sequence positions; vocabulary sharded over TP2"}
+{"rank": 3, "tp_rank": 1, "cp_rank": 1, "tp_group": [2, 3], "cp_group": [1, 3], "local_parameter_GiB": 29.66277226805687, "dtensor_parameters": 411, "max_position_embeddings": 262144, "dtype": "bfloat16", "attention": "ring Flex BF16", "compiled_masks": true, "matmul_policy": "cuBLASLt, BF16 reduced reduction=False, split-K=False", "fsdp": false, "gradients": false, "kv_cache": false, "batch_size": 1, "logits": "all sequence positions; vocabulary sharded over TP2"}
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+[0] forward 128 local=64[1] forward 128 local=64[2] forward 128 local=64[3] forward 128 local=64
+
+
+
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/attention/flex_attention.py:1559: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/attention/flex_attention.py:1559: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/attention/flex_attention.py:1559: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/attention/flex_attention.py:1559: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+{"status": "ok", "tokens": 128, "tp": 2, "cp": 2, "rank": 3, "forward_ms_including_cold_shape": 16700.525046999246, "baseline_GiB": 29.684609413146973, "peak_allocated_GiB": 29.829347610473633, "peak_reserved_GiB": 32.50390625, "incremental_peak_MiB": 148.2119140625, "local_logits_shape": [1, 64, 131072], "ring_shapes": [[2, 16, 8, 256], [2, 16, 16, 512]], "input_sha256": "7e79c59df01f3c72f80c007419373d9964b195bdc1e01eb7260be3f730eddcea", "warm_median_ms": 225.70874899975024, "warm_times_ms": [227.03851700134692, 225.70874899975024, 225.61932700045872]}
+{"status": "ok", "tokens": 128, "tp": 2, "cp": 2, "rank": 1, "forward_ms_including_cold_shape": 16700.632002997736, "baseline_GiB": 29.684609413146973, "peak_allocated_GiB": 29.829347610473633, "peak_reserved_GiB": 32.50390625, "incremental_peak_MiB": 148.2119140625, "local_logits_shape": [1, 64, 131072], "ring_shapes": [[2, 16, 8, 256], [2, 16, 16, 512]], "input_sha256": "7e79c59df01f3c72f80c007419373d9964b195bdc1e01eb7260be3f730eddcea", "warm_median_ms": 225.48944799927995, "warm_times_ms": [226.87795599995297, 225.4709279986855, 225.48944799927995]}
+{"status": "ok", "tokens": 128, "tp": 2, "cp": 2, "rank": 2, "forward_ms_including_cold_shape": 16700.524986001255, "baseline_GiB": 29.684609413146973, "peak_allocated_GiB": 29.829347610473633, "peak_reserved_GiB": 32.50390625, "incremental_peak_MiB": 148.2119140625, "local_logits_shape": [1, 64, 131072], "ring_shapes": [[2, 16, 8, 256], [2, 16, 16, 512]], "input_sha256": "7e79c59df01f3c72f80c007419373d9964b195bdc1e01eb7260be3f730eddcea", "warm_median_ms": 225.70427200116683, "warm_times_ms": [227.04670900202473, 225.70427200116683, 225.63392099982593]}
+{"status": "ok", "tokens": 128, "tp": 2, "cp": 2, "rank": 0, "forward_ms_including_cold_shape": 16700.78791999913, "baseline_GiB": 29.684609413146973, "peak_allocated_GiB": 29.829347610473633, "peak_reserved_GiB": 32.50390625, "incremental_peak_MiB": 148.2119140625, "local_logits_shape": [1, 64, 131072], "ring_shapes": [[2, 16, 8, 256], [2, 16, 16, 512]], "input_sha256": "7e79c59df01f3c72f80c007419373d9964b195bdc1e01eb7260be3f730eddcea", "warm_median_ms": 225.48870999889914, "warm_times_ms": [226.85509199800435, 225.4832600010559, 225.48870999889914]}
+[3] forward 1024 local=512[2] forward 1024 local=512[1] forward 1024 local=512[0] forward 1024 local=512
+
+
+
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+{"status": "ok", "tokens": 1024, "tp": 2, "cp": 2, "rank": 1, "forward_ms_including_cold_shape": 13382.450074997905, "baseline_GiB": 29.697471141815186, "peak_allocated_GiB": 29.99706220626831, "peak_reserved_GiB": 32.498046875, "incremental_peak_MiB": 306.78125, "local_logits_shape": [1, 512, 131072], "ring_shapes": [[2, 16, 8, 256], [2, 16, 16, 512]], "input_sha256": "b096ca2fc710d24a333803b9eec50e304519b00a866cfa2fc872cc2ccec07724", "warm_median_ms": 270.0021070013463, "warm_times_ms": [270.9389639967412, 270.0021070013463, 269.2144159991585]}
+{"status": "ok", "tokens": 1024, "tp": 2, "cp": 2, "rank": 3, "forward_ms_including_cold_shape": 13382.438344000548, "baseline_GiB": 29.697471141815186, "peak_allocated_GiB": 29.99706220626831, "peak_reserved_GiB": 32.498046875, "incremental_peak_MiB": 306.78125, "local_logits_shape": [1, 512, 131072], "ring_shapes": [[2, 16, 8, 256], [2, 16, 16, 512]], "input_sha256": "b096ca2fc710d24a333803b9eec50e304519b00a866cfa2fc872cc2ccec07724", "warm_median_ms": 270.11836400197353, "warm_times_ms": [271.02731199920527, 270.11836400197353, 269.2897270026151]}
+{"status": "ok", "tokens": 1024, "tp": 2, "cp": 2, "rank": 0, "forward_ms_including_cold_shape": 13382.522449002863, "baseline_GiB": 29.697471141815186, "peak_allocated_GiB": 29.99706220626831, "peak_reserved_GiB": 32.498046875, "incremental_peak_MiB": 306.78125, "local_logits_shape": [1, 512, 131072], "ring_shapes": [[2, 16, 8, 256], [2, 16, 16, 512]], "input_sha256": "b096ca2fc710d24a333803b9eec50e304519b00a866cfa2fc872cc2ccec07724", "warm_median_ms": 270.05047100101365, "warm_times_ms": [270.9832920008921, 270.05047100101365, 269.26175499829696]}
+{"status": "ok", "tokens": 1024, "tp": 2, "cp": 2, "rank": 2, "forward_ms_including_cold_shape": 13382.66328499958, "baseline_GiB": 29.697471141815186, "peak_allocated_GiB": 29.99706220626831, "peak_reserved_GiB": 32.49609375, "incremental_peak_MiB": 306.78125, "local_logits_shape": [1, 512, 131072], "ring_shapes": [[2, 16, 8, 256], [2, 16, 16, 512]], "input_sha256": "b096ca2fc710d24a333803b9eec50e304519b00a866cfa2fc872cc2ccec07724", "warm_median_ms": 270.134895999945, "warm_times_ms": [271.0386019971338, 270.134895999945, 269.30776399967726]}

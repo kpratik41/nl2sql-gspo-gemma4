@@ -1,0 +1,11 @@
+# Clean environment for the four-GPU host; historical overlay pins stay separate.
+# Keep these aligned with the pinned AutoModel revision below.
+torch==2.10.0+cu130
+torchao==0.16.0+cu130
+transformers==5.18.0
+ffpa-attn==0.2.4
+nvidia-cutlass-dsl==4.6.2
+quack-kernels==0.6.4
+accelerate==1.15.0
+matplotlib
+nemo-automodel[ffpa] @ git+https://github.com/NVIDIA-NeMo/Automodel.git@65866fbce209938cd153f2bc26f01fa0d34cc61e

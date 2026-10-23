@@ -1,0 +1,44 @@
+[
+  {
+    "cp_size": 1,
+    "rank": 0,
+    "tokens": 128,
+    "local_tokens": 128,
+    "input_sha256": "7e79c59df01f3c72f80c007419373d9964b195bdc1e01eb7260be3f730eddcea",
+    "weight_fingerprint": "a4a17468c0e800c999ea7541120ddf15a18964341ba6d489d6f88b2ac89fe022",
+    "model_class": "<class 'nemo_automodel.components.models.gemma4_moe.model.Gemma4ForConditionalGeneration'>",
+    "backend": "native Flex",
+    "median_ms": 75.8827410008962,
+    "times_ms": [
+      76.36339700002281,
+      75.8827410008962,
+      75.66581600076461
+    ],
+    "baseline_GiB": 58.29601860046387,
+    "peak_allocated_GiB": 58.425414085388184,
+    "incremental_peak_MiB": 132.5009765625,
+    "peak_reserved_GiB": 61.21484375,
+    "scope": "forward only; replicated BF16 weights; no FSDP, optimizer, packing or cache"
+  },
+  {
+    "cp_size": 1,
+    "rank": 0,
+    "tokens": 1024,
+    "local_tokens": 1024,
+    "input_sha256": "b096ca2fc710d24a333803b9eec50e304519b00a866cfa2fc872cc2ccec07724",
+    "weight_fingerprint": "a4a17468c0e800c999ea7541120ddf15a18964341ba6d489d6f88b2ac89fe022",
+    "model_class": "<class 'nemo_automodel.components.models.gemma4_moe.model.Gemma4ForConditionalGeneration'>",
+    "backend": "native Flex",
+    "median_ms": 249.61639399953128,
+    "times_ms": [
+      249.84024900004442,
+      249.61639399953128,
+      245.93218699919817
+    ],
+    "baseline_GiB": 58.29603958129883,
+    "peak_allocated_GiB": 59.32973861694336,
+    "incremental_peak_MiB": 1058.5078125,
+    "peak_reserved_GiB": 61.21484375,
+    "scope": "forward only; replicated BF16 weights; no FSDP, optimizer, packing or cache"
+  }
+]

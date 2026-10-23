@@ -1,0 +1,33 @@
+defaults:
+  - base
+  - _self_
+
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+
+data:
+  train_batch_size: 2
+  max_prompt_length: 1024
+  max_response_length: 1024
+actor_rollout_ref:
+  actor:
+    ppo_mini_batch_size: 2
+    ppo_max_token_len_per_gpu: 2048
+  rollout:
+    n: 2
+    max_model_len: 2048
+    max_num_batched_tokens: 2048
+    max_num_seqs: 2
+    log_prob_max_token_len_per_gpu: 2048
+    multi_turn:
+      max_assistant_turns: 3
+      max_tool_response_length: 128
+algorithm:
+  filter_groups:
+    enable: false
+trainer:
+  total_training_steps: 1
+  save_freq: 1
+  test_freq: -1
+  experiment_name: tp2-cp2-smoke

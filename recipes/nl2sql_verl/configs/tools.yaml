@@ -1,0 +1,102 @@
+tools:
+- class_name: recipes.nl2sql_verl.tools.SQLiteTool
+  config:
+    type: native
+    timeout_s: 60
+    concurrency: 4
+  tool_schema:
+    type: function
+    function:
+      name: bm25_search_sqlite
+      description: Search a SQLite text column for likely literal values using BM25
+        and substring matching. Use this when a question mentions a name, category,
+        location, code, or other value whose exact database spelling is uncertain.
+      parameters:
+        type: object
+        properties:
+          db_id:
+            type: string
+            description: Database identifier from <db_id>.
+          table:
+            type: string
+            description: Exact table name to search.
+          column:
+            type: string
+            description: Exact column name to search.
+          query:
+            type: string
+            description: Natural-language or literal search text.
+          top_k:
+            type: integer
+            description: Number of best matches to return.
+          where:
+            type: string
+            description: Optional SQL WHERE fragment to restrict searched rows.
+            nullable: true
+        required:
+        - db_id
+        - table
+        - column
+        - query
+- class_name: recipes.nl2sql_verl.tools.SQLiteTool
+  config:
+    type: native
+    timeout_s: 60
+    concurrency: 4
+  tool_schema:
+    type: function
+    function:
+      name: sqlite_peek
+      description: Preview values, SQLite types, null counts, distinct counts, and
+        small profiles for selected columns in one table.
+      parameters:
+        type: object
+        properties:
+          db_id:
+            type: string
+            description: Database identifier from <db_id>.
+          table:
+            type: string
+            description: Exact table name to inspect.
+          columns:
+            type: array
+            description: Exact column names to inspect.
+            items:
+              type: string
+          limit:
+            type: integer
+            description: Maximum number of sample values per column.
+          where:
+            type: string
+            description: Optional SQL WHERE fragment to restrict inspected rows.
+            nullable: true
+        required:
+        - db_id
+        - table
+        - columns
+- class_name: recipes.nl2sql_verl.tools.SQLiteTool
+  config:
+    type: native
+    timeout_s: 60
+    concurrency: 4
+  tool_schema:
+    type: function
+    function:
+      name: sqlite_query
+      description: Execute a read-only SQLite SELECT or WITH...SELECT query against
+        the target database. Use this to verify the exact SQL before finalizing.
+      parameters:
+        type: object
+        properties:
+          db_id:
+            type: string
+            description: Database identifier from <db_id>.
+          sql:
+            type: string
+            description: The exact SELECT or WITH query to execute.
+          max_return_rows:
+            type: integer
+            description: Maximum number of result rows to return.
+        required:
+        - db_id
+        - sql

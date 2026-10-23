@@ -1,0 +1,14 @@
+{
+  "python": "3.13.12 (main, Apr  1 2026, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-5)]",
+  "packages": {
+    "torch": "2.10.0+cu130",
+    "transformers": "5.18.0",
+    "nemo-automodel": "0.8.0+65866fbce",
+    "triton": "3.6.0"
+  },
+  "model_snapshot": "842da3794eaa0b77d5f08bae87a17459d91ff475",
+  "allocator_config": "default",
+  "capacity_resolution_tokens": 1024,
+  "input": "deterministically repeated local SQL fixture; no downloads",
+  "scope": "batch 1 BF16 forward only; all-position TP-vocabulary-sharded logits; no gradients, optimizer, FSDP, offload, or KV cache"
+}

@@ -1,0 +1,10 @@
+[W1022 23:33:15.167917435 Context.cpp:534] Warning: torch.backends.cuda.preferred_blas_library is an experimental feature. If you see any error or unexpected behavior when this flag is set please file an issue on GitHub. (function operator())
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/megatron_fsdp/mixed_precision.py:115: UserWarning: Transformer Engine and Apex are not installed. Falling back to local implementations of multi_tensor_applier and multi_tensor_scale
+  warnings.warn(
+[rank 0] loading checkpoint CP=1
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[rank 0] loaded Gemma4ForConditionalGeneration in 10.4s
+[rank 0] warmup length=128, local_positions=128
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/attention/flex_attention.py:1559: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+{"cp_size": 1, "rank": 0, "tokens": 128, "matmul_policy": "cublaslt-full", "attention_precision": "fp32", "fixture": "benchmarks/fixtures/cp_sql_inventory.txt", "local_tokens": 128, "input_sha256": "dccb63ab7f4f4b77f20f3ecacb7ac9e7634940459a8801a504b8ce72493fd48c", "weight_fingerprint": "a4a17468c0e800c999ea7541120ddf15a18964341ba6d489d6f88b2ac89fe022", "model_class": "<class 'nemo_automodel.components.models.gemma4_moe.model.Gemma4ForConditionalGeneration'>", "backend": "model-owned ring Flex", "median_ms": 111.57084299884445, "times_ms": [112.8343220007082, 111.57084299884445, 111.2450410000747], "baseline_GiB": 58.31263065338135, "peak_allocated_GiB": 58.443979263305664, "incremental_peak_MiB": 134.5009765625, "peak_reserved_GiB": 61.21875, "ring_dispatch_calls": 240, "ring_cp_sizes_observed": [1], "ring_kernel_options": {"BLOCK_M": 16, "BLOCK_N": 16, "BLOCK_M1": 32, "BLOCK_N1": 32, "BLOCK_M2": 32, "BLOCK_N2": 32, "num_stages": 1, "num_warps": 4, "FORCE_USE_FLEX_ATTENTION": true}, "scope": "forward only; replicated BF16 weights; no FSDP, optimizer, packing or cache"}

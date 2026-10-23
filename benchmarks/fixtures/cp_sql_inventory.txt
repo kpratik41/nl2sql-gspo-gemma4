@@ -1,0 +1,4 @@
+Schema: warehouses(warehouse_id, city); products(product_id, name, category); inventory(warehouse_id, product_id, quantity).
+Question: Find warehouses in Boston that stock more than 100 units of products in the electronics category. Return each warehouse ID and the total quantity, ordered by total quantity descending.
+SQL: SELECT w.warehouse_id, SUM(i.quantity) AS total_quantity FROM warehouses w JOIN inventory i ON i.warehouse_id = w.warehouse_id JOIN products p ON p.product_id = i.product_id WHERE w.city = 'Boston' AND p.category = 'electronics' GROUP BY w.warehouse_id HAVING SUM(i.quantity) > 100 ORDER BY total_quantity DESC;
+Explanation: Join inventory to its warehouse and product, filter the city and category, aggregate per warehouse, and apply the quantity condition after aggregation.

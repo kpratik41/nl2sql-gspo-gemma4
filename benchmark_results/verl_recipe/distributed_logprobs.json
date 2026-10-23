@@ -1,0 +1,9 @@
+{
+  "status": "pass",
+  "tp": 2,
+  "cp": 2,
+  "max_gradient_absolute_error": 2.9802322387695312e-08,
+  "loss": -0.6940042972564697,
+  "reference_loss": -0.6940042972564697,
+  "scope": "synthetic TP-vocabulary logprobs, CP gather, actual verl GSPO and loss masking; not full Gemma"
+}

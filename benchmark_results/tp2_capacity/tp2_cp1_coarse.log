@@ -1,0 +1,168 @@
+W1023 01:47:36.135000 124240 torch/distributed/run.py:852] 
+W1023 01:47:36.135000 124240 torch/distributed/run.py:852] *****************************************
+W1023 01:47:36.135000 124240 torch/distributed/run.py:852] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W1023 01:47:36.135000 124240 torch/distributed/run.py:852] *****************************************
+[W1023 01:47:38.045613071 Context.cpp:534] Warning: torch.backends.cuda.preferred_blas_library is an experimental feature. If you see any error or unexpected behavior when this flag is set please file an issue on GitHub. (function operator())
+[W1023 01:47:38.047998186 Context.cpp:534] Warning: torch.backends.cuda.preferred_blas_library is an experimental feature. If you see any error or unexpected behavior when this flag is set please file an issue on GitHub. (function operator())
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/megatron_fsdp/mixed_precision.py:115: UserWarning: Transformer Engine and Apex are not installed. Falling back to local implementations of multi_tensor_applier and multi_tensor_scale
+  warnings.warn(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/megatron_fsdp/mixed_precision.py:115: UserWarning: Transformer Engine and Apex are not installed. Falling back to local implementations of multi_tensor_applier and multi_tensor_scale
+  warnings.warn(
+[1] load checkpoint
+[0] load checkpoint
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/tensor/parallel/api.py:123: UserWarning: Parallelize plan key 'v_proj' could not be resolved: no submodule matching token 'v_proj' in module Gemma4TextAttention(
+  (q_proj): Linear(in_features=5376, out_features=16384, bias=False)
+  (q_norm): Gemma4RMSNorm()
+  (k_norm): Gemma4RMSNorm()
+  (v_norm): Gemma4RMSNorm()
+  (k_proj): Linear(in_features=5376, out_features=2048, bias=False)
+  (o_proj): Linear(in_features=16384, out_features=5376, bias=False)
+), skipping this plan entry.
+  parallelize_module(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/tensor/parallel/api.py:123: UserWarning: Parallelize plan key 'v_proj' could not be resolved: no submodule matching token 'v_proj' in module Gemma4TextAttention(
+  (q_proj): Linear(in_features=5376, out_features=16384, bias=False)
+  (q_norm): Gemma4RMSNorm()
+  (k_norm): Gemma4RMSNorm()
+  (v_norm): Gemma4RMSNorm()
+  (k_proj): Linear(in_features=5376, out_features=2048, bias=False)
+  (o_proj): Linear(in_features=16384, out_features=5376, bias=False)
+), skipping this plan entry.
+  parallelize_module(
+{"rank": 0, "tp_rank": 0, "cp_rank": 0, "tp_group": [0, 1], "cp_group": [0], "local_parameter_GiB": 29.66277226805687, "dtensor_parameters": 411, "max_position_embeddings": 262144, "dtype": "bfloat16", "attention": "ring Flex BF16", "compiled_masks": true, "matmul_policy": "cuBLASLt, BF16 reduced reduction=False, split-K=False", "fsdp": false, "gradients": false, "kv_cache": false, "batch_size": 1, "logits": "all sequence positions; vocabulary sharded over TP2"}
+{"rank": 1, "tp_rank": 1, "cp_rank": 0, "tp_group": [0, 1], "cp_group": [1], "local_parameter_GiB": 29.66277226805687, "dtensor_parameters": 411, "max_position_embeddings": 262144, "dtype": "bfloat16", "attention": "ring Flex BF16", "compiled_masks": true, "matmul_policy": "cuBLASLt, BF16 reduced reduction=False, split-K=False", "fsdp": false, "gradients": false, "kv_cache": false, "batch_size": 1, "logits": "all sequence positions; vocabulary sharded over TP2"}
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+[1] forward 128 local=128
+[0] forward 128 local=128
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/attention/flex_attention.py:1559: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/attention/flex_attention.py:1559: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+{"status": "ok", "tokens": 128, "tp": 2, "cp": 1, "rank": 1, "forward_ms_including_cold_shape": 3892.492629998742, "baseline_GiB": 29.68460988998413, "peak_allocated_GiB": 29.769958972930908, "peak_reserved_GiB": 32.494140625, "incremental_peak_MiB": 87.3974609375, "local_logits_shape": [1, 128, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "7e79c59df01f3c72f80c007419373d9964b195bdc1e01eb7260be3f730eddcea", "warm_median_ms": 182.5441539986059, "warm_times_ms": [184.1424830017786, 182.5441539986059, 181.87232300260803]}
+{"status": "ok", "tokens": 128, "tp": 2, "cp": 1, "rank": 0, "forward_ms_including_cold_shape": 3892.675655999483, "baseline_GiB": 29.68460988998413, "peak_allocated_GiB": 29.769958972930908, "peak_reserved_GiB": 32.494140625, "incremental_peak_MiB": 87.3974609375, "local_logits_shape": [1, 128, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "7e79c59df01f3c72f80c007419373d9964b195bdc1e01eb7260be3f730eddcea", "warm_median_ms": 182.55635300010908, "warm_times_ms": [184.15171499873395, 182.55635300010908, 181.86602800051332]}
+[1] forward 8192 local=8192[0] forward 8192 local=8192
+
+{"status": "ok", "tokens": 8192, "tp": 2, "cp": 1, "rank": 1, "forward_ms_including_cold_shape": 3285.088120999717, "baseline_GiB": 29.70195245742798, "peak_allocated_GiB": 34.5348334312439, "peak_reserved_GiB": 36.90625, "incremental_peak_MiB": 4948.8701171875, "local_logits_shape": [1, 8192, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "8329253faa3e790a4c80316735a30d5e331c4361984cde0dedcef6a7a6bf54bb"}
+{"status": "ok", "tokens": 8192, "tp": 2, "cp": 1, "rank": 0, "forward_ms_including_cold_shape": 3285.5234960006783, "baseline_GiB": 29.70195245742798, "peak_allocated_GiB": 34.5348334312439, "peak_reserved_GiB": 36.904296875, "incremental_peak_MiB": 4948.8701171875, "local_logits_shape": [1, 8192, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "8329253faa3e790a4c80316735a30d5e331c4361984cde0dedcef6a7a6bf54bb"}
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+[0] forward 16384 local=16384[1] forward 16384 local=16384
+
+{"status": "ok", "tokens": 16384, "tp": 2, "cp": 1, "rank": 1, "forward_ms_including_cold_shape": 50722.69112700087, "baseline_GiB": 30.195233821868896, "peak_allocated_GiB": 39.37822103500366, "peak_reserved_GiB": 43.05859375, "incremental_peak_MiB": 9403.37890625, "local_logits_shape": [1, 16384, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "93d7188cc0c1886aa09cdbc36328a9e9e9e22614cb95ba53ea282c5dffd92338"}
+{"status": "ok", "tokens": 16384, "tp": 2, "cp": 1, "rank": 0, "forward_ms_including_cold_shape": 50724.172096000984, "baseline_GiB": 30.195233821868896, "peak_allocated_GiB": 39.37822103500366, "peak_reserved_GiB": 43.05859375, "incremental_peak_MiB": 9403.37890625, "local_logits_shape": [1, 16384, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "93d7188cc0c1886aa09cdbc36328a9e9e9e22614cb95ba53ea282c5dffd92338"}
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+[0] forward 32768 local=32768[1] forward 32768 local=32768
+
+{"status": "ok", "tokens": 32768, "tp": 2, "cp": 1, "rank": 1, "forward_ms_including_cold_shape": 27080.14589999948, "baseline_GiB": 30.699021816253662, "peak_allocated_GiB": 49.071223735809326, "peak_reserved_GiB": 56.83984375, "incremental_peak_MiB": 18813.134765625, "local_logits_shape": [1, 32768, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "2d8650e7c1b1579f7c9c784043307a939770b0ecd0d45231a4b0d5318dc7f005"}
+{"status": "ok", "tokens": 32768, "tp": 2, "cp": 1, "rank": 0, "forward_ms_including_cold_shape": 27082.72382299765, "baseline_GiB": 30.699021816253662, "peak_allocated_GiB": 49.071223735809326, "peak_reserved_GiB": 56.83984375, "incremental_peak_MiB": 18813.134765625, "local_logits_shape": [1, 32768, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "2d8650e7c1b1579f7c9c784043307a939770b0ecd0d45231a4b0d5318dc7f005"}
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+[1] forward 40960 local=40960[0] forward 40960 local=40960
+
+{"status": "ok", "tokens": 40960, "tp": 2, "cp": 1, "rank": 1, "forward_ms_including_cold_shape": 50411.42068300178, "baseline_GiB": 31.712092876434326, "peak_allocated_GiB": 53.920838832855225, "peak_reserved_GiB": 61.564453125, "incremental_peak_MiB": 22741.755859375, "local_logits_shape": [1, 40960, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "d8d671c6035ba4f7249dab2ff1c862a07cfe400fe90a301e110e29a66e1e8fbf"}
+{"status": "ok", "tokens": 40960, "tp": 2, "cp": 1, "rank": 0, "forward_ms_including_cold_shape": 50413.64151000016, "baseline_GiB": 31.712092876434326, "peak_allocated_GiB": 53.920838832855225, "peak_reserved_GiB": 61.564453125, "incremental_peak_MiB": 22741.755859375, "local_logits_shape": [1, 40960, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "d8d671c6035ba4f7249dab2ff1c862a07cfe400fe90a301e110e29a66e1e8fbf"}
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+[0] forward 65536 local=65536[1] forward 65536 local=65536
+
+{"status": "ok", "tokens": 65536, "tp": 2, "cp": 1, "rank": 1, "forward_ms_including_cold_shape": 49993.29689099977, "baseline_GiB": 32.222352504730225, "peak_allocated_GiB": 68.48213148117065, "peak_reserved_GiB": 80.392578125, "incremental_peak_MiB": 37130.013671875, "local_logits_shape": [1, 65536, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "c486e36674e5b7fb851780fa97337af4aa97f0e22744a2a33ddab375f94d7694"}
+{"status": "ok", "tokens": 65536, "tp": 2, "cp": 1, "rank": 0, "forward_ms_including_cold_shape": 49996.53637299707, "baseline_GiB": 32.222352504730225, "peak_allocated_GiB": 68.48213148117065, "peak_reserved_GiB": 80.392578125, "incremental_peak_MiB": 37130.013671875, "local_logits_shape": [1, 65536, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "c486e36674e5b7fb851780fa97337af4aa97f0e22744a2a33ddab375f94d7694"}
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+[1] forward 98304 local=98304[0] forward 98304 local=98304
+
+{"status": "ok", "tokens": 98304, "tp": 2, "cp": 1, "rank": 1, "forward_ms_including_cold_shape": 38519.33324999845, "baseline_GiB": 33.764358043670654, "peak_allocated_GiB": 87.92636442184448, "peak_reserved_GiB": 90.341796875, "incremental_peak_MiB": 55461.89453125, "local_logits_shape": [1, 98304, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "8e9995b3fe05755038b176a052f49b1123ea4dea3bcf83f6507635df8bd4992e"}
+{"status": "ok", "tokens": 98304, "tp": 2, "cp": 1, "rank": 0, "forward_ms_including_cold_shape": 38568.37358900157, "baseline_GiB": 33.764358043670654, "peak_allocated_GiB": 87.92636442184448, "peak_reserved_GiB": 90.33984375, "incremental_peak_MiB": 55461.89453125, "local_logits_shape": [1, 98304, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "8e9995b3fe05755038b176a052f49b1123ea4dea3bcf83f6507635df8bd4992e"}
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+[1] forward 131072 local=131072[0] forward 131072 local=131072
+
+{"status": "oom", "tokens": 131072, "rank": 0, "error": "OutOfMemoryError('CUDA out of memory. Tried to allocate 32.00 GiB. GPU 0 has a total capacity of 94.97 GiB of which 9.76 GiB is free. Including non-PyTorch memory, this process has 85.20 GiB memory in use. Of the allocated memory 75.40 GiB is allocated by PyTorch, and 8.84 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)')"}
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/tp_cp_forward.py", line 196, in <module>
+[rank0]:     main()
+[rank0]:     ~~~~^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/tp_cp_forward.py", line 127, in main
+[rank0]:     logits = model(**batch, use_cache=False, logits_to_keep=0).logits
+[rank0]:              ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/model.py", line 1299, in forward
+[rank0]:     logits = logits / final_logit_softcapping
+[rank0]:              ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~
+[rank0]: torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 32.00 GiB. GPU 0 has a total capacity of 94.97 GiB of which 9.76 GiB is free. Including non-PyTorch memory, this process has 85.20 GiB memory in use. Of the allocated memory 75.40 GiB is allocated by PyTorch, and 8.84 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+{"status": "oom", "tokens": 131072, "rank": 1, "error": "OutOfMemoryError('CUDA out of memory. Tried to allocate 32.00 GiB. GPU 1 has a total capacity of 94.97 GiB of which 13.76 GiB is free. Including non-PyTorch memory, this process has 81.20 GiB memory in use. Of the allocated memory 75.40 GiB is allocated by PyTorch, and 4.84 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)')"}
+[rank1]: Traceback (most recent call last):
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/tp_cp_forward.py", line 196, in <module>
+[rank1]:     main()
+[rank1]:     ~~~~^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/benchmarks/tp_cp_forward.py", line 127, in main
+[rank1]:     logits = model(**batch, use_cache=False, logits_to_keep=0).logits
+[rank1]:              ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+[rank1]:     return self._call_impl(*args, **kwargs)
+[rank1]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+[rank1]:     return forward_call(*args, **kwargs)
+[rank1]:   File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/nemo_automodel/components/models/gemma4_moe/model.py", line 1299, in forward
+[rank1]:     logits = logits / final_logit_softcapping
+[rank1]:              ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~
+[rank1]: torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 32.00 GiB. GPU 1 has a total capacity of 94.97 GiB of which 13.76 GiB is free. Including non-PyTorch memory, this process has 81.20 GiB memory in use. Of the allocated memory 75.40 GiB is allocated by PyTorch, and 4.84 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+[rank0]:[W1023 01:52:42.703027415 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+[rank1]:[W1023 01:52:42.710928264 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+W1023 01:52:42.849000 124240 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 124329 closing signal SIGTERM
+E1023 01:52:42.963000 124240 torch/distributed/elastic/multiprocessing/api.py:984] failed (exitcode: 1) local_rank: 0 (pid: 124328) of binary: /home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/bin/python
+Traceback (most recent call last):
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/bin/torchrun", line 6, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 362, in wrapper
+    return f(*args, **kwargs)
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/run.py", line 991, in main
+    run(args)
+    ~~~^^^^^^
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/run.py", line 982, in run
+    elastic_launch(
+    ~~~~~~~~~~~~~~~
+        config=config,
+        ~~~~~~~~~~~~~~
+        entrypoint=cmd,
+        ~~~~~~~~~~~~~~~
+    )(*cmd_args)
+    ~^^^^^^^^^^^
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/launcher/api.py", line 170, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/launcher/api.py", line 317, in launch_agent
+    raise ChildFailedError(
+    ...<2 lines>...
+    )
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+benchmarks/tp_cp_forward.py FAILED
+------------------------------------------------------------
+Failures:
+[1]:
+  time      : 2026-10-23_01:52:42
+  host      : ip-172-31-3-40.us-east-2.compute.internal
+  rank      : 1 (local_rank: 1)
+  exitcode  : 1 (pid: 124329)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-10-23_01:52:42
+  host      : ip-172-31-3-40.us-east-2.compute.internal
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 124328)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

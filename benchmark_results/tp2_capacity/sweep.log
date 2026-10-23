@@ -1,0 +1,46 @@
+START cp=1 lengths=[128, 8192, 16384, 32768, 40960, 65536, 98304, 131072, 196608, 262144] log=benchmark_results/tp2_capacity/tp2_cp1_coarse.log
+PASS cp=1 tokens=128 max_peak_GiB=29.770
+PASS cp=1 tokens=8192 max_peak_GiB=34.535
+PASS cp=1 tokens=16384 max_peak_GiB=39.378
+PASS cp=1 tokens=32768 max_peak_GiB=49.071
+PASS cp=1 tokens=40960 max_peak_GiB=53.921
+PASS cp=1 tokens=65536 max_peak_GiB=68.482
+PASS cp=1 tokens=98304 max_peak_GiB=87.926
+START cp=1 lengths=[128, 114688] log=benchmark_results/tp2_capacity/tp2_cp1_probe_114688.log
+PASS cp=1 tokens=128 max_peak_GiB=29.770
+START cp=1 lengths=[128, 106496] log=benchmark_results/tp2_capacity/tp2_cp1_probe_106496.log
+PASS cp=1 tokens=128 max_peak_GiB=29.770
+START cp=1 lengths=[128, 102400] log=benchmark_results/tp2_capacity/tp2_cp1_probe_102400.log
+PASS cp=1 tokens=128 max_peak_GiB=29.770
+PASS cp=1 tokens=102400 max_peak_GiB=90.360
+START cp=1 lengths=[128, 104448] log=benchmark_results/tp2_capacity/tp2_cp1_probe_104448.log
+PASS cp=1 tokens=128 max_peak_GiB=29.770
+PASS cp=1 tokens=104448 max_peak_GiB=91.576
+START cp=1 lengths=[128, 105472] log=benchmark_results/tp2_capacity/tp2_cp1_probe_105472.log
+PASS cp=1 tokens=128 max_peak_GiB=29.770
+RESULT {"tp": 2, "cp": 1, "batch_size": 1, "gradients": false, "kv_cache": false, "all_token_logits": true, "vocabulary_sharded": true, "context_limit": 262144, "largest_success_tokens": 104448, "failure": {"status": "oom", "tokens": 131072, "ranks": [{"status": "oom", "tokens": 131072, "rank": 0, "error": "OutOfMemoryError('CUDA out of memory. Tried to allocate 32.00 GiB. GPU 0 has a total capacity of 94.97 GiB of which 9.76 GiB is free. Including non-PyTorch memory, this process has 85.20 GiB memory in use. Of the allocated memory 75.40 GiB is allocated by PyTorch, and 8.84 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)')"}, {"status": "oom", "tokens": 131072, "rank": 1, "error": "OutOfMemoryError('CUDA out of memory. Tried to allocate 32.00 GiB. GPU 1 has a total capacity of 94.97 GiB of which 13.76 GiB is free. Including non-PyTorch memory, this process has 81.20 GiB memory in use. Of the allocated memory 75.40 GiB is allocated by PyTorch, and 4.84 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)')"}], "log": "benchmark_results/tp2_capacity/tp2_cp1_coarse.log", "returncode": 1}, "first_failed_upper_tokens": 105472, "granularity_tokens": 1024}
+START cp=2 lengths=[128, 8192, 16384, 32768, 40960, 65536, 98304, 131072, 196608, 262144] log=benchmark_results/tp2_capacity/tp2_cp2_coarse.log
+PASS cp=2 tokens=128 max_peak_GiB=29.731
+PASS cp=2 tokens=8192 max_peak_GiB=32.114
+PASS cp=2 tokens=16384 max_peak_GiB=34.536
+PASS cp=2 tokens=32768 max_peak_GiB=39.383
+PASS cp=2 tokens=40960 max_peak_GiB=41.809
+PASS cp=2 tokens=65536 max_peak_GiB=49.090
+PASS cp=2 tokens=98304 max_peak_GiB=58.815
+PASS cp=2 tokens=131072 max_peak_GiB=68.553
+PASS cp=2 tokens=196608 max_peak_GiB=88.082
+START cp=2 lengths=[128, 229376] log=benchmark_results/tp2_capacity/tp2_cp2_probe_229376.log
+PASS cp=2 tokens=128 max_peak_GiB=29.731
+START cp=2 lengths=[128, 212992] log=benchmark_results/tp2_capacity/tp2_cp2_probe_212992.log
+PASS cp=2 tokens=128 max_peak_GiB=29.731
+START cp=2 lengths=[128, 204800] log=benchmark_results/tp2_capacity/tp2_cp2_probe_204800.log
+PASS cp=2 tokens=128 max_peak_GiB=29.731
+START cp=2 lengths=[128, 200704] log=benchmark_results/tp2_capacity/tp2_cp2_probe_200704.log
+PASS cp=2 tokens=128 max_peak_GiB=29.731
+START cp=2 lengths=[128, 198656] log=benchmark_results/tp2_capacity/tp2_cp2_probe_198656.log
+PASS cp=2 tokens=128 max_peak_GiB=29.731
+PASS cp=2 tokens=198656 max_peak_GiB=88.694
+START cp=2 lengths=[128, 199680] log=benchmark_results/tp2_capacity/tp2_cp2_probe_199680.log
+PASS cp=2 tokens=128 max_peak_GiB=29.731
+PASS cp=2 tokens=199680 max_peak_GiB=88.999
+RESULT {"tp": 2, "cp": 2, "batch_size": 1, "gradients": false, "kv_cache": false, "all_token_logits": true, "vocabulary_sharded": true, "context_limit": 262144, "largest_success_tokens": 199680, "failure": {"status": "oom", "tokens": 262144, "ranks": [{"status": "oom", "tokens": 262144, "rank": 1, "error": "OutOfMemoryError('CUDA out of memory. Tried to allocate 32.00 GiB. GPU 1 has a total capacity of 94.97 GiB of which 12.08 GiB is free. Including non-PyTorch memory, this process has 82.88 GiB memory in use. Of the allocated memory 75.68 GiB is allocated by PyTorch, and 6.13 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)')"}, {"status": "oom", "tokens": 262144, "rank": 0, "error": "OutOfMemoryError('CUDA out of memory. Tried to allocate 32.00 GiB. GPU 0 has a total capacity of 94.97 GiB of which 12.13 GiB is free. Including non-PyTorch memory, this process has 82.84 GiB memory in use. Of the allocated memory 75.68 GiB is allocated by PyTorch, and 6.13 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)')"}], "log": "benchmark_results/tp2_capacity/tp2_cp2_coarse.log", "returncode": 1}, "first_failed_upper_tokens": 200704, "granularity_tokens": 1024}

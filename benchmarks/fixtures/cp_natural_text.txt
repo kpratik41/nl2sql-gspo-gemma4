@@ -1,0 +1,4 @@
+A library keeps books on several floors. The ground floor contains reference works and a reading room. The second floor holds novels, biographies, and travel writing. Visitors can borrow most books for three weeks, but reference works must remain in the building.
+On Monday, the librarian received twelve returned books. Five were novels, four were biographies, and three were travel guides. Two volunteers sorted the books by category and checked their catalog numbers before putting them back on the shelves.
+Question: How many of the returned books were novels or biographies?
+Answer: Nine books were novels or biographies, because five plus four equals nine.

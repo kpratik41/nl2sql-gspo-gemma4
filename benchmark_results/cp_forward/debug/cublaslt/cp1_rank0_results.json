@@ -1,0 +1,52 @@
+[
+  {
+    "cp_size": 1,
+    "rank": 0,
+    "tokens": 128,
+    "matmul_policy": "cublaslt-full",
+    "local_tokens": 128,
+    "input_sha256": "7e79c59df01f3c72f80c007419373d9964b195bdc1e01eb7260be3f730eddcea",
+    "weight_fingerprint": "a4a17468c0e800c999ea7541120ddf15a18964341ba6d489d6f88b2ac89fe022",
+    "model_class": "<class 'nemo_automodel.components.models.gemma4_moe.model.Gemma4ForConditionalGeneration'>",
+    "backend": "native Flex",
+    "median_ms": 72.26334100050735,
+    "times_ms": [
+      72.86138299969025,
+      72.26334100050735,
+      72.1706219992484
+    ],
+    "baseline_GiB": 58.29699516296387,
+    "peak_allocated_GiB": 58.426390647888184,
+    "incremental_peak_MiB": 132.5009765625,
+    "peak_reserved_GiB": 61.216796875,
+    "ring_dispatch_calls": 0,
+    "ring_cp_sizes_observed": [],
+    "ring_kernel_options": null,
+    "scope": "forward only; replicated BF16 weights; no FSDP, optimizer, packing or cache"
+  },
+  {
+    "cp_size": 1,
+    "rank": 0,
+    "tokens": 1024,
+    "matmul_policy": "cublaslt-full",
+    "local_tokens": 1024,
+    "input_sha256": "b096ca2fc710d24a333803b9eec50e304519b00a866cfa2fc872cc2ccec07724",
+    "weight_fingerprint": "a4a17468c0e800c999ea7541120ddf15a18964341ba6d489d6f88b2ac89fe022",
+    "model_class": "<class 'nemo_automodel.components.models.gemma4_moe.model.Gemma4ForConditionalGeneration'>",
+    "backend": "native Flex",
+    "median_ms": 247.51489499976742,
+    "times_ms": [
+      247.75370099996508,
+      247.43762700018124,
+      247.51489499976742
+    ],
+    "baseline_GiB": 58.29701614379883,
+    "peak_allocated_GiB": 59.33071517944336,
+    "incremental_peak_MiB": 1058.5078125,
+    "peak_reserved_GiB": 61.216796875,
+    "ring_dispatch_calls": 0,
+    "ring_cp_sizes_observed": [],
+    "ring_kernel_options": null,
+    "scope": "forward only; replicated BF16 weights; no FSDP, optimizer, packing or cache"
+  }
+]

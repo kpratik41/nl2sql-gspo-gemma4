@@ -1,0 +1,89 @@
+W1023 01:46:34.290000 123247 torch/distributed/run.py:852] 
+W1023 01:46:34.290000 123247 torch/distributed/run.py:852] *****************************************
+W1023 01:46:34.290000 123247 torch/distributed/run.py:852] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W1023 01:46:34.290000 123247 torch/distributed/run.py:852] *****************************************
+[W1023 01:46:36.485637945 Context.cpp:534] Warning: torch.backends.cuda.preferred_blas_library is an experimental feature. If you see any error or unexpected behavior when this flag is set please file an issue on GitHub. (function operator())
+[W1023 01:46:36.488243802 Context.cpp:534] Warning: torch.backends.cuda.preferred_blas_library is an experimental feature. If you see any error or unexpected behavior when this flag is set please file an issue on GitHub. (function operator())
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/megatron_fsdp/mixed_precision.py:115: UserWarning: Transformer Engine and Apex are not installed. Falling back to local implementations of multi_tensor_applier and multi_tensor_scale
+  warnings.warn(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/megatron_fsdp/mixed_precision.py:115: UserWarning: Transformer Engine and Apex are not installed. Falling back to local implementations of multi_tensor_applier and multi_tensor_scale
+  warnings.warn(
+[0] load checkpoint
+[1] load checkpoint
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/tensor/parallel/api.py:123: UserWarning: Parallelize plan key 'v_proj' could not be resolved: no submodule matching token 'v_proj' in module Gemma4TextAttention(
+  (q_proj): Linear(in_features=5376, out_features=16384, bias=False)
+  (q_norm): Gemma4RMSNorm()
+  (k_norm): Gemma4RMSNorm()
+  (v_norm): Gemma4RMSNorm()
+  (k_proj): Linear(in_features=5376, out_features=2048, bias=False)
+  (o_proj): Linear(in_features=16384, out_features=5376, bias=False)
+), skipping this plan entry.
+  parallelize_module(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/tensor/parallel/api.py:123: UserWarning: Parallelize plan key 'v_proj' could not be resolved: no submodule matching token 'v_proj' in module Gemma4TextAttention(
+  (q_proj): Linear(in_features=5376, out_features=16384, bias=False)
+  (q_norm): Gemma4RMSNorm()
+  (k_norm): Gemma4RMSNorm()
+  (v_norm): Gemma4RMSNorm()
+  (k_proj): Linear(in_features=5376, out_features=2048, bias=False)
+  (o_proj): Linear(in_features=16384, out_features=5376, bias=False)
+), skipping this plan entry.
+  parallelize_module(
+{"rank": 0, "tp_rank": 0, "cp_rank": 0, "tp_group": [0, 1], "cp_group": [0], "local_parameter_GiB": 29.66277226805687, "dtensor_parameters": 411, "max_position_embeddings": 262144, "dtype": "bfloat16", "attention": "ring Flex BF16", "compiled_masks": true, "matmul_policy": "cuBLASLt, BF16 reduced reduction=False, split-K=False", "fsdp": false, "gradients": false, "kv_cache": false, "batch_size": 1, "logits": "all sequence positions; vocabulary sharded over TP2"}
+{"rank": 1, "tp_rank": 1, "cp_rank": 0, "tp_group": [0, 1], "cp_group": [1], "local_parameter_GiB": 29.66277226805687, "dtensor_parameters": 411, "max_position_embeddings": 262144, "dtype": "bfloat16", "attention": "ring Flex BF16", "compiled_masks": true, "matmul_policy": "cuBLASLt, BF16 reduced reduction=False, split-K=False", "fsdp": false, "gradients": false, "kv_cache": false, "batch_size": 1, "logits": "all sequence positions; vocabulary sharded over TP2"}
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+[0] forward 128 local=128[1] forward 128 local=128
+
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/attention/flex_attention.py:1559: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/nn/attention/flex_attention.py:1559: FutureWarning: return_lse is deprecated and will be removed in v2.10. Please use return_aux=AuxRequest(lse=True) instead.
+  _warn_once(
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+{"status": "ok", "tokens": 128, "tp": 2, "cp": 1, "rank": 1, "forward_ms_including_cold_shape": 3966.6108730016276, "baseline_GiB": 29.68460988998413, "peak_allocated_GiB": 29.769958972930908, "peak_reserved_GiB": 32.494140625, "incremental_peak_MiB": 87.3974609375, "local_logits_shape": [1, 128, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "7e79c59df01f3c72f80c007419373d9964b195bdc1e01eb7260be3f730eddcea", "warm_median_ms": 184.667518002243, "warm_times_ms": [186.77808299980825, 184.667518002243, 184.40041500070947]}
+{"status": "ok", "tokens": 128, "tp": 2, "cp": 1, "rank": 0, "forward_ms_including_cold_shape": 3966.5481530028046, "baseline_GiB": 29.68460988998413, "peak_allocated_GiB": 29.769958972930908, "peak_reserved_GiB": 32.494140625, "incremental_peak_MiB": 87.3974609375, "local_logits_shape": [1, 128, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "7e79c59df01f3c72f80c007419373d9964b195bdc1e01eb7260be3f730eddcea", "warm_median_ms": 184.67033599881688, "warm_times_ms": [186.78956399890012, 184.67033599881688, 184.40091799857328]}
+[0] forward 8192 local=8192
+[1] forward 8192 local=8192
+{"status": "ok", "tokens": 8192, "tp": 2, "cp": 1, "rank": 1, "forward_ms_including_cold_shape": 30110.837536998588, "baseline_GiB": 29.70195245742798, "peak_allocated_GiB": 34.5348334312439, "peak_reserved_GiB": 36.90625, "incremental_peak_MiB": 4948.8701171875, "local_logits_shape": [1, 8192, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "8329253faa3e790a4c80316735a30d5e331c4361984cde0dedcef6a7a6bf54bb"}
+{"status": "ok", "tokens": 8192, "tp": 2, "cp": 1, "rank": 0, "forward_ms_including_cold_shape": 30111.41788000168, "baseline_GiB": 29.70195245742798, "peak_allocated_GiB": 34.5348334312439, "peak_reserved_GiB": 36.904296875, "incremental_peak_MiB": 4948.8701171875, "local_logits_shape": [1, 8192, 131072], "ring_shapes": [[1, 16, 8, 256], [1, 16, 16, 512]], "input_sha256": "8329253faa3e790a4c80316735a30d5e331c4361984cde0dedcef6a7a6bf54bb"}
+/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+[0] forward 16384 local=16384[1] forward 16384 local=16384
+
+W1023 01:47:34.371000 123247 torch/distributed/elastic/agent/server/api.py:739] Received 15 death signal, shutting down workers
+W1023 01:47:34.372000 123247 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 123327 closing signal SIGTERM
+W1023 01:47:34.374000 123247 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 123328 closing signal SIGTERM
+Traceback (most recent call last):
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/bin/torchrun", line 6, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 362, in wrapper
+    return f(*args, **kwargs)
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/run.py", line 991, in main
+    run(args)
+    ~~~^^^^^^
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/run.py", line 982, in run
+    elastic_launch(
+    ~~~~~~~~~~~~~~~
+        config=config,
+        ~~~~~~~~~~~~~~
+        entrypoint=cmd,
+        ~~~~~~~~~~~~~~~
+    )(*cmd_args)
+    ~^^^^^^^^^^^
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/launcher/api.py", line 170, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/launcher/api.py", line 308, in launch_agent
+    result = agent.run()
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/elastic/metrics/api.py", line 134, in wrapper
+    result = f(*args, **kwargs)
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/elastic/agent/server/api.py", line 731, in run
+    result = self._invoke_run(role)
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/elastic/agent/server/api.py", line 908, in _invoke_run
+    time.sleep(monitor_interval)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/home/ec2-user/nl2sql/nl2sql-gspo-gemma4/.venv-bench/lib64/python3.13/site-packages/torch/distributed/elastic/multiprocessing/api.py", line 86, in _terminate_process_handler
+    raise SignalException(f"Process {os.getpid()} got signal: {sigval}", sigval=sigval)
+torch.distributed.elastic.multiprocessing.api.SignalException: Process 123247 got signal: 15

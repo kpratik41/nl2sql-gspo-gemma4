@@ -1,0 +1,32 @@
+{
+  "status": "ok",
+  "tokens": 102400,
+  "tp": 2,
+  "cp": 1,
+  "rank": 0,
+  "forward_ms_including_cold_shape": 41378.40057599897,
+  "baseline_GiB": 29.70476007461548,
+  "peak_allocated_GiB": 90.35950469970703,
+  "peak_reserved_GiB": 92.798828125,
+  "incremental_peak_MiB": 62110.45849609375,
+  "local_logits_shape": [
+    1,
+    102400,
+    131072
+  ],
+  "ring_shapes": [
+    [
+      1,
+      16,
+      8,
+      256
+    ],
+    [
+      1,
+      16,
+      16,
+      512
+    ]
+  ],
+  "input_sha256": "8ba9e88eee82f94e9e3003426fde6b3349b5e171ba6e120b51e550fd1cdb7ee0"
+}
