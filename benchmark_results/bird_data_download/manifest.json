@@ -1,0 +1,527 @@
+{
+  "download_date_utc": "2026-10-23",
+  "source_page": "https://bird-bench.github.io/",
+  "scope": "Official BIRD train/dev databases and bundled annotations; no prompt parquet generation",
+  "consensus_reference": "588e1378777c64fa1a48d2548efccd51edd29270",
+  "annotation_note": "Official dev.zip contains dev_20240627/dev.json; consensus uses dev_20251106.json by default. The corrected annotations were not substituted.",
+  "checks": [
+    "ZIP CRC verified for extracted payloads by Python zipfile during extraction",
+    "Extracted SQLite sizes match nested archive member sizes",
+    "All extracted SQLite headers and read-only sqlite_master schemas are readable",
+    "Every db_id in the bundled questions resolves through src.nl2sql_verl.task.database_path",
+    "Official dev Content-MD5 matches the downloaded dev archive"
+  ],
+  "splits": {
+    "train": {
+      "split": "train",
+      "url": "https://bird-bench.oss-cn-beijing.aliyuncs.com/train.zip",
+      "archive_path": "cache/bird/train.zip",
+      "archive_bytes": 8919543554,
+      "sha256": "66e9e3115b59559554013aa3b124156249f30437a6b4e4f96de3d2dfb5ae8cbc",
+      "md5": "abf4e64a4d8fc246bb284c45e756abd3",
+      "annotation_path": "data/bird_train_data/raw/train.json",
+      "question_count": 9428,
+      "database_count": 69,
+      "sqlite_bytes": 32406294528,
+      "coverage": "complete",
+      "databases": [
+        {
+          "db_id": "address",
+          "path": "databases/train_databases/address/address.sqlite",
+          "bytes": 26550272,
+          "tables": 9
+        },
+        {
+          "db_id": "airline",
+          "path": "databases/train_databases/airline/airline.sqlite",
+          "bytes": 122699776,
+          "tables": 3
+        },
+        {
+          "db_id": "app_store",
+          "path": "databases/train_databases/app_store/app_store.sqlite",
+          "bytes": 18018304,
+          "tables": 2
+        },
+        {
+          "db_id": "authors",
+          "path": "databases/train_databases/authors/authors.sqlite",
+          "bytes": 616001536,
+          "tables": 5
+        },
+        {
+          "db_id": "beer_factory",
+          "path": "databases/train_databases/beer_factory/beer_factory.sqlite",
+          "bytes": 991232,
+          "tables": 7
+        },
+        {
+          "db_id": "bike_share_1",
+          "path": "databases/train_databases/bike_share_1/bike_share_1.sqlite",
+          "bytes": 5209406464,
+          "tables": 4
+        },
+        {
+          "db_id": "book_publishing_company",
+          "path": "databases/train_databases/book_publishing_company/book_publishing_company.sqlite",
+          "bytes": 184320,
+          "tables": 11
+        },
+        {
+          "db_id": "books",
+          "path": "databases/train_databases/books/books.sqlite",
+          "bytes": 4337664,
+          "tables": 16
+        },
+        {
+          "db_id": "car_retails",
+          "path": "databases/train_databases/car_retails/car_retails.sqlite",
+          "bytes": 487424,
+          "tables": 8
+        },
+        {
+          "db_id": "cars",
+          "path": "databases/train_databases/cars/cars.sqlite",
+          "bytes": 135168,
+          "tables": 4
+        },
+        {
+          "db_id": "chicago_crime",
+          "path": "databases/train_databases/chicago_crime/chicago_crime.sqlite",
+          "bytes": 66723840,
+          "tables": 7
+        },
+        {
+          "db_id": "citeseer",
+          "path": "databases/train_databases/citeseer/citeseer.sqlite",
+          "bytes": 7430144,
+          "tables": 3
+        },
+        {
+          "db_id": "codebase_comments",
+          "path": "databases/train_databases/codebase_comments/codebase_comments.sqlite",
+          "bytes": 4497768448,
+          "tables": 5
+        },
+        {
+          "db_id": "coinmarketcap",
+          "path": "databases/train_databases/coinmarketcap/coinmarketcap.sqlite",
+          "bytes": 1508139008,
+          "tables": 2
+        },
+        {
+          "db_id": "college_completion",
+          "path": "databases/train_databases/college_completion/college_completion.sqlite",
+          "bytes": 71217152,
+          "tables": 4
+        },
+        {
+          "db_id": "computer_student",
+          "path": "databases/train_databases/computer_student/computer_student.sqlite",
+          "bytes": 45056,
+          "tables": 4
+        },
+        {
+          "db_id": "cookbook",
+          "path": "databases/train_databases/cookbook/cookbook.sqlite",
+          "bytes": 1220608,
+          "tables": 4
+        },
+        {
+          "db_id": "craftbeer",
+          "path": "databases/train_databases/craftbeer/craftbeer.sqlite",
+          "bytes": 442368,
+          "tables": 2
+        },
+        {
+          "db_id": "cs_semester",
+          "path": "databases/train_databases/cs_semester/cs_semester.sqlite",
+          "bytes": 36864,
+          "tables": 5
+        },
+        {
+          "db_id": "disney",
+          "path": "databases/train_databases/disney/disney.sqlite",
+          "bytes": 258048,
+          "tables": 5
+        },
+        {
+          "db_id": "donor",
+          "path": "databases/train_databases/donor/donor.sqlite",
+          "bytes": 4497768448,
+          "tables": 5
+        },
+        {
+          "db_id": "european_football_1",
+          "path": "databases/train_databases/european_football_1/european_football_1.sqlite",
+          "bytes": 11907072,
+          "tables": 2
+        },
+        {
+          "db_id": "food_inspection",
+          "path": "databases/train_databases/food_inspection/food_inspection.sqlite",
+          "bytes": 5021696,
+          "tables": 3
+        },
+        {
+          "db_id": "food_inspection_2",
+          "path": "databases/train_databases/food_inspection_2/food_inspection_2.sqlite",
+          "bytes": 216940544,
+          "tables": 5
+        },
+        {
+          "db_id": "genes",
+          "path": "databases/train_databases/genes/genes.sqlite",
+          "bytes": 1527808,
+          "tables": 3
+        },
+        {
+          "db_id": "hockey",
+          "path": "databases/train_databases/hockey/hockey.sqlite",
+          "bytes": 6893568,
+          "tables": 22
+        },
+        {
+          "db_id": "human_resources",
+          "path": "databases/train_databases/human_resources/human_resources.sqlite",
+          "bytes": 28672,
+          "tables": 3
+        },
+        {
+          "db_id": "ice_hockey_draft",
+          "path": "databases/train_databases/ice_hockey_draft/ice_hockey_draft.sqlite",
+          "bytes": 1028096,
+          "tables": 4
+        },
+        {
+          "db_id": "image_and_language",
+          "path": "databases/train_databases/image_and_language/image_and_language.sqlite",
+          "bytes": 138891264,
+          "tables": 6
+        },
+        {
+          "db_id": "language_corpus",
+          "path": "databases/train_databases/language_corpus/language_corpus.sqlite",
+          "bytes": 2383298560,
+          "tables": 7
+        },
+        {
+          "db_id": "law_episode",
+          "path": "databases/train_databases/law_episode/law_episode.sqlite",
+          "bytes": 548864,
+          "tables": 6
+        },
+        {
+          "db_id": "legislator",
+          "path": "databases/train_databases/legislator/legislator.sqlite",
+          "bytes": 3485696,
+          "tables": 5
+        },
+        {
+          "db_id": "mental_health_survey",
+          "path": "databases/train_databases/mental_health_survey/mental_health_survey.sqlite",
+          "bytes": 18276352,
+          "tables": 3
+        },
+        {
+          "db_id": "menu",
+          "path": "databases/train_databases/menu/menu.sqlite",
+          "bytes": 272371712,
+          "tables": 4
+        },
+        {
+          "db_id": "mondial_geo",
+          "path": "databases/train_databases/mondial_geo/mondial_geo.sqlite",
+          "bytes": 2113536,
+          "tables": 34
+        },
+        {
+          "db_id": "movie",
+          "path": "databases/train_databases/movie/movie.sqlite",
+          "bytes": 1568768,
+          "tables": 3
+        },
+        {
+          "db_id": "movie_3",
+          "path": "databases/train_databases/movie_3/movie_3.sqlite",
+          "bytes": 6356992,
+          "tables": 17
+        },
+        {
+          "db_id": "movie_platform",
+          "path": "databases/train_databases/movie_platform/movie_platform.sqlite",
+          "bytes": 4311130112,
+          "tables": 5
+        },
+        {
+          "db_id": "movielens",
+          "path": "databases/train_databases/movielens/movielens.sqlite",
+          "bytes": 85786624,
+          "tables": 7
+        },
+        {
+          "db_id": "movies_4",
+          "path": "databases/train_databases/movies_4/movies_4.sqlite",
+          "bytes": 13070336,
+          "tables": 17
+        },
+        {
+          "db_id": "music_platform_2",
+          "path": "databases/train_databases/music_platform_2/music_platform_2.sqlite",
+          "bytes": 1554345984,
+          "tables": 4
+        },
+        {
+          "db_id": "music_tracker",
+          "path": "databases/train_databases/music_tracker/music_tracker.sqlite",
+          "bytes": 15204352,
+          "tables": 2
+        },
+        {
+          "db_id": "olympics",
+          "path": "databases/train_databases/olympics/olympics.sqlite",
+          "bytes": 18145280,
+          "tables": 11
+        },
+        {
+          "db_id": "professional_basketball",
+          "path": "databases/train_databases/professional_basketball/professional_basketball.sqlite",
+          "bytes": 6668288,
+          "tables": 10
+        },
+        {
+          "db_id": "public_review_platform",
+          "path": "databases/train_databases/public_review_platform/public_review_platform.sqlite",
+          "bytes": 65339392,
+          "tables": 15
+        },
+        {
+          "db_id": "regional_sales",
+          "path": "databases/train_databases/regional_sales/regional_sales.sqlite",
+          "bytes": 2277376,
+          "tables": 6
+        },
+        {
+          "db_id": "restaurant",
+          "path": "databases/train_databases/restaurant/restaurant.sqlite",
+          "bytes": 806912,
+          "tables": 3
+        },
+        {
+          "db_id": "retail_complains",
+          "path": "databases/train_databases/retail_complains/retail_complains.sqlite",
+          "bytes": 25133056,
+          "tables": 6
+        },
+        {
+          "db_id": "retail_world",
+          "path": "databases/train_databases/retail_world/retail_world.sqlite",
+          "bytes": 65536,
+          "tables": 9
+        },
+        {
+          "db_id": "retails",
+          "path": "databases/train_databases/retails/retails.sqlite",
+          "bytes": 1027735552,
+          "tables": 8
+        },
+        {
+          "db_id": "sales",
+          "path": "databases/train_databases/sales/sales.sqlite",
+          "bytes": 130338816,
+          "tables": 4
+        },
+        {
+          "db_id": "sales_in_weather",
+          "path": "databases/train_databases/sales_in_weather/sales_in_weather.sqlite",
+          "bytes": 464236544,
+          "tables": 3
+        },
+        {
+          "db_id": "shakespeare",
+          "path": "databases/train_databases/shakespeare/shakespeare.sqlite",
+          "bytes": 12029952,
+          "tables": 5
+        },
+        {
+          "db_id": "shipping",
+          "path": "databases/train_databases/shipping/shipping.sqlite",
+          "bytes": 131072,
+          "tables": 5
+        },
+        {
+          "db_id": "shooting",
+          "path": "databases/train_databases/shooting/shooting.sqlite",
+          "bytes": 180224,
+          "tables": 3
+        },
+        {
+          "db_id": "simpson_episodes",
+          "path": "databases/train_databases/simpson_episodes/simpson_episodes.sqlite",
+          "bytes": 753664,
+          "tables": 7
+        },
+        {
+          "db_id": "soccer_2016",
+          "path": "databases/train_databases/soccer_2016/soccer_2016.sqlite",
+          "bytes": 17170432,
+          "tables": 21
+        },
+        {
+          "db_id": "social_media",
+          "path": "databases/train_databases/social_media/social_media.sqlite",
+          "bytes": 69132288,
+          "tables": 3
+        },
+        {
+          "db_id": "software_company",
+          "path": "databases/train_databases/software_company/software_company.sqlite",
+          "bytes": 342118400,
+          "tables": 5
+        },
+        {
+          "db_id": "student_loan",
+          "path": "databases/train_databases/student_loan/student_loan.sqlite",
+          "bytes": 307200,
+          "tables": 10
+        },
+        {
+          "db_id": "superstore",
+          "path": "databases/train_databases/superstore/superstore.sqlite",
+          "bytes": 6631424,
+          "tables": 6
+        },
+        {
+          "db_id": "synthea",
+          "path": "databases/train_databases/synthea/synthea.sqlite",
+          "bytes": 38637568,
+          "tables": 11
+        },
+        {
+          "db_id": "talkingdata",
+          "path": "databases/train_databases/talkingdata/talkingdata.sqlite",
+          "bytes": 1903886336,
+          "tables": 12
+        },
+        {
+          "db_id": "trains",
+          "path": "databases/train_databases/trains/trains.sqlite",
+          "bytes": 5070848,
+          "tables": 2
+        },
+        {
+          "db_id": "university",
+          "path": "databases/train_databases/university/university.sqlite",
+          "bytes": 630784,
+          "tables": 6
+        },
+        {
+          "db_id": "video_games",
+          "path": "databases/train_databases/video_games/video_games.sqlite",
+          "bytes": 2547712,
+          "tables": 8
+        },
+        {
+          "db_id": "works_cycles",
+          "path": "databases/train_databases/works_cycles/works_cycles.sqlite",
+          "bytes": 114724864,
+          "tables": 66
+        },
+        {
+          "db_id": "world",
+          "path": "databases/train_databases/world/world.sqlite",
+          "bytes": 253952,
+          "tables": 4
+        },
+        {
+          "db_id": "world_development_indicators",
+          "path": "databases/train_databases/world_development_indicators/world_development_indicators.sqlite",
+          "bytes": 2451682304,
+          "tables": 6
+        }
+      ]
+    },
+    "dev": {
+      "split": "dev",
+      "url": "https://bird-bench.oss-cn-beijing.aliyuncs.com/dev.zip",
+      "archive_path": "cache/bird/dev.zip",
+      "archive_bytes": 346207293,
+      "sha256": "cdd6d19faeb45a23970b98d3ef6c40a87987c95459c2cf12076897a60cf5a630",
+      "md5": "04b4af221c9186361f09b16abfd917ec",
+      "official_md5_match": true,
+      "annotation_path": "data/bird_dev_data/raw/dev.json",
+      "question_count": 1534,
+      "database_count": 11,
+      "sqlite_bytes": 1493287936,
+      "coverage": "complete",
+      "databases": [
+        {
+          "db_id": "california_schools",
+          "path": "databases/dev_databases/california_schools/california_schools.sqlite",
+          "bytes": 11116544,
+          "tables": 3
+        },
+        {
+          "db_id": "card_games",
+          "path": "databases/dev_databases/card_games/card_games.sqlite",
+          "bytes": 261820416,
+          "tables": 7
+        },
+        {
+          "db_id": "codebase_community",
+          "path": "databases/dev_databases/codebase_community/codebase_community.sqlite",
+          "bytes": 481419264,
+          "tables": 8
+        },
+        {
+          "db_id": "debit_card_specializing",
+          "path": "databases/dev_databases/debit_card_specializing/debit_card_specializing.sqlite",
+          "bytes": 34635776,
+          "tables": 6
+        },
+        {
+          "db_id": "european_football_2",
+          "path": "databases/dev_databases/european_football_2/european_football_2.sqlite",
+          "bytes": 597754880,
+          "tables": 8
+        },
+        {
+          "db_id": "financial",
+          "path": "databases/dev_databases/financial/financial.sqlite",
+          "bytes": 71294976,
+          "tables": 8
+        },
+        {
+          "db_id": "formula_1",
+          "path": "databases/dev_databases/formula_1/formula_1.sqlite",
+          "bytes": 22360064,
+          "tables": 14
+        },
+        {
+          "db_id": "student_club",
+          "path": "databases/dev_databases/student_club/student_club.sqlite",
+          "bytes": 2641920,
+          "tables": 8
+        },
+        {
+          "db_id": "superhero",
+          "path": "databases/dev_databases/superhero/superhero.sqlite",
+          "bytes": 237568,
+          "tables": 10
+        },
+        {
+          "db_id": "thrombosis_prediction",
+          "path": "databases/dev_databases/thrombosis_prediction/thrombosis_prediction.sqlite",
+          "bytes": 7327744,
+          "tables": 3
+        },
+        {
+          "db_id": "toxicology",
+          "path": "databases/dev_databases/toxicology/toxicology.sqlite",
+          "bytes": 2678784,
+          "tables": 4
+        }
+      ]
+    }
+  }
+}

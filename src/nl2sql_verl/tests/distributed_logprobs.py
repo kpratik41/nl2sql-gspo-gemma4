@@ -1,7 +1,7 @@
 """Four-rank TP2/CP2 GSPO forward/backward and CP loss-scaling check.
 
 Run with python -m torch.distributed.run --standalone --nproc-per-node=4 -m
-recipes.nl2sql_verl.tests.distributed_logprobs
+src.nl2sql_verl.tests.distributed_logprobs
 """
 import json
 import os
@@ -17,7 +17,7 @@ from nemo_automodel.components.distributed.context_parallel.sharder import (
 from verl.trainer.ppo.core_algos import compute_policy_loss_gspo
 from verl.workers.config import ActorConfig
 
-from recipes.nl2sql_verl.parallel_logprobs import vocab_logprobs
+from src.nl2sql_verl.parallel_logprobs import vocab_logprobs
 
 
 def main():

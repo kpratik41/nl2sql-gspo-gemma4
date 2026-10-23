@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from recipes.nl2sql_verl.advantages import batch_grpo_advantage
+from src.nl2sql_verl.advantages import batch_grpo_advantage
 
 
 def test_group_centering_and_batch_reward_std_match_consensus():

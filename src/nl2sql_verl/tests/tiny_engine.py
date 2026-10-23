@@ -13,7 +13,7 @@ from verl.trainer.config import CheckpointConfig
 from verl.utils import tensordict_utils as tu
 from verl.workers.config import AutomodelOptimizerConfig
 
-from recipes.nl2sql_verl.engine import Gemma4CPEngine, Gemma4CPEngineConfig
+from src.nl2sql_verl.engine import Gemma4CPEngine, Gemma4CPEngineConfig
 
 
 def main():

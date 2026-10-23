@@ -17,7 +17,7 @@ data:
 actor_rollout_ref:
   model:
     path: google/gemma-4-31B-it
-    external_lib: recipes.nl2sql_verl.engine
+    external_lib: src.nl2sql_verl.engine
     use_remove_padding: false
     use_fused_kernels: false
     enable_gradient_checkpointing: false
@@ -45,11 +45,11 @@ actor_rollout_ref:
     agent:
       num_workers: 4
       default_agent_loop: nl2sql_tool_agent
-      agent_loop_config_path: recipes/nl2sql_verl/configs/agent.yaml
+      agent_loop_config_path: src/nl2sql_verl/configs/agent.yaml
     multi_turn:
       enable: true
       format: nl2sql_gemma4
-      tool_config_path: recipes/nl2sql_verl/configs/tools.yaml
+      tool_config_path: src/nl2sql_verl/configs/tools.yaml
       max_assistant_turns: 9
       max_parallel_calls: 3
       max_tool_response_length: 512
@@ -77,7 +77,7 @@ critic:
 reward:
   num_workers: 4
   custom_reward_function:
-    path: recipes/nl2sql_verl/reward_entry.py
+    path: src/nl2sql_verl/reward_entry.py
     name: compute_score
 
 trainer:

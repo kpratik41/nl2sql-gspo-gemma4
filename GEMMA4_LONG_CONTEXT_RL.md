@@ -3,7 +3,7 @@
 ## Tool-calling verl recipe — 2026-10-22 (America/New_York)
 
 The task code from `consensus` has been adapted into
-[`recipes/nl2sql_verl/`](recipes/nl2sql_verl/README.md): prepared parquet inputs,
+[`src/nl2sql_verl/`](src/nl2sql_verl/README.md): prepared parquet inputs,
 the three active SQLite tools, seven weighted rewards, native Gemma tool
 parsing and a local AutoModel TP2/CP2 engine for verl RL. Defaults preserve
 the actual TRL token-ratio/batch-reward-scaling objective; an explicit GSPO

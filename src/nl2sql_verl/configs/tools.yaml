@@ -1,5 +1,5 @@
 tools:
-- class_name: recipes.nl2sql_verl.tools.SQLiteTool
+- class_name: src.nl2sql_verl.tools.SQLiteTool
   config:
     type: native
     timeout_s: 60
@@ -38,7 +38,7 @@ tools:
         - table
         - column
         - query
-- class_name: recipes.nl2sql_verl.tools.SQLiteTool
+- class_name: src.nl2sql_verl.tools.SQLiteTool
   config:
     type: native
     timeout_s: 60
@@ -74,7 +74,7 @@ tools:
         - db_id
         - table
         - columns
-- class_name: recipes.nl2sql_verl.tools.SQLiteTool
+- class_name: src.nl2sql_verl.tools.SQLiteTool
   config:
     type: native
     timeout_s: 60

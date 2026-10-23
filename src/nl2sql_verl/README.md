@@ -66,6 +66,80 @@ numeric tolerances. Format scoring also requires `<relevant_tables>` and
 `<relevant_columns>`; the source README's shorter format description omits those
 checks. Copied task code and source hashes are in `consensus/provenance.json`.
 
+## Data-generation pipeline on consensus
+
+Inspected branch: `origin/consensus`, commit
+[`588e1378777c64fa1a48d2548efccd51edd29270`](https://github.com/kpratik41/nl2sql-gspo-gemma4/tree/588e1378777c64fa1a48d2548efccd51edd29270).
+The main RL preparation pipeline constructs prompts deterministically from
+existing questions and SQL answers:
+
+```text
+Existing BIRD questions + evidence + gold SQL
+  → optional BM25 few-shot retrieval from the training split
+  → SQLite schema introspection and prompt formatting
+  → tool-aware system prompt + JSON tool definitions
+  → training/evaluation JSONL
+  → TRL normalizes prompts and generates tool trajectories during RL
+```
+
+1. **Source records.** `data/bird_train_data/raw/train-6601.jsonl` is already
+   present on that branch, alongside the full `train.json`. The 6,601-row file
+   is the filtered training input; these scripts do not implement the original
+   dataset filtering. The default dev input is `dev_20251106.json`.
+2. **Optional few-shot retrieval.**
+   [`few_shot_bm25.py`](https://github.com/kpratik41/nl2sql-gspo-gemma4/blob/588e1378777c64fa1a48d2548efccd51edd29270/scripts/data_generation/few_shot_bm25.py)
+   indexes training questions plus evidence and attaches the top five matching
+   question/evidence/SQL examples. Training retrieval excludes examples from the
+   target database. Dev retrieval draws only from training records, not dev gold.
+3. **Schema prompts.**
+   [`schema_build.py`](https://github.com/kpratik41/nl2sql-gspo-gemma4/blob/588e1378777c64fa1a48d2548efccd51edd29270/scripts/data_generation/schema_build.py)
+   opens each SQLite database, collects table/column names, primary and foreign
+   keys, inferred types, optional column descriptions, and optional statistics
+   and example values. It combines those with the database ID, question,
+   evidence/hint, and optional few-shots. Schemas are cached per database.
+   `--no-fewshots`, `--no-comments`, `--no-stats` and `--no-nullability` control
+   prompt variants. `--no-stats` still samples values for type inference.
+   **Use `--n-examples -1` for a complete split; the script defaults to five.**
+   Its intermediate JSONL includes a gold assistant answer.
+4. **Tool prompts.**
+   [`build_tool_dataset.py`](https://github.com/kpratik41/nl2sql-gspo-gemma4/blob/588e1378777c64fa1a48d2548efccd51edd29270/scripts/data_generation/build_tool_dataset.py)
+   retains the schema/question user message, replaces the system prompt, adds
+   tool definitions, and puts `gold_sql` in metadata. It removes the target gold
+   assistant answer from `prompt` and `messages`. Its default exposes
+   `bm25_search_sqlite`, `sqlite_peek`, and `sqlite_query`. The optional
+   `--prompt-template consensus` additionally declares `consensus_at_1`, which
+   is not in the active trainer's callable tool list or this verl recipe.
+5. **RL.** The active launcher uses `outputs/train-6601-schema-tool.jsonl` and
+   `outputs/dev-20251106-schema-tool.jsonl`; its README contains older defaults.
+   The trainer generates assistant/tool turns online and scores final SQL
+   against the metadata and the matching SQLite database. Pre-generated teacher
+   trajectories are unnecessary for this path.
+
+For example, a source question asking how many people meet a condition becomes
+one user message containing the relevant database schema, the question and its
+hint. During RL, the model can inspect a column with `sqlite_peek`, test a query
+with `sqlite_query`, and write its final SQL. The reward code executes the final
+SQL and the gold SQL on the same database and compares their result sets.
+
+There is a separate **teacher/SFT/RFT pipeline** under `scripts/teacher/`.
+`gen_teacher_traces.py` generates tool trajectories, optionally with privileged
+SQL hints during teacher generation, and marks execution-correct traces without
+hard leaks as eligible. `build_rft_from_traces.py` selects eligible traces and
+assembles prompt-plus-transcript SFT rows; copy/tool-round filters are optional.
+`build_run2_sft_dataset.py` mixes selected correct student pass@16 trajectories
+with teacher traces and applies additional phrase filtering. These files train
+on assistant trajectories; online RL instead starts from the prompt and samples
+new trajectories. Do not carry privileged teacher hints into RL prompts.
+
+For verl, the input boundary is already-built **parquet**, not raw BIRD JSON or
+those JSONL files. If starting with consensus tool JSONL, serialize its rows to
+`data/nl2sql/train.parquet` and `validation.parquet`, then run
+`src.nl2sql_verl.prepare_data` (the launcher does this normalization). It strips
+assistant answers, binds tools to `db_id`, and stores gold SQL in reward metadata.
+It does not build missing schemas or remove arbitrary hints embedded in user
+text. The upstream generation scripts remain on `consensus`; they were not
+copied into this branch as part of the directory move.
+
 ## Which framework we used, and what changes here
 
 Earlier four-GPU measurements ran **NeMo AutoModel directly**, with PyTorch TP
@@ -129,7 +203,7 @@ does not have exactly the same meaning as TRL's completion-token budget.
 
 ## Inputs
 
-Expected locations, already created locally:
+Default locations (the parquet files still need to be supplied):
 
 ```text
 data/nl2sql/train.parquet
@@ -140,6 +214,32 @@ databases/<db_id>/<db_id>.sqlite
 Flat `databases/<db_id>.sqlite` and nested `train_databases` / `dev_databases`
 layouts also work. Override with `TRAIN_PARQUET`, `VAL_PARQUET` and
 `NL2SQL_DATABASE_DIR`.
+
+The official [BIRD train and dev releases](https://bird-bench.github.io/)
+were downloaded and extracted on this host on 2026-10-23:
+
+```text
+databases/train_databases/<db_id>/<db_id>.sqlite
+databases/dev_databases/<db_id>/<db_id>.sqlite
+data/bird_train_data/raw/    # official train questions, tables and gold SQL
+data/bird_dev_data/raw/      # official dev questions, tables and gold SQL
+cache/bird/                 # original ZIPs and nested database ZIPs
+```
+
+The train release contains **69 databases / 9,428 questions** and the dev release
+contains **11 databases / 1,534 questions**. All 80 database files were extracted
+with ZIP CRC validation and opened read-only; every bundled question has a
+resolvable database. Total SQLite file size is approximately 33.90 GB.
+
+These folders remain gitignored. The official dev ZIP contains
+`dev_20240627/dev.json`; the consensus default is the corrected
+`dev_20251106.json`. Downloaded databases do not select the question/gold version
+for evaluation. Use the intended annotation file explicitly when preparing
+validation parquet, and record that choice when comparing with consensus runs.
+Download provenance, archive hashes, and the per-database size/schema inventory
+are recorded in [`benchmark_results/bird_data_download/manifest.json`](../../benchmark_results/bird_data_download/manifest.json).
+The download does not include the branch's 6,601-row filtered training file or
+its additional column-meaning annotations; those are available on `consensus`.
 
 Each source parquet row needs a chat-message list in `prompt` or `messages`,
 plus `db_id` and `gold_sql`. `SQL`/`sql` aliases and an existing verl
@@ -171,19 +271,19 @@ overlength rows are dropped, never silently truncated. No schema generation runs
 Use a local cached checkpoint path to avoid a model download at launch.
 
 ```bash
-VERL_BASE_PYTHON=/path/to/python3.12 bash recipes/nl2sql_verl/setup_env.sh
+VERL_BASE_PYTHON=/path/to/python3.12 bash src/nl2sql_verl/setup_env.sh
 
 # Configuration validation without data or GPU allocation:
-CONFIG_ONLY=1 bash recipes/nl2sql_verl/launch.sh
+CONFIG_ONLY=1 bash src/nl2sql_verl/launch.sh
 
 # After the parquet files and databases exist: one short RL step.
-MODEL_PATH=/path/to/cached/gemma-4-31B-it bash recipes/nl2sql_verl/launch.sh
+MODEL_PATH=/path/to/cached/gemma-4-31B-it bash src/nl2sql_verl/launch.sh
 
 # The longer recipe preserves n=16 but still starts at a modest context.
-RECIPE_CONFIG=nl2sql MODEL_PATH=/path/to/model bash recipes/nl2sql_verl/launch.sh
+RECIPE_CONFIG=nl2sql MODEL_PATH=/path/to/model bash src/nl2sql_verl/launch.sh
 
 # Explicit GSPO sequence-ratio variant, with the same task/reward scaling:
-RECIPE_CONFIG=gspo MODEL_PATH=/path/to/model bash recipes/nl2sql_verl/launch.sh
+RECIPE_CONFIG=gspo MODEL_PATH=/path/to/model bash src/nl2sql_verl/launch.sh
 ```
 
 The source pins are AutoModel `65866fbce209938cd153f2bc26f01fa0d34cc61e` and
@@ -255,11 +355,11 @@ that reads the established benchmark stack and adds only test/runtime Python
 packages in its own directory:
 
 ```bash
-.venv-verl-check/bin/python -m pytest -q recipes/nl2sql_verl/tests
-.venv-verl-check/bin/python -m recipes.nl2sql_verl.preflight --config smoke --config-only
-.venv-verl-check/bin/python -m torch.distributed.run --standalone --nproc-per-node=4 -m recipes.nl2sql_verl.tests.distributed_logprobs
-.venv-verl-check/bin/python -m torch.distributed.run --standalone --nproc-per-node=4 -m recipes.nl2sql_verl.tests.tiny_engine
-CUDA_VISIBLE_DEVICES=0,1 .venv-verl-check/bin/python -m torch.distributed.run --standalone --nproc-per-node=2 -m recipes.nl2sql_verl.tests.tiny_engine --cp 1
+.venv-verl-check/bin/python -m pytest -q src/nl2sql_verl/tests
+.venv-verl-check/bin/python -m src.nl2sql_verl.preflight --config smoke --config-only
+.venv-verl-check/bin/python -m torch.distributed.run --standalone --nproc-per-node=4 -m src.nl2sql_verl.tests.distributed_logprobs
+.venv-verl-check/bin/python -m torch.distributed.run --standalone --nproc-per-node=4 -m src.nl2sql_verl.tests.tiny_engine
+CUDA_VISIBLE_DEVICES=0,1 .venv-verl-check/bin/python -m torch.distributed.run --standalone --nproc-per-node=2 -m src.nl2sql_verl.tests.tiny_engine --cp 1
 ```
 
 The tiny-engine test creates a random tiny HF checkpoint at
@@ -277,12 +377,29 @@ parity, long-context training capacity, rollout weight-sync completion or NL2SQL
 accuracy. The next integration test is the complete one-step 31B smoke cycle
 once the real parquet/databases and a resolved rollout runtime are available.
 
-All new recipe code is under this directory. Existing benchmark/library code
-was not edited. Delete this added directory to remove the recipe; the only
-shared-file edits are the environment/database ignore entries and the roadmap
-link. Existing uncommitted benchmark/debugging work is preserved.
-For this workspace, the checked reverse patch and instructions are saved at
-`outputs/verl_recipe_baseline/recipe-changes.patch` and `ROLLBACK.txt`.
+## Remaining integration work
+
+1. Build real schema/tool prompt parquet files and verify database coverage and
+   the intended dev annotation version. Downloading databases alone does not
+   create the prepared parquet inputs.
+2. Build and resolve the Python 3.12/vLLM rollout runtime. The existing
+   `.venv-verl-check` is a source-check environment, not a validated full rollout
+   installation; the Transformers compatibility exception above remains open.
+3. Run the complete 31B one-step cycle: generation, tool execution, rewards,
+   old-policy logprobs, backward/update, weight synchronization, and a second
+   rollout. Verify checkpoint resume in that complete runtime.
+4. Compare full-model TP2/CP1 versus TP2/CP2 response logprobs and gradients on
+   identical short examples. BF16 mitigations are included, but tiny-model
+   execution and synthetic gradient tests do not resolve full-model CP parity
+   or serving/training probability mismatch.
+5. Measure training and rollout capacity, then increase context gradually and
+   run dev execution-accuracy evaluation. The 199,680-token result is a
+   forward-only measurement, not an RL context-length guarantee.
+
+The implementation was introduced in commit `e95b4cf`; subsequent history moves
+it from `recipes/` to `src/` and updates import/config/launch references. Git
+history is the rollback source. Local reverse patches under
+`outputs/verl_recipe_baseline/` predate the move and refer to the old paths.
 
 Primary upstream references: [verl tool/agent extension interfaces](https://verl.readthedocs.io/en/latest/extend_guide.html),
 [pinned verl requirements](https://github.com/verl-project/verl/blob/d430157d15516d89e0cc853fd10fcd21d9234c44/requirements.txt),

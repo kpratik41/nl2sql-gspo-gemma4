@@ -1,2 +1,0 @@
-- name: nl2sql_tool_agent
-  _target_: recipes.nl2sql_verl.agent_loop.NL2SQLToolAgentLoop

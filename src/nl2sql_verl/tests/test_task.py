@@ -4,9 +4,9 @@ import sqlite3
 
 import pytest
 
-from recipes.nl2sql_verl.gemma_arguments import parse_arguments
-from recipes.nl2sql_verl.prepare_data import normalize_record, prepare
-from recipes.nl2sql_verl.task import assistant_tokens, compute_score, database_path
+from src.nl2sql_verl.gemma_arguments import parse_arguments
+from src.nl2sql_verl.prepare_data import normalize_record, prepare
+from src.nl2sql_verl.task import assistant_tokens, compute_score, database_path
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def test_native_gemma_arrays_and_sql_literals():
 
 
 def test_verl_native_tool_parser_dispatch():
-    from recipes.nl2sql_verl.agent_loop import NL2SQLGemmaParser
+    from src.nl2sql_verl.agent_loop import NL2SQLGemmaParser
     class Tokenizer:
         pad_token = None
         def convert_tokens_to_ids(self, value):
@@ -100,8 +100,8 @@ def test_database_resolution(database):
 
 def test_verl_sqlite_tool_lifecycle(database):
     from verl.tools.schemas import OpenAIFunctionToolSchema
-    from recipes.nl2sql_verl.prepare_data import TOOLS
-    from recipes.nl2sql_verl.tools import SQLiteTool
+    from src.nl2sql_verl.prepare_data import TOOLS
+    from src.nl2sql_verl.tools import SQLiteTool
     async def run():
         schema = next(t for t in TOOLS if t['function']['name'] == 'sqlite_query')
         tool = SQLiteTool({'timeout_s': 2}, OpenAIFunctionToolSchema.model_validate(schema))

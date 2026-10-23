@@ -22,7 +22,7 @@ use_kl_loss: false
 use_torch_compile: false
 ppo_epochs: 1
 engine:
-  _target_: recipes.nl2sql_verl.engine.Gemma4CPEngineConfig
+  _target_: src.nl2sql_verl.engine.Gemma4CPEngineConfig
   tp_size: 2
   cp_size: 2
   sequence_parallel: false

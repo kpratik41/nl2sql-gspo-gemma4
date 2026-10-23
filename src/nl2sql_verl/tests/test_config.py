@@ -7,7 +7,7 @@ from hydra.utils import instantiate
 
 @pytest.mark.parametrize('name', ['nl2sql', 'smoke', 'gspo'])
 def test_hydra_actor_and_engine_configuration(name):
-    from recipes.nl2sql_verl.engine import Gemma4CPEngine, Gemma4CPEngineConfig
+    from src.nl2sql_verl.engine import Gemma4CPEngine, Gemma4CPEngineConfig
     from verl.workers.engine.base import EngineRegistry
     directory = Path(__file__).resolve().parents[1]/'configs'
     with initialize_config_dir(config_dir=str(directory), version_base=None):

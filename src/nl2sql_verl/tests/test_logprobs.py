@@ -1,6 +1,6 @@
 import torch
 
-from recipes.nl2sql_verl.parallel_logprobs import vocab_logprobs
+from src.nl2sql_verl.parallel_logprobs import vocab_logprobs
 
 
 def test_logprobs_entropy_and_gradients_match_full_vocabulary():

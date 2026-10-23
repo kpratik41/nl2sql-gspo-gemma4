@@ -12,7 +12,7 @@ if [[ ! -d "$runtime_venv" ]]; then
 fi
 "$runtime_venv/bin/python" -m pip install --upgrade pip
 "$runtime_venv/bin/python" -m pip install 'torch==2.10.0+cu130' 'torchvision==0.25.0+cu130' 'torchaudio==2.10.0+cu130' 'torchao==0.16.0+cu130' --index-url https://download.pytorch.org/whl/cu130
-"$runtime_venv/bin/python" -m pip install -r recipes/nl2sql_verl/runtime-requirements.txt
+"$runtime_venv/bin/python" -m pip install -r src/nl2sql_verl/runtime-requirements.txt
 if [[ ! -d "$source_root/.git" ]]; then
   git clone --no-checkout https://github.com/verl-project/verl.git "$source_root"
   git -C "$source_root" fetch --depth 1 origin "$revision"
@@ -31,7 +31,7 @@ from pathlib import Path
 Path(site.getsitepackages()[0], 'nl2sql-verl-source.pth').write_text(sys.argv[1]+'\n'+sys.argv[2]+'\n')
 PY
 "$runtime_venv/bin/python" -m pip check
-"$runtime_venv/bin/python" -m recipes.nl2sql_verl.preflight --config smoke --config-only
+"$runtime_venv/bin/python" -m src.nl2sql_verl.preflight --config smoke --config-only
 mkdir -p outputs/verl_recipe_checks
 "$runtime_venv/bin/python" -m pip freeze > outputs/verl_recipe_checks/runtime-lock.txt
 echo "Runtime prepared at $runtime_venv; full 31B rollout/update still requires its smoke validation."
