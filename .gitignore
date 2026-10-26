@@ -19,3 +19,6 @@ __pycache__/
 # Obsolete diagnostic precision runs retained only on this host.
 /benchmark_results/cp_forward/debug/fp64_reference/
 /benchmark_results/cp_forward/debug/natural_fp64/
+
+# Local data/source handoff archive
+/nl2sql_workspace_bundle_2026-10-26.zip
