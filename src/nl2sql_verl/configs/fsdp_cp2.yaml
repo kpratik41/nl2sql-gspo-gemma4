@@ -1,0 +1,69 @@
+defaults:
+  - base
+  - override /actor@actor_rollout_ref.actor: nl2sql_fsdp_actor
+  - _self_
+
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+
+data:
+  train_files: outputs/cp1_recipe/data/train.parquet
+  val_files: outputs/cp1_recipe/data/validation.parquet
+  train_batch_size: 32
+  gen_batch_size: 1
+  max_prompt_length: 11264
+  max_response_length: 2048
+  filter_overlong_prompts: false
+  expected_train_rows: 6601
+  expected_val_rows: 640
+
+actor_rollout_ref:
+  model:
+    external_lib: src.nl2sql_verl.fsdp_runtime
+    use_remove_padding: true
+    enable_gradient_checkpointing: true
+    override_config:
+      attn_implementation: nl2sql_flex_ulysses
+  rollout:
+    tensor_model_parallel_size: 4
+    n: 16
+    max_model_len: 13312
+    max_num_batched_tokens: 16384
+    max_num_seqs: 32
+    gpu_memory_utilization: 0.35
+    log_prob_micro_batch_size_per_gpu: 1
+    log_prob_max_token_len_per_gpu: 13312
+    agent:
+      num_workers: 16
+    val_kwargs:
+      do_sample: false
+      n: 1
+
+algorithm:
+  filter_groups:
+    enable: true
+    metric: result
+    max_num_gen_batches: 0
+    max_inflight_gen_batches: 2
+
+trainer:
+  n_gpus_per_node: 8
+  total_epochs: 100
+  total_training_steps: 100
+  experiment_name: bird-grpo-fsdp2-ulysses2-dp4
+  default_local_dir: /opt/dlami/nvme/nl2sql/fsdp-cp2-grpo
+  logger: [console, file]
+  val_before_train: true
+  save_freq: 5
+  test_freq: 10
+  max_actor_ckpt_to_keep: 2
+  nl2sql_rolling_checkpoints: true
+  nl2sql_training_seconds: 0
+
+ray_kwargs:
+  ray_init:
+    runtime_env:
+      env_vars:
+        VERL_FILE_LOGGER_PATH: ${oc.env:VERL_FILE_LOGGER_PATH,outputs/fsdp_cp_training/metrics.jsonl}
+        TORCHINDUCTOR_COMPILE_THREADS: "2"

@@ -1,0 +1,502 @@
+{
+  "status": "investigation; full-model CP2 gates unresolved",
+  "gradient_scope": "20 selected parameter tensors, full 31B backward",
+  "experiments": [
+    {
+      "mode": "hf",
+      "backend": "sdpa",
+      "loss": 1.3311597108840942,
+      "seconds": 3.969459220999852,
+      "peak_allocated_gib": 123.51015043258667,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "artifact": "outputs/fsdp_cp_recipe/hf_math.json",
+      "completed_utc": "2026-10-27T05:27:14.742063+00:00"
+    },
+    {
+      "mode": "native",
+      "backend": "sdpa",
+      "loss": 1.3311597108840942,
+      "seconds": 4.422916637999151,
+      "peak_allocated_gib": 41.50352191925049,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.0,
+      "max_logprob_abs_difference": 0.0,
+      "pass_gradient": true,
+      "artifact": "outputs/fsdp_cp_recipe/native_math_compat.json",
+      "completed_utc": "2026-10-27T05:38:34.547976+00:00",
+      "worst_gradient_relative_l2": 0.0018127726065616347,
+      "minimum_gradient_cosine": 0.999998358686548,
+      "all_gates_pass": true
+    },
+    {
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.335018128156662,
+      "seconds": 22.95214445199963,
+      "peak_allocated_gib": 41.503546714782715,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.003858417272567749,
+      "max_logprob_abs_difference": 3.957315444946289,
+      "pass_gradient": false,
+      "artifact": "outputs/fsdp_cp_recipe/native_flex_sp1.json",
+      "completed_utc": "2026-10-27T05:41:07.636653+00:00",
+      "worst_gradient_relative_l2": 0.89354233480869,
+      "minimum_gradient_cosine": 0.7945218294765886,
+      "all_gates_pass": false
+    },
+    {
+      "attention_fp32": true,
+      "plain_loss": true,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.1962323188781738,
+      "seconds": 26.507309453001653,
+      "peak_allocated_gib": 41.503546714782715,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.1349273920059204,
+      "max_logprob_abs_difference": 5.1624755859375,
+      "pass_gradient": false,
+      "artifact": "outputs/fsdp_cp_recipe/native_flex_fp32_sp1.json",
+      "completed_utc": "2026-10-27T05:47:16.777762+00:00",
+      "worst_gradient_relative_l2": 2.9516647249960686,
+      "minimum_gradient_cosine": -0.6597598728325036,
+      "all_gates_pass": false
+    },
+    {
+      "attention_fp32": false,
+      "plain_loss": false,
+      "mode": "hf",
+      "backend": "flex_attention",
+      "loss": 1.2148705124855042,
+      "seconds": 27.005630830000882,
+      "peak_allocated_gib": 123.50982522964478,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "artifact": "outputs/fsdp_cp_recipe/hf_flex.json",
+      "completed_utc": "2026-10-27T05:51:58.254658+00:00"
+    },
+    {
+      "attention_fp32": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.2148705124855042,
+      "seconds": 26.979778412998712,
+      "peak_allocated_gib": 41.503546714782715,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.0,
+      "max_logprob_abs_difference": 0.0,
+      "pass_gradient": true,
+      "artifact": "outputs/fsdp_cp_recipe/native_hf_flex_sp1.json",
+      "completed_utc": "2026-10-27T05:57:55.428420+00:00",
+      "worst_gradient_relative_l2": 0.0020504182011642272,
+      "minimum_gradient_cosine": 0.9999980255809995,
+      "all_gates_pass": true
+    },
+    {
+      "attention_fp32": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.2148705124855042,
+      "seconds": 32.60387264599922,
+      "peak_allocated_gib": 41.40936088562012,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.0,
+      "max_logprob_abs_difference": 0.0,
+      "pass_gradient": false,
+      "artifact": "outputs/fsdp_cp_recipe/native_hf_flex_sp2.json",
+      "completed_utc": "2026-10-27T06:00:34.912328+00:00",
+      "worst_gradient_relative_l2": 0.03630366992436332,
+      "minimum_gradient_cosine": 0.9995784827314758,
+      "all_gates_pass": false
+    },
+    {
+      "bucket": 256,
+      "attention_fp32": false,
+      "plain_loss": false,
+      "mode": "hf",
+      "backend": "flex_attention",
+      "loss": 1.2247760593891144,
+      "seconds": 15.653230740001163,
+      "peak_allocated_gib": 123.57867383956909,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "artifact": "outputs/fsdp_cp_recipe/hf_flex_bucket256.json",
+      "completed_utc": "2026-10-27T06:03:28.371532+00:00"
+    },
+    {
+      "bucket": 256,
+      "attention_fp32": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.2247760593891144,
+      "seconds": 14.950226494998788,
+      "peak_allocated_gib": 41.44057512283325,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.0,
+      "max_logprob_abs_difference": 0.0,
+      "pass_gradient": false,
+      "artifact": "outputs/fsdp_cp_recipe/native_flex_sp2_bucket256.json",
+      "completed_utc": "2026-10-27T06:08:59.695070+00:00",
+      "worst_gradient_relative_l2": 0.04490241209584494,
+      "minimum_gradient_cosine": 0.9991979106905707,
+      "all_gates_pass": false
+    },
+    {
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "plain_loss": false,
+      "mode": "hf",
+      "backend": "flex_attention",
+      "loss": 1.2160897552967072,
+      "seconds": 22.935709979999956,
+      "peak_allocated_gib": 123.57989454269409,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "artifact": "outputs/fsdp_cp_recipe/hf_flex_fp32attn_bucket256.json",
+      "completed_utc": "2026-10-27T06:10:26.262595+00:00"
+    },
+    {
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.2160897552967072,
+      "seconds": 24.581354109999666,
+      "peak_allocated_gib": 41.44057559967041,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.0,
+      "max_logprob_abs_difference": 0.0,
+      "pass_gradient": false,
+      "artifact": "outputs/fsdp_cp_recipe/native_flex_sp2_fp32attn_bucket256.json",
+      "completed_utc": "2026-10-27T06:12:34.379723+00:00",
+      "worst_gradient_relative_l2": 0.03227379789357089,
+      "minimum_gradient_cosine": 0.9994862065702801,
+      "all_gates_pass": false
+    },
+    {
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": false,
+      "plain_loss": false,
+      "mode": "hf",
+      "backend": "flex_attention",
+      "loss": 1.204011708498001,
+      "seconds": 10.00323681699956,
+      "peak_allocated_gib": 127.27946949005127,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "artifact": "outputs/fsdp_cp_recipe/hf_amp_aligned_bucket256.json",
+      "completed_utc": "2026-10-27T06:16:25.049156+00:00"
+    },
+    {
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.204011708498001,
+      "seconds": 9.830826459998207,
+      "peak_allocated_gib": 47.83436918258667,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.0,
+      "max_logprob_abs_difference": 0.0,
+      "pass_gradient": true,
+      "artifact": "outputs/fsdp_cp_recipe/native_amp_sp2_bucket256.json",
+      "completed_utc": "2026-10-27T06:18:28.304409+00:00",
+      "worst_gradient_relative_l2": 0.013509201874690112,
+      "minimum_gradient_cosine": 0.9999096295486879,
+      "all_gates_pass": true
+    },
+    {
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": false,
+      "plain_loss": false,
+      "mode": "hf",
+      "backend": "flex_attention",
+      "loss": 1.503926932811737,
+      "seconds": 46.1153333090042,
+      "peak_allocated_gib": 136.5889630317688,
+      "lengths": [
+        5088,
+        5252
+      ],
+      "selected_gradients": 20,
+      "artifact": "outputs/fsdp_cp_recipe/hf_amp_full_bird.json",
+      "completed_utc": "2026-10-27T06:20:34.989264+00:00"
+    },
+    {
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.503926932811737,
+      "seconds": 46.531707598995126,
+      "peak_allocated_gib": 59.58931255340576,
+      "lengths": [
+        5088,
+        5252
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.0,
+      "max_logprob_abs_difference": 0.0,
+      "pass_gradient": true,
+      "artifact": "outputs/fsdp_cp_recipe/native_amp_sp1_full_bird.json",
+      "completed_utc": "2026-10-27T06:23:16.713167+00:00",
+      "worst_gradient_relative_l2": 7.074205635109184e-08,
+      "minimum_gradient_cosine": 0.9999999999999976,
+      "all_gates_pass": true
+    },
+    {
+      "fp32_residual": true,
+      "microbatch": 2,
+      "bucket": 256,
+      "attention_fp32": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.5002418756484985,
+      "seconds": 57.469015248003416,
+      "peak_allocated_gib": 52.12759876251221,
+      "lengths": [
+        5088,
+        5252
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.0036850571632385254,
+      "max_logprob_abs_difference": 0.3751401901245117,
+      "pass_gradient": false,
+      "artifact": "outputs/fsdp_cp_recipe/native_amp_sp2_full_bird_micro2.json",
+      "completed_utc": "2026-10-27T06:26:02.546404+00:00",
+      "worst_gradient_relative_l2": 0.2903370550223684,
+      "minimum_gradient_cosine": 0.9569796798964629,
+      "all_gates_pass": false
+    },
+    {
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.503926932811737,
+      "seconds": 22.383481586002745,
+      "peak_allocated_gib": 53.01321887969971,
+      "lengths": [
+        5088,
+        5252
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.0,
+      "max_logprob_abs_difference": 0.0,
+      "pass_gradient": false,
+      "artifact": "outputs/fsdp_cp_recipe/native_amp_sp2_full_bird_micro1.json",
+      "completed_utc": "2026-10-27T06:30:37.590692+00:00",
+      "worst_gradient_relative_l2": 0.08600919452968404,
+      "minimum_gradient_cosine": 0.9989872607721,
+      "all_gates_pass": false
+    },
+    {
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": false,
+      "plain_loss": false,
+      "mode": "hf",
+      "backend": "flex_attention",
+      "loss": 1.4860608279705048,
+      "seconds": 36.38622352499806,
+      "peak_allocated_gib": 144.5793194770813,
+      "lengths": [
+        5088,
+        5252
+      ],
+      "selected_gradients": 20,
+      "artifact": "outputs/fsdp_cp_recipe/hf_fp32out_full_bird.json",
+      "completed_utc": "2026-10-27T06:33:50.457769+00:00"
+    },
+    {
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 2,
+      "bucket": 256,
+      "attention_fp32": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.4893379211425781,
+      "seconds": 20.33394537300046,
+      "peak_allocated_gib": 56.29636001586914,
+      "lengths": [
+        5088,
+        5252
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.0032770931720733643,
+      "max_logprob_abs_difference": 0.08512496948242188,
+      "pass_gradient": false,
+      "artifact": "outputs/fsdp_cp_recipe/native_fp32out_sp2_full_bird_micro2.json",
+      "completed_utc": "2026-10-27T06:36:32.702331+00:00",
+      "worst_gradient_relative_l2": 1.0017070737827787,
+      "minimum_gradient_cosine": 0.4322948265279945,
+      "all_gates_pass": false
+    }
+  ],
+  "attention_memory": {
+    "cp1": [
+      {
+        "global_tokens": 4096,
+        "local_tokens": 4096,
+        "repeat": 1,
+        "baseline_mib": 160.06640625,
+        "mask_construction_peak_mib": 160.15625,
+        "peak_allocated_mib": 1696.5673828125,
+        "peak_reserved_mib": 1698.0,
+        "seconds": 0.03725784500420559,
+        "finite": true
+      },
+      {
+        "global_tokens": 8192,
+        "local_tokens": 8192,
+        "repeat": 1,
+        "baseline_mib": 320.19140625,
+        "mask_construction_peak_mib": 478.7060546875,
+        "peak_allocated_mib": 3393.1923828125,
+        "peak_reserved_mib": 3460.0,
+        "seconds": 0.1354180440030177,
+        "finite": true
+      },
+      {
+        "global_tokens": 16384,
+        "local_tokens": 16384,
+        "repeat": 1,
+        "baseline_mib": 640.62890625,
+        "mask_construction_peak_mib": 704.8486328125,
+        "peak_allocated_mib": 6786.6298828125,
+        "peak_reserved_mib": 6914.0,
+        "seconds": 0.526930732994515,
+        "finite": true
+      },
+      {
+        "global_tokens": 32768,
+        "local_tokens": 32768,
+        "repeat": 1,
+        "baseline_mib": 1282.2578125,
+        "mask_construction_peak_mib": 1411.072265625,
+        "peak_allocated_mib": 13574.2587890625,
+        "peak_reserved_mib": 13828.0,
+        "seconds": 2.1006533140025567,
+        "finite": true
+      }
+    ],
+    "cp2": [
+      {
+        "global_tokens": 4096,
+        "local_tokens": 2048,
+        "repeat": 1,
+        "baseline_mib": 80.06640625,
+        "mask_construction_peak_mib": 80.15625,
+        "peak_allocated_mib": 928.3173828125,
+        "peak_reserved_mib": 1142.0,
+        "seconds": 0.019521116999385413,
+        "finite": true
+      },
+      {
+        "global_tokens": 8192,
+        "local_tokens": 4096,
+        "repeat": 1,
+        "baseline_mib": 160.19140625,
+        "mask_construction_peak_mib": 302.7060546875,
+        "peak_allocated_mib": 1856.6923828125,
+        "peak_reserved_mib": 2306.0,
+        "seconds": 0.07131268100056332,
+        "finite": true
+      },
+      {
+        "global_tokens": 16384,
+        "local_tokens": 8192,
+        "repeat": 1,
+        "baseline_mib": 320.62890625,
+        "mask_construction_peak_mib": 352.8486328125,
+        "peak_allocated_mib": 3713.6298828125,
+        "peak_reserved_mib": 4580.0,
+        "seconds": 0.27069328899960965,
+        "finite": true
+      },
+      {
+        "global_tokens": 32768,
+        "local_tokens": 16384,
+        "repeat": 1,
+        "baseline_mib": 642.2578125,
+        "mask_construction_peak_mib": 707.072265625,
+        "peak_allocated_mib": 7428.2587890625,
+        "peak_reserved_mib": 9220.0,
+        "seconds": 1.060831873001007,
+        "finite": true
+      }
+    ]
+  }
+}

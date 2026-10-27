@@ -1,5 +1,10 @@
 # Gemma 4 NL2SQL tool-calling RL in verl
 
+The dated investigation history, failed checks, completed work and pending
+gates are recorded in [WORK_LOG.md](../../WORK_LOG.md). Native FSDP2/Ulysses
+experiments in `configs/fsdp_cp2.yaml` are **not production-ready**; their
+launcher requires numerical, memory, restore and integration evidence.
+
 This ports the task behavior from `origin/consensus` commit
 `588e1378777c64fa1a48d2548efccd51edd29270` to verl, with a repository-local
 NeMo AutoModel Gemma ring-context-parallel engine. Existing parquet data and
