@@ -1,5 +1,5 @@
 {
-  "status": "Static IEEE FP32 actor passes eight-GPU CP2 short/full/long/repeated-full numerical gates; accumulation/restore/capacity running; CP1 control and RL integration pending",
+  "status": "Static IEEE FP32 eight-GPU CP2 numerical/shape-history and full31B accumulated-update/checkpoint-restore gates pass; final capacity sweep running; CP1 control and real RL integration pending",
   "gradient_scope": "20 selected parameter tensors, full 31B backward",
   "experiments": [
     {
@@ -2085,5 +2085,63 @@
         "finite": true
       }
     ]
-  }
+  },
+  "full_model_static_fp32_restore": [
+    {
+      "pass": true,
+      "checkpoint": "/opt/dlami/nvme/nl2sql/fsdp-static-fp32-full-restore",
+      "scope": "Exact comparison of every model parameter/Adam tensor, scheduler and CPU/CUDA RNG",
+      "parameters": 1126,
+      "optimizer_tensors": 2316
+    },
+    {
+      "pass": true,
+      "checkpoint": "/opt/dlami/nvme/nl2sql/fsdp-static-fp32-full-restore",
+      "scope": "Exact comparison of every model parameter/Adam tensor, scheduler and CPU/CUDA RNG",
+      "parameters": 1126,
+      "optimizer_tensors": 2316
+    },
+    {
+      "pass": true,
+      "checkpoint": "/opt/dlami/nvme/nl2sql/fsdp-static-fp32-full-restore",
+      "scope": "Exact comparison of every model parameter/Adam tensor, scheduler and CPU/CUDA RNG",
+      "parameters": 1126,
+      "optimizer_tensors": 2316
+    },
+    {
+      "pass": true,
+      "checkpoint": "/opt/dlami/nvme/nl2sql/fsdp-static-fp32-full-restore",
+      "scope": "Exact comparison of every model parameter/Adam tensor, scheduler and CPU/CUDA RNG",
+      "parameters": 1126,
+      "optimizer_tensors": 2316
+    },
+    {
+      "pass": true,
+      "checkpoint": "/opt/dlami/nvme/nl2sql/fsdp-static-fp32-full-restore",
+      "scope": "Exact comparison of every model parameter/Adam tensor, scheduler and CPU/CUDA RNG",
+      "parameters": 1126,
+      "optimizer_tensors": 2316
+    },
+    {
+      "pass": true,
+      "checkpoint": "/opt/dlami/nvme/nl2sql/fsdp-static-fp32-full-restore",
+      "scope": "Exact comparison of every model parameter/Adam tensor, scheduler and CPU/CUDA RNG",
+      "parameters": 1126,
+      "optimizer_tensors": 2316
+    },
+    {
+      "pass": true,
+      "checkpoint": "/opt/dlami/nvme/nl2sql/fsdp-static-fp32-full-restore",
+      "scope": "Exact comparison of every model parameter/Adam tensor, scheduler and CPU/CUDA RNG",
+      "parameters": 1126,
+      "optimizer_tensors": 2316
+    },
+    {
+      "pass": true,
+      "checkpoint": "/opt/dlami/nvme/nl2sql/fsdp-static-fp32-full-restore",
+      "scope": "Exact comparison of every model parameter/Adam tensor, scheduler and CPU/CUDA RNG",
+      "parameters": 1126,
+      "optimizer_tensors": 2316
+    }
+  ]
 }

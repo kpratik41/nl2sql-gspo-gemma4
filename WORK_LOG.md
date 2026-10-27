@@ -575,3 +575,16 @@ measured in the integration run.
 - Accumulated 13,312-token updates are now running, before full-state save/load
   and the final-policy capacity sweep. CP1 control and real RL integration
   remain pending. The recipe remains fail-closed until those checks complete.
+
+### 08:24 — full 31B checkpoint round trip passes on all eight ranks
+
+- Two 13,312-token Adam updates with two accumulation rounds completed. Warm
+  update: 141.0 seconds, maximum 93.12 GiB allocated / 118.89 GiB reserved.
+- Saved full model/optimizer/scheduler/RNG state to
+  `/opt/dlami/nvme/nl2sql/fsdp-static-fp32-full-restore`, deliberately changed
+  every parameter and optimizer tensor and advanced scheduler/RNG, then loaded.
+- All eight ranks passed exact comparisons of 1,126 model parameter tensors,
+  2,316 Adam-state tensors, scheduler state and CPU/CUDA RNG. This is a full
+  model/state restoration check, unlike the selected-gradient numerical checks.
+- The same process continues with the final-policy 4K–32K capacity sweep.
+  CP1 control and the real two-update RL/640-row evaluation test remain pending.
