@@ -21,6 +21,13 @@ OPTIONS = {'BLOCK_M':32,'BLOCK_N':32,'BLOCK_M1':16,'BLOCK_N1':16,
            'FORCE_USE_FLEX_ATTENTION':True}
 
 
+def canonical_output_gradient(output):
+    """Normalize the underlying BHSD Flex output-gradient layout, not its values."""
+    if output.requires_grad:
+        output.register_hook(lambda grad:grad.transpose(1,2).contiguous().transpose(1,2))
+    return output
+
+
 def make_masks(position_ids, valid, sliding_window):
     """Build document-aware masks without a materialized token-by-token matrix."""
     docs = (position_ids == 0).cumsum(-1)
@@ -46,7 +53,9 @@ def attention(module,query,key,value,attention_mask,dropout=0.,scaling=None,**kw
     # requires homogeneous Q/K/V dtypes; use the projection's compute dtype.
     original_dtype=query.dtype
     fp32_output=os.environ.get('NL2SQL_ATTENTION_BF16_IO')=='1'
-    if fp32_output:
+    if os.environ.get('NL2SQL_ATTENTION_FP32')=='1':
+        query,key,value=(x.float() for x in (query,key,value))
+    elif fp32_output:
         query,key,value=(x.to(torch.bfloat16) for x in (query,key,value))
     elif os.environ.get('NL2SQL_ATTENTION_FP32')!='1':
         query,key=query.to(value.dtype),key.to(value.dtype)
@@ -56,16 +65,21 @@ def attention(module,query,key,value,attention_mask,dropout=0.,scaling=None,**kw
     query=gather_seq_scatter_heads(query,seq_dim=2,head_dim=1)
     key=gather_seq_scatter_heads(key,seq_dim=2,head_dim=1)
     value=gather_seq_scatter_heads(value,seq_dim=2,head_dim=1)
+    if os.environ.get('NL2SQL_FLEX_CANONICAL_LAYOUT')=='1':
+        query,key,value=(x.contiguous() for x in (query,key,value))
     dtype=original_dtype if fp32_output else query.dtype
     options=dict(OPTIONS)
     if os.environ.get('NL2SQL_ATTENTION_FP32')=='1':
         query,key,value=(x.float() for x in (query,key,value))
-        options.update(BLOCK_M=16,BLOCK_N=16,FLOAT32_PRECISION="'tf32x3'")
+        precision=os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3')
+        if precision not in ('tf32','tf32x3','ieee'):raise ValueError('Invalid Flex FP32 precision')
+        options.update(BLOCK_M=16,BLOCK_N=16,FLOAT32_PRECISION=repr(precision))
     if module is None:
         module=SimpleNamespace(training=torch.is_grad_enabled())
     with torch.autocast('cuda',enabled=False):
         output,_=flex_attention_forward(module,query,key,value,attention_mask,
             scaling=scaling,kernel_options=options)
+    if os.environ.get('NL2SQL_FLEX_CANONICAL_LAYOUT')=='1':output=canonical_output_gradient(output)
     output=output.transpose(1,2).to(dtype)
     output=gather_heads_scatter_seq(output,head_dim=1,seq_dim=2)
     return output.transpose(1,2).contiguous(),None

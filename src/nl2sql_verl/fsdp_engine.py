@@ -31,6 +31,12 @@ class GemmaFSDPEngine(FSDPEngineWithLMHead):
         if self.nl2sql_precision not in ('amp','tf32'):raise ValueError('Unknown recipe precision policy')
         torch.set_float32_matmul_precision('medium' if self.nl2sql_precision=='tf32' else 'highest')
         if self.nl2sql_precision=='tf32':os.environ['NL2SQL_ATTENTION_BF16_IO']='1'
+        attention_precision=self.model_config.override_config.get('nl2sql_attention_precision')
+        if attention_precision is not None:
+            if attention_precision not in ('bf16','tf32','tf32x3','ieee'):
+                raise ValueError('Unknown attention precision policy')
+            os.environ['NL2SQL_ATTENTION_FP32']='0' if attention_precision=='bf16' else '1'
+            if attention_precision!='bf16':os.environ['NL2SQL_FLEX_FP32_PRECISION']=attention_precision
         torch.backends.cuda.preferred_blas_library('cublaslt')
         torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction=(False,False)
         torch._dynamo.config.recompile_limit=512

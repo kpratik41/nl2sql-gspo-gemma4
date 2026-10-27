@@ -26,6 +26,7 @@ actor_rollout_ref:
     override_config:
       attn_implementation: nl2sql_flex_ulysses
       nl2sql_precision: tf32
+      nl2sql_attention_precision: tf32
   rollout:
     tensor_model_parallel_size: 4
     n: 16

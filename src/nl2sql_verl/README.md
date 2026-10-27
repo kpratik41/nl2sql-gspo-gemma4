@@ -4,6 +4,10 @@ The dated investigation history, failed checks, completed work and pending
 gates are recorded in [WORK_LOG.md](../../WORK_LOG.md). Native FSDP2/Ulysses
 experiments in `configs/fsdp_cp2.yaml` are **not production-ready**; their
 launcher requires numerical, memory, restore and integration evidence.
+The October 27 full-model tests now isolate an attention precision issue:
+FP32 tensors with fast TF32 attention agree across CP layouts, but substantially
+disagree with a higher-accuracy HF attention reference. That fast mode is not
+approved for training. IEEE attention is the next candidate; see the dated log.
 
 This ports the task behavior from `origin/consensus` commit
 `588e1378777c64fa1a48d2548efccd51edd29270` to verl, with a repository-local

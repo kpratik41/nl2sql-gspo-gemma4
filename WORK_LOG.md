@@ -359,3 +359,63 @@ full-model checkpoint round trip and real RL integration remain pending.
   Updated this repository's SSH command to use
   `/home/ubuntu/.ssh/id_ed25519_nl2sql_github`; pushes no longer depend on the
   older key. Neither private key is committed.
+
+### 07:00 — longest-prompt CP2 backward still outside the gate
+
+- CP2 on the two longest-prompt fixtures (10,884 and 10,844 total tokens)
+  matched the reference loss within 8.94e-8 and response logprobs within 1.08e-6.
+  Worst selected-gradient relative L2 was 4.7774%, above the unchanged 3% gate.
+- Therefore the TF32 candidate is not numerically ready at the required length,
+  despite passing the roughly 5K-token examples and the capacity/optimizer sweep.
+- Testing a specific layout hypothesis: Ulysses makes Q/K/V and the Flex output
+  gradient contiguous in BHSD layout, while unsharded HF can pass strided
+  tensors. The diagnostic normalizes layouts on the HF reference, preserving
+  tensor values and attention equations, and compares with saved CP2 gradients.
+  This is a hypothesis under test, not a confirmed root cause.
+
+### 07:04–07:12 — layout hypothesis rejected; attention precision isolated
+
+- Canonical contiguous attention inputs/output-gradient layouts did not fix the
+  longest-prompt discrepancy (about 5.10% relative L2 against saved CP2 gradients).
+  The layout normalization remains an opt-in diagnostic, disabled in the recipe.
+- Started testing FP32 attention inputs, outputs and intermediate state together
+  with FP32-output linear layers. Linear arithmetic still uses TF32 Tensor Cores.
+- A 4K standalone attention forward/backward benchmark (16 Q / 2 KV heads,
+  D512) found large precision-setting differences: warm `tf32x3` ~1.18 s at
+  tile 16, `tf32` ~0.054 s at tile 16 / ~0.052 s at tile 32, and IEEE ~0.267 s
+  at tile 16. All tested variants produced finite gradients. These are kernel
+  timings, not full-model throughput or accuracy acceptance.
+- The faster all-TF32/FP32-output HF reference completed on both longest-prompt
+  fixtures in 61.4 s, peaking at 160.1 GiB on one B200 with CPU saved-tensor
+  offload. A CP2/DP1 two-GPU diagnostic is comparing with it while the slower
+  `tf32x3` reference finishes independently on GPU 0. The final eight-GPU
+  CP2/DP4 topology must still pass before training.
+
+### 07:13–07:20 — longest-prompt precision improvement and publishing confirmed
+
+- FP32 attention tensors/intermediate state with TF32 arithmetic passed the
+  full 31B CP2/DP1 comparison on 10,884/10,844-token real BIRD fixtures. Worst
+  of 20 selected gradient tensors: 0.3967% relative L2; loss difference 2.98e-8;
+  largest response logprob difference 1.095e-6. This retains the existing 3%
+  gradient gate. It does not validate BF16 attention or every parameter gradient.
+- The independent HF reference using higher-accuracy `tf32x3` attention also
+  finished (397.4 s versus 61.4 s for `tf32`). Both use FP32-output linear layers.
+- Started the eight-GPU CP2/DP4 longest-fixture comparison followed by real Adam
+  updates at 4K/8K/16K/32K. Added an explicit attention precision setting to the
+  gated recipe and source/argument metadata to subsequent probe launches.
+- CPU regression suite: 34 passed. Fixed attention-memory artifact names to
+  distinguish FP32/TF32 from earlier BF16-kernel measurements. Full-model restore
+  and the real two-update RL integration remain pending.
+- Retried `git push origin verl` with the dedicated new SSH key: successful,
+  remote already current through `7493892`.
+
+### 07:21 — cross-precision reference check blocks the fast attention choice
+
+- Comparing the saved independent HF `tf32` attention run against the completed
+  higher-accuracy `tf32x3` attention reference revealed substantial disagreement:
+  maximum response logprob difference 0.3534; worst selected-gradient relative
+  L2 15.83 (1,583%). Loss difference alone was only 0.000414 and hid the issue.
+- Matching CP and non-CP arithmetic is therefore insufficient evidence for
+  selecting fast TF32 attention. The current TF32 attention config remains
+  gated/experimental. Next: test IEEE FP32 attention against the higher-accuracy
+  reference; retain the completed capacity measurements as diagnostics.

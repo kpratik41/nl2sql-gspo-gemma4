@@ -11,6 +11,7 @@ def test_fsdp_recipe_keeps_agreed_data_and_grpo_batch():
     assert actor.engine.mixed_precision.param_dtype=='fp32'
     assert actor.engine.mixed_precision.reduce_dtype=='fp32'
     assert cfg.actor_rollout_ref.model.override_config.nl2sql_precision=='tf32'
+    assert cfg.actor_rollout_ref.model.override_config.nl2sql_attention_precision=='tf32'
     assert actor.ppo_micro_batch_size_per_gpu==1
     assert cfg.data.expected_train_rows==6601 and cfg.data.expected_val_rows==640
     assert not cfg.data.filter_overlong_prompts

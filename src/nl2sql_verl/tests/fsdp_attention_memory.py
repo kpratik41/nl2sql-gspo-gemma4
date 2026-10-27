@@ -15,7 +15,7 @@ def main():
     rows=[]
     for length in (4096,8192,16384,32768):
         torch.manual_seed(19+rank)
-        dtype=torch.float32 if os.environ.get('NL2SQL_ATTENTION_BF16_IO')=='1' else torch.bfloat16
+        dtype=torch.float32 if any(os.environ.get(k)=='1' for k in ('NL2SQL_ATTENTION_BF16_IO','NL2SQL_ATTENTION_FP32')) else torch.bfloat16
         tensors=[torch.randn(1,h,length//sp,512,device='cuda',dtype=dtype,requires_grad=True) for h in (32,4,4)]
         pos=torch.arange(length,device='cuda')[None]
         torch.cuda.reset_peak_memory_stats()
@@ -32,7 +32,7 @@ def main():
             del out
             if repeat==1:rows.append(row)
         del masks,tensors,pos
-    precision='bf16_fp32io' if os.environ.get('NL2SQL_ATTENTION_BF16_IO')=='1' else ('fp32' if os.environ.get('NL2SQL_ATTENTION_FP32')=='1' else 'bf16')
+    precision=('fp32_'+os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3')) if os.environ.get('NL2SQL_ATTENTION_FP32')=='1' else ('bf16_fp32io' if os.environ.get('NL2SQL_ATTENTION_BF16_IO')=='1' else 'bf16')
     Path(f'outputs/fsdp_cp_recipe/attention_memory_{precision}_sp{sp}_rank{rank}.json').write_text(json.dumps(rows,indent=2)+'\n')
     dist.destroy_process_group()
 
