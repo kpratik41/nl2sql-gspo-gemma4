@@ -2229,5 +2229,16 @@
     "oom_tokens": 32768,
     "oom_ranks": 8,
     "failed_allocation_gib": 32
+  },
+  "integration_baseline": {
+    "step": 0,
+    "count": 640,
+    "correct": 337,
+    "accuracy": 0.5265625,
+    "mean_reward": 2.229441921124817,
+    "format_rate": 0.7234375,
+    "execution_rate": 0.725,
+    "artifact": "outputs/fsdp_cp_recipe/smoke/metrics.jsonl",
+    "historical_cp1_comparison": "422/640 was after one update, without a baseline; identical 640 input set but not a paired baseline comparison"
   }
 }

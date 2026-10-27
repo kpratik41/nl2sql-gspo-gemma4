@@ -656,3 +656,16 @@ cooperative stop after a completed update.
   Dispatch respects the in-flight cap, then drains outstanding work and discards
   surplus once enough accepted groups are available. There is no total retry
   limit enforced by `max_num_gen_batches` in this pinned V1 implementation.
+
+### 09:16 — 640-example baseline complete; first actor update in progress
+
+- Native FSDP2/CP2 integration baseline: 337/640 correct (52.65625%),
+  mean composite reward 2.22944, format success 72.34375%, execution
+  success 72.5%. All 640 trajectories completed without scheduler failures.
+- The historical CP1 result 422/640 was measured **after one optimizer
+  update**, with no pre-training evaluation. The input sets are identical,
+  but this is not a paired baseline comparison or evidence that CP caused
+  the difference. Final evaluation in this run will provide its own paired
+  before/after result.
+- First actor processing is active on all eight GPUs. No completed real RL
+  optimizer update or integration checkpoint has been claimed yet.
