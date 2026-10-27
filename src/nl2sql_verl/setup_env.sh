@@ -31,6 +31,8 @@ from pathlib import Path
 Path(site.getsitepackages()[0], 'nl2sql-verl-source.pth').write_text(sys.argv[1]+'\n'+sys.argv[2]+'\n')
 PY
 "$runtime_venv/bin/python" -m pip check
+# pip check cannot detect a CUDA-12 vLLM wheel paired with CUDA-13 torch.
+"$runtime_venv/bin/python" -c 'import torch; import vllm._C; import vllm._C_stable_libtorch'
 "$runtime_venv/bin/python" -m src.nl2sql_verl.preflight --config smoke --config-only
 mkdir -p outputs/verl_recipe_checks
 "$runtime_venv/bin/python" -m pip freeze > outputs/verl_recipe_checks/runtime-lock.txt

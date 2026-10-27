@@ -1,0 +1,58 @@
+defaults:
+  - base
+  - _self_
+
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+
+data:
+  train_batch_size: 4
+  filter_overlong_prompts: true
+
+actor_rollout_ref:
+  model:
+    external_lib: src.nl2sql_verl.bounded_runtime
+  actor:
+    engine:
+      tp_size: 4
+      cp_size: 2
+      model_dtype: fp32
+      cpu_master_weights: false
+      param_offload: false
+      optimizer_offload: false
+      compile_recompile_limit: 2048
+      compile_accumulated_recompile_limit: 8192
+  rollout:
+    tensor_model_parallel_size: 4
+    n: 4
+    gpu_memory_utilization: 0.25
+    multi_turn:
+      max_assistant_turns: 9
+    val_kwargs:
+      do_sample: false
+      n: 1
+
+algorithm:
+  filter_groups:
+    enable: false
+
+trainer:
+  n_gpus_per_node: 8
+  total_epochs: 100
+  total_training_steps: 10000
+  experiment_name: b200-tp4-cp2-two-hour
+  default_local_dir: /opt/dlami/nvme/nl2sql/tp4-cp2-two-hour
+  logger: [console, file]
+  val_before_train: true
+  save_freq: 1
+  test_freq: 1
+  max_actor_ckpt_to_keep: 2
+  nl2sql_rolling_checkpoints: true
+  nl2sql_training_seconds: 7200
+
+ray_kwargs:
+  ray_init:
+    runtime_env:
+      env_vars:
+        VERL_FILE_LOGGER_PATH: ${oc.env:VERL_FILE_LOGGER_PATH,outputs/b200_two_hour/metrics.jsonl}

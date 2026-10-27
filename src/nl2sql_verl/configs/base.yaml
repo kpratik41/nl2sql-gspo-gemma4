@@ -67,6 +67,8 @@ algorithm:
   filter_groups:
     enable: true
     metric: result
+    # Historical setting: the pinned V1 replay buffer ignores this total limit.
+    # Disable filtering for bounded smoke runs and enforce a wall-clock deadline.
     max_num_gen_batches: 4
   rollout_correction:
     bypass_mode: false

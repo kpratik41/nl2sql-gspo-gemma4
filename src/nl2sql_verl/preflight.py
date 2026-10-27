@@ -26,8 +26,16 @@ def validate(config, inputs=True):
     world = config.trainer.nnodes*config.trainer.n_gpus_per_node
     if world % (actor.engine.tp_size*actor.engine.cp_size):
         raise ValueError('GPU count must be divisible by TP × CP')
-    if actor.ppo_micro_batch_size_per_gpu != 1 or actor.use_dynamic_bsz:
-        raise ValueError('Use one example per microbatch and disable packing/dynamic batching')
+    if actor.use_dynamic_bsz:
+        raise ValueError('This recipe uses fixed microbatch counts; dynamic batching is not validated')
+    if actor.engine.cp_size > 1 and actor.ppo_micro_batch_size_per_gpu != 1:
+        raise ValueError('Multiple-example microbatches require CP1')
+    if actor.engine.sequence_bucket_size < 1:
+        raise ValueError('sequence_bucket_size must be positive')
+    if actor.engine.fp32_matmul_precision not in {'highest', 'high', 'medium'}:
+        raise ValueError('Invalid FP32 matmul precision')
+    if actor.engine.tp_reduce_dtype not in {None, 'fp32', 'fp64'}:
+        raise ValueError('tp_reduce_dtype must be null, fp32, or fp64')
     if actor.use_kl_loss or config.algorithm.use_kl_in_reward:
         raise ValueError('This recipe uses consensus beta=0; a reference CP engine must be configured before enabling KL')
     if rollout.max_model_len < config.data.max_prompt_length+config.data.max_response_length:
@@ -51,16 +59,19 @@ def validate(config, inputs=True):
                         count += 1
                 if count == 0:
                     raise ValueError(f'{file}: empty parquet')
+                expected = config.data.get('expected_train_rows' if split == 'train_files' else 'expected_val_rows')
+                if expected is not None and count != expected:
+                    raise ValueError(f'{file}: expected {expected} rows, found {count}')
     return {'status':'pass','config_only':not inputs,'tp':actor.engine.tp_size,'cp':actor.engine.cp_size,
             'data_parallel_size':world//(actor.engine.tp_size*actor.engine.cp_size),
             'policy_loss':actor.policy_loss.loss_mode,'loss_aggregation':actor.loss_agg_mode,
-            'compute_dtype':'bfloat16','master_weights_and_optimizer':'CPU FP32',
+            'compute_dtype':actor.engine.model_dtype,'tp_activation_reduction_dtype':actor.engine.tp_reduce_dtype or actor.engine.model_dtype,'master_weights_and_optimizer':('CPU FP32' if actor.engine.cpu_master_weights else 'GPU FP32'),
             'model':config.actor_rollout_ref.model.path}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', choices=['nl2sql','smoke','gspo'], default='smoke')
+    parser.add_argument('--config', choices=['nl2sql','smoke','gspo','b200','cp1'], default='smoke')
     parser.add_argument('--config-only', action='store_true')
     parser.add_argument('--dump', action='store_true')
     args, overrides = parser.parse_known_args()

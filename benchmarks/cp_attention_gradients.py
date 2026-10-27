@@ -1,8 +1,9 @@
-"""Two-rank Flex ring attention output/gradient checks, not model training.
+"""Two-rank Flex/FFPA ring attention output/gradient checks, not model training.
 
 Unpacked/unpadded Gemma-shaped full and sliding QKV; independent FP32 SDPA
 math reference over the full sequence, compared to each local output/gradient.
 """
+import argparse
 import json
 import os
 from datetime import timedelta
@@ -16,15 +17,26 @@ from nemo_automodel.components.models.gemma4_moe import cp_attention as cpa
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--backend', choices=['flex', 'ffpa'], default='flex')
+    parser.add_argument('--full-length', type=int, default=128)
+    parser.add_argument('--output', default='benchmark_results/cp_forward')
+    args = parser.parse_args()
+    if args.full_length <= 0 or args.full_length % 2:
+        parser.error('--full-length must be positive and divisible by two')
     rank = int(os.environ['LOCAL_RANK'])
     torch.cuda.set_device(rank)
     torch.set_num_threads(4)
     torch.set_float32_matmul_precision('highest')
     dist.init_process_group('nccl', timeout=timedelta(minutes=15))
     assert dist.get_world_size() == 2
-    root = Path('benchmark_results/cp_forward')
+    root = Path(args.output)
+    root.mkdir(parents=True, exist_ok=True)
     rows = []
-    for name, length, dim, kvheads, window in [('global', 128, 512, 4, None), ('sliding', 1280, 256, 16, 1024)]:
+    cases = [('global', args.full_length, 512, 4, None)]
+    if args.backend == 'flex':
+        cases.append(('sliding', 1280, 256, 16, 1024))
+    for name, length, dim, kvheads, window in cases:
         torch.manual_seed(42)
         q, k, v = [torch.randn(1, h, length, dim, device='cuda', dtype=torch.bfloat16) for h in (32, kvheads, kvheads)]
         q, k = q * 0.1, k * 0.1
@@ -50,7 +62,12 @@ def main():
             kwargs={}, metadata={'_packed_seq_ids': torch.ones(1, length//2, device='cuda', dtype=torch.long)},
             metadata_seq_dims={'_packed_seq_ids': 1})
         print(f'[rank {rank}] {name}: ring forward/backward', flush=True)
-        actual = cpa._Gemma4FlexRingAttention.apply(*local, ctx)
+        if args.backend == 'ffpa':
+            module._gemma4_cp_use_ffpa = True
+            assert cpa._ring_use_ffpa_varlen(module, ctx), 'FFPA ring unavailable; refusing silent fallback'
+            actual = cpa._Gemma4FFPAVarlenRingAttention.apply(*local, ctx)
+        else:
+            actual = cpa._Gemma4FlexRingAttention.apply(*local, ctx)
         actual.backward(upstream_grad[:, :, start:end].contiguous())
         metrics = {}
         for stage, got, expected in [('output', actual, reference[:, :, start:end])] + [
@@ -61,11 +78,12 @@ def main():
             metrics[stage] = {'max_abs': delta.abs().max().item(),
                               'relative_l2': (delta.norm()/expected.norm().clamp_min(1e-12)).item(),
                               'pass': ok}
-        row = {'layer': name, 'rank': rank, 'tokens': length, 'head_dim': dim,
+        row = {'backend': args.backend, 'layer': name, 'rank': rank, 'tokens': length, 'head_dim': dim,
                'query_heads': 32, 'kv_heads': kvheads, 'window': window,
                'reference': 'full-sequence FP32 SDPA math with BF16 QKV values',
                'atol': .03, 'rtol': .03, 'metrics': metrics}
-        row['tile_policy'] = '32x32 forward, 16x16 backward, one stage, four warps, forced Flex'
+        row['tile_policy'] = ('32x32 forward, 16x16 backward, one stage, four warps, forced Flex'
+                              if args.backend == 'flex' else 'FFPA full causal D512 ring; unpacked/unpadded')
         rows.append(row)
         print(json.dumps(row), flush=True)
         (root/f'attention_gradients_rank{rank}.json').write_text(json.dumps(rows, indent=2)+'\n')

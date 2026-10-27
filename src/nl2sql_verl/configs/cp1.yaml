@@ -1,0 +1,80 @@
+defaults:
+  - base
+  - _self_
+
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+
+data:
+  train_batch_size: 32
+  gen_batch_size: 1
+  max_prompt_length: 11264
+  max_response_length: 2048
+  filter_overlong_prompts: false
+  expected_train_rows: 6601
+  expected_val_rows: 640
+
+actor_rollout_ref:
+  model:
+    external_lib: src.nl2sql_verl.bounded_runtime
+  actor:
+    ppo_mini_batch_size: 32
+    ppo_micro_batch_size_per_gpu: 2
+    ppo_epochs: 1
+    ppo_max_token_len_per_gpu: 26624
+    engine:
+      tp_size: 2
+      cp_size: 1
+      model_dtype: bf16
+      fp32_matmul_precision: highest
+      cpu_master_weights: false
+      param_offload: false
+      optimizer_offload: false
+      defer_fsdp_grad_sync: true
+      sequence_bucket_size: 256
+      initial_model_checkpoint: ${oc.env:INIT_MODEL_CHECKPOINT,null}
+      compile_recompile_limit: 2048
+      compile_accumulated_recompile_limit: 8192
+  rollout:
+    tensor_model_parallel_size: 4
+    n: 16
+    max_model_len: 13312
+    max_num_batched_tokens: 16384
+    max_num_seqs: 32
+    gpu_memory_utilization: 0.35
+    log_prob_micro_batch_size_per_gpu: 2
+    log_prob_max_token_len_per_gpu: 26624
+    agent:
+      num_workers: 16
+    val_kwargs:
+      do_sample: false
+      n: 1
+
+algorithm:
+  adv_estimator: nl2sql_batch_grpo
+  filter_groups:
+    enable: true
+    metric: result
+    max_num_gen_batches: 0
+    max_inflight_gen_batches: 2
+
+trainer:
+  n_gpus_per_node: 8
+  total_epochs: 100
+  total_training_steps: 100
+  experiment_name: bird-grpo-actor-tp2-dp4-rollout-tp4-cp1
+  default_local_dir: /opt/dlami/nvme/nl2sql/cp1-grpo
+  logger: [console, file]
+  val_before_train: true
+  save_freq: 5
+  test_freq: 10
+  max_actor_ckpt_to_keep: 2
+  nl2sql_rolling_checkpoints: true
+  nl2sql_training_seconds: 0
+
+ray_kwargs:
+  ray_init:
+    runtime_env:
+      env_vars:
+        VERL_FILE_LOGGER_PATH: ${oc.env:VERL_FILE_LOGGER_PATH,outputs/cp1_training/metrics.jsonl}

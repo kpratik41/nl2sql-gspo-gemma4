@@ -5,11 +5,12 @@ This ports the task behavior from `origin/consensus` commit
 NeMo AutoModel Gemma ring-context-parallel engine. Existing parquet data and
 SQLite databases are inputs. No question/schema/teacher-data generation runs.
 
-The implementation is experimental. CPU task/config tests and distributed
-synthetic GSPO checks pass. A tiny two-layer Gemma executes TP2/CP1 and TP2/CP2
-training, optimizer updates, checkpoint restore and weight export. **A complete
-31B vLLM rollout → tool execution → policy update → weight-sync cycle has not been
-run.** Full-model CP numerical parity remains an open validation item.
+The implementation is experimental. The BF16 TP2/DP4/CP1 actor has passed full
+31B microbatch gradient checks, a 13,312-token optimizer update, and a complete
+vLLM rollout → SQL tools/rewards → GRPO/DAPO update → full checkpoint → 640-row
+evaluation cycle. See `configs/cp1.yaml` and the CP1 section below. **CP1 is a
+validated control, not completion of the CP2 objective.** Full-model BF16 CP2
+gradient correctness and training-memory scaling still require validation.
 
 ## What the consensus recipe does
 
@@ -288,12 +289,25 @@ RECIPE_CONFIG=gspo MODEL_PATH=/path/to/model bash src/nl2sql_verl/launch.sh
 
 The source pins are AutoModel `65866fbce209938cd153f2bc26f01fa0d34cc61e` and
 verl `d430157d15516d89e0cc853fd10fcd21d9234c44`; the rollout runtime proposal
-uses vLLM 0.19.1 and PyTorch 2.10/cu130. The inspected verl package metadata caps
+uses vLLM 0.19.1+cu130 and PyTorch 2.10/cu130. The CUDA-specific vLLM wheel
+is required: the plain PyPI wheel links CUDA 12 and fails to import in this
+environment. Setup now checks the native extensions as well as package metadata.
+The launcher prioritizes the environment's CUDA libraries to avoid mixing the
+B200 host's CUDA 13.2 cuBLASLt with the wheel's CUDA 13.0 cuBLAS.
+The recipe entrypoint `train.py` resolves Ray runtime environment interpolations
+before delegating to verl; the pinned upstream launcher otherwise passes literal
+`${oc.env:...}` strings to reward/tool workers.
+The inspected verl package metadata caps
 Transformers below 5.13, whereas the tested AutoModel revision requires 5.18.
 The script intentionally loads the pinned verl source through a `.pth` file,
 using the local engine adapter, instead of installing a wheel that downgrades
 Transformers. **This is not an upstream-supported combined dependency matrix.**
-The full Python 3.12/vLLM runtime installation has not been exercised here.
+The full Python 3.12 runtime has now been installed and checked on B200.
+`vllm_compat.py` registers a recipe-local serving adapter: Transformers 5.18's
+per-layer Gemma4 config is checked for representability before restoring the
+legacy local/global head fields used by vLLM 0.19.1. This preserves the 31B
+model's 256/512 head dimensions and 16/4 KV-head counts; arbitrary per-layer
+heterogeneity is rejected. The training model config is not flattened.
 `pip check` checks installed package metadata but cannot certify this source
 compatibility exception or rollout correctness.
 
@@ -318,6 +332,10 @@ launcher keeps trainer and rollout length budgets aligned. Our measured
 Start with the smoke profile. Full 31B CP1/CP2 probability sensitivity from the
 benchmark investigation remains unresolved; the recipe carries the mitigation
 but does not mark that numerical gate as passed.
+The prepared B200 pilot's real BIRD tool prompts are 4,525–5,124 tokens, so
+neither default prompt budget fits them. Use `MAX_PROMPT_LENGTH=8192` for that
+pilot. `prepare_data.py` explicitly requests token IDs from Transformers;
+counting the default `BatchEncoding` would incorrectly report two tokens.
 
 Resume with `trainer.resume_mode=resume_path
 trainer.resume_from_path=/path/to/global_step_N` as launcher overrides.
@@ -333,7 +351,7 @@ for the model/tokenizer while loading sharded training state through resume.
 | Group-centered rewards scaled by batch-wide std | Same formula and `1e-4` denominator epsilon, registered in verl |
 | Separate vLLM server on spare GPUs | Colocated verl vLLM replicas, alternating phases |
 | ZeRO-3, usually six trainer + two serving GPUs | TP2/CP2/FSDP2 on four GPUs, CPU master/optimizer |
-| Oversample-and-replace, K=12; filter by result_reward; zero-mask leftover groups | Native bounded result-reward group filtering, up to four generation batches |
+| Oversample-and-replace, K=12 in the generic launcher; filter by result_reward; zero-mask leftover groups | Native V1 result-reward filtering; the pinned V1 replay buffer ignores `max_num_gen_batches`, so it does not provide a total retry bound |
 | Optional beta schedule | beta=0 only in this initial recipe |
 | Optional truncation masking, default off | Existing verl response mask; no extra truncation penalty/masking hidden in the adapter |
 | Model-only rotating checkpoints plus latest full checkpoint | Full sharded training checkpoints with RNG; no automatic model-only export |
@@ -347,6 +365,27 @@ reimplementation of TRL's tail queue, minimum-std threshold or padding behavior.
 TRL also enables its own vLLM sampling correction by default; this initial
 recipe retains mismatch diagnostics but leaves verl's IS/rejection correction
 disabled rather than assuming the similarly named controls have identical math.
+
+The latest production launcher on `origin/consensus` (`588e137`),
+`scripts/teacher/run_rl_sft_ga16_ckpt25.sh`, adds requirements beyond that
+generic configuration:
+
+| Production consensus setting | Current verl gap |
+|---|---|
+| SFT ga16 checkpoint-25 warm start | Uses the original instruction model; the SFT checkpoint has not been restored |
+| Type-corrected 6,574-example corpus, 27 defective gold queries removed | Diagnostic subset comes from restored train-6601; full typefix corpus not recreated |
+| `old-dev-schema-bare-tool` evaluation | Pilot uses eight questions from the corrected dev annotation version; scores are not comparable |
+| 24 selected prompt groups/update, 16 samples/group, K=14 candidates | Base uses four groups; native filtering has different queue/selection behavior; smoke filtering is off |
+| Learning rate `3e-6`, beta `0:0.005,20:0.001,35:0` | Base lr `1e-6`, no reference model or beta schedule |
+| Batch reward std computed over all candidates before selection | Current estimator sees selected samples after filtering |
+| Prompt cap 15,500; completion cap 8,000; eight tool rounds | Base caps 2,048/4,096; pilot overrides 8,192/2,048 and five assistant turns |
+| Save every five steps, rolling full checkpoint on NVMe | Full-runtime save/resume and retention have not been validated on the 31B pilot |
+
+The existing seven terminal rewards already cover format, SQL execution,
+result matching, table linking, column linking, nonnull results and length
+penalty, weighted `0.2,0.5,2,0.5,0.5,0.1,0.1`. Tool observations are masked
+from the policy loss and excluded from reward text. The pilot checks real
+SQLite rewards; adding a second reward implementation is unnecessary.
 
 ## Validation and boundaries
 
@@ -366,7 +405,7 @@ The tiny-engine test creates a random tiny HF checkpoint at
 `outputs/verl_recipe_checks/tiny_gemma` from its tracked configuration if absent;
 this is not the 31B model and requires no model download. Logs and
 machine-readable test results are under `outputs/verl_recipe_checks/`.
-The final CPU suite has 13 passing tests; `validation.json` in that directory
+The original CPU suite had 13 passing tests; `validation.json` in that directory
 records package/source versions and the distributed test results.
 Compact validation reports and the unit-test summary are also versioned under
 `benchmark_results/verl_recipe/`; local checkpoints and verbose logs stay in `outputs/`.
@@ -374,27 +413,243 @@ Distributed GSPO gradient error against a full-vocabulary/full-sequence
 reference was **2.9802322387695312e-8**, with identical scalar losses. Tiny model
 tests establish execution/save/restore/export behavior, not CP numerical gradient
 parity, long-context training capacity, rollout weight-sync completion or NL2SQL
-accuracy. The next integration test is the complete one-step 31B smoke cycle
-once the real parquet/databases and a resolved rollout runtime are available.
+accuracy. A real 31B cycle now reaches generation, reward scoring, old logprobs,
+backward/optimizer execution and rollout weight synchronization. The first
+cycle was **not a learning success**: all eight outputs were corrupted and
+truncated, producing identical rewards and zero gradients. A standalone
+reproducer isolated corruption to vLLM 0.19.1 Gemma4 level-2 sleep/refit.
+All 1,189 actor-exported tensors matched the original HF weights exactly;
+direct refit without sleep worked. Level-1 sleep/refit reproduced the original
+answer and sampled-token logprobs exactly, so the recipe-local serving adapter
+now requests level 1. This retains approximately 59 GiB of CPU backing per
+TP2 rollout replica and adds sleep-copy time. The lost internal state is the fixed `v_norm.weight` tensor in all 60
+attention layers: vLLM RMSNorm with `has_weight=False` stores it as an ordinary
+tensor, outside both parameters and registered buffers. Registering these
+constants as nonpersistent buffers also passes the isolated level-2 refit
+reproducer, but the full pilot uses the validated level-1 workaround.
 
-## Remaining integration work
+B200 diagnostics are stored separately under `outputs/b200_mini/`. The current
+CPU suite has 22 passing tests. Eight-GPU NCCL, synthetic distributed loss,
+tiny TP2/CP2 train/update/checkpoint restore/export, and Flex ring attention
+output/gradient checks pass. Full 31B TP2 CP1/CP2 probability screening still
+fails at 128 tokens (maximum target-logprob error 0.356054, threshold 0.1),
+while the 1,024-token case passes (0.069377). Finite standalone FFPA gradients
+do not establish correctness: FFPA ring dQ/dK checks fail at 128 tokens, and
+dK fails at 1,024, against the existing FP32 reference tolerances. Reproduce
+without changing the training backend:
 
-1. Build real schema/tool prompt parquet files and verify database coverage and
-   the intended dev annotation version. Downloading databases alone does not
-   create the prepared parquet inputs.
-2. Build and resolve the Python 3.12/vLLM rollout runtime. The existing
-   `.venv-verl-check` is a source-check environment, not a validated full rollout
-   installation; the Transformers compatibility exception above remains open.
-3. Run the complete 31B one-step cycle: generation, tool execution, rewards,
-   old-policy logprobs, backward/update, weight synchronization, and a second
-   rollout. Verify checkpoint resume in that complete runtime.
-4. Compare full-model TP2/CP1 versus TP2/CP2 response logprobs and gradients on
-   identical short examples. BF16 mitigations are included, but tiny-model
-   execution and synthetic gradient tests do not resolve full-model CP parity
-   or serving/training probability mismatch.
-5. Measure training and rollout capacity, then increase context gradually and
-   run dev execution-accuracy evaluation. The 199,680-token result is a
-   forward-only measurement, not an RL context-length guarantee.
+```bash
+env -u LD_LIBRARY_PATH CUDA_VISIBLE_DEVICES=0,1 .venv-verl/bin/torchrun \
+  --standalone --nproc-per-node=2 benchmarks/cp_attention_gradients.py \
+  --backend ffpa --full-length 128 --output outputs/ffpa_ring_check
+```
+
+The pilot also exposed a prompt/parser mismatch: consensus asks for bare
+`call:...` lines, while the upstream Gemma parser required `<|tool_call>`.
+The recipe parser now accepts either opener, requires a complete native closing
+token and a line boundary for bare calls, and preserves the sampled token IDs.
+Regression tests cover the observed SQL/quoted-brace form and reject incomplete
+calls and inline mentions.
+
+The actual recipe explicitly selects **Flex** for both full and sliding ring
+attention. FFPA remains an optional backend requiring further numerical work.
+
+Follow-up on B200 identified a specific FFPA 0.2.4 SM100 ring-backward defect:
+the D512 dQ/dK kernels explicitly zero the score gradient for a causal row
+with one **local** key. That shortcut assumes local softmax normalization.
+The first query on CP rank 1 also sees rank 0's keys, so it is not globally
+a one-key row. NeMo supplies globally merged output/LSE to each chunk's
+backward; the shortcut incorrectly removes a real boundary contribution.
+The installed `_dq_d512_sm100.py` around line 2381 and
+`_dk_d512_sm100.py` around line 2696 contain the assumption; upstream main
+also contained it when inspected on 2026-10-27.
+
+`outputs/ffpa_backward_investigation/kernel_probe.py` separates standalone
+attention from chunk backward against FP32 math. Native standalone backward
+passes at 128/256/512/1024/2048 tokens for BF16 and FP16. Supplying oracle
+output/LSE does not repair chunk backward. Restoring the omitted boundary
+term passes all those cases. The diagnostic-only `ring_boundary_probe.py`
+also passes the original two-GPU CP2 checks at 128 and 1024 tokens on both
+ranks. At 128 tokens, rank 1 maximum dQ/dK errors fall from 0.2600/0.3771
+to 0.0070/0.0092 without relaxing tolerances. This correction covers only
+the tested dense, unpacked geometry; it is not installed in the recipe and
+does not validate packed/padded FFPA or full-model gradients. A durable
+kernel/API fix must distinguish global normalization from local one-key
+softmax, preserve zero-key masking, and cover varlen/LSE-gradient cases.
+
+FFPA does support B200 forward and backward; this is a specific integration
+contract failure. The full-model discrepancy below was measured with Flex,
+so it is a separate issue. Sources:
+[FFPA CuTeDSL backend](https://ffpa-attn.readthedocs.io/en/latest/user_guide/backends/cutedsl/),
+[NeMo Gemma FFPA CP integration](https://github.com/NVIDIA-NeMo/Automodel/discussions/2928).
+
+Full 31B backward probes now compare TP2/CP1 and TP2/CP2 on the same SQL
+fixture, before clipping or optimizer updates. All selected gradients are
+finite, but 13/16 sampled parameter tensors fail the declared 3% relative-L2 /
+0.999 cosine gate at 128 tokens (worst relative L2 22.9%). At 1,024 tokens,
+15/16 fail; early/middle-layer relative errors reach 287%, while the loss
+difference is only 4.9e-5. The latter fixture repeats text and has very low
+loss (~8e-4), making relative gradient errors particularly sensitive. These
+are selected-gradient diagnostics, not an all-parameter comparison or a proven
+root-cause diagnosis. Forward closeness and finite gradients alone are not
+sufficient acceptance criteria. See `outputs/b200_mini/gradient_comparison*.json`.
+
+A subsequent 128-token full-model control promoted only Flex attention to
+FP32 while retaining BF16 model compute. CP1/CP2 losses became
+1.241046667/1.241170526 (absolute difference 0.000123858 versus the earlier
+0.006451964), but 0/16 sampled parameter gradients passed the unchanged
+relative-L2/cosine gates; worst relative L2 was 33.16%. This does not establish
+which full-model path is correct, and promoting attention alone does not
+resolve gradient parity. Results and diagnostic wrapper are under
+`outputs/ffpa_backward_investigation/fp32_attention_*`.
+
+The next control promoted **all actor compute** to FP32. TP2/CP1 versus
+TP2/CP2 passed all 16 selected-gradient gates at 128 tokens (worst relative
+L2 0.00876%; loss difference 1.31e-6). The requested TP4/CP2 layout with
+GPU-resident FP32 master weights/optimizer also passed against the TP2/CP1
+FP32 control: worst sampled relative L2 0.0171% at 128 tokens and 0.8736%
+at 1,025 tokens, including padding and the sliding-window boundary. This
+supports the FP32 path; it does not certify BF16 training or every parameter.
+Raw results are in `outputs/b200_two_hour/fp32*gradient_comparison*.json`. The FP32
+engine selects standard cuBLAS; forcing the experimental cuBLASLt backend
+failed at the first RoPE product in a colocated training worker. Inspection
+found mixed wheel CUDA 13.0 cuBLAS and system CUDA 13.2 cuBLASLt: the host
+`.bashrc` prepends system CUDA during Ray worker startup. `worker_python.sh`
+restores wheel library precedence after that shell and before Python starts;
+a real Ray actor test verified matching loaded libraries and threaded matmul.
+Full-model gradient probes also cover the standard cuBLAS path with the launcher CUDA
+library environment.
+
+The opt-in `b200` recipe uses all eight GPUs as TP4/CP2 (logical DP1), full
+FP32 actor compute and GPU-resident FP32 state, Flex full/sliding attention,
+and BF16 vLLM TP4 rollout replicas. `model_dtype` now controls compute as
+well as the FSDP precision policy; the older recipes retain BF16 compute and
+CPU master state. A real eight-rank tiny-model test passed optimizer update,
+exact model/optimizer restore, and weight export with the GPU-state policy.
+
+For this bounded run, `bounded_runtime` starts a 7,200-second training clock
+after initial validation and stops after completing the active update,
+checkpoint, weight sync, validation and metric logging. The external job
+watchdog allows three hours including initialization/cleanup. A full sharded
+checkpoint is written every step to `/opt/dlami/nvme/nl2sql/`; it includes model,
+optimizer/scheduler, per-rank RNG and trainer data-loader state. Only after the
+whole save succeeds does the controller publish a completion marker and prune
+older marked checkpoints, retaining the newest two. The GPU-resident state is
+not itself a durable checkpoint. Local NVMe survives process restarts but is
+ephemeral instance storage. Resume repairs the latest pointer to the newest
+completed checkpoint; unmarked directories are never pruned automatically.
+
+The timed run uses 6,218 restored BIRD training examples after the 8,192-token
+prompt filter (383 overlength rows removed), 2,048 response tokens, four prompts
+and four samples per update, lr 1e-6, no KL, and disabled group filtering to
+keep runtime bounded. All 6,601 original training gold queries passed a SQLite
+compile-only check; this is not the consensus branch's unavailable 6,574-row
+typefix corpus or a result-correctness audit. Sixteen seeded eligible dev rows
+from disjoint databases are evaluated before training and after every step.
+The file logger records each reward component, total reward, execution-result
+accuracy, gradient norm, actor/rollout logprob discrepancy and timings. Run
+artifacts, configuration, data provenance, live plots and final completion
+evidence are under `outputs/b200_two_hour/`.
+
+The requested relaunch expands evaluation to 32 fixed eligible dev examples
+across 10 databases, containing the original 16. It resumes completed checkpoint
+1 and evaluates the expanded set before the next update and after every step.
+Its metrics live separately in `outputs/b200_two_hour_eval32/` so the 16- and
+32-example evaluation curves are not combined. The training clock preserves
+completed runtime across checkpoint resumes and excludes restart downtime.
+
+Measured B200 Flex global-attention forward/backward memory is approximately
+linear over the tested range, without replacing dense causal attention.
+For real CP2 with TP2's per-rank head geometry (16 query heads, 2 KV heads,
+D512, BF16), warm peak allocated GPU memory including ring buffers, gradients,
+inputs, output and compiled block masks was:
+
+| Total sequence tokens | Tokens per CP rank | Peak MiB per GPU |
+|---:|---:|---:|
+| 4,096 | 2,048 | 465.18 |
+| 8,192 | 4,096 | 930.60 |
+| 16,384 | 8,192 | 1,862.20 |
+| 32,768 | 16,384 | 3,728.41 |
+
+Both ranks produced finite gradients. These are attention-only memory
+measurements, not full-model memory or numerical parity at these lengths.
+Compilation is outside the warm measurement; cold peaks are saved separately.
+Dense global compute remains quadratic. Compact block-mask metadata also has
+a quadratic component, so the measurements support practical near-linear
+memory over this range, not a strict asymptotic claim for the entire wrapper.
+The CP2 Flex backward currently collects KV chunks and builds their autograd
+graphs; its attention working-memory constant is larger than the single-GPU
+kernel's. CP does not guarantee a twofold reduction in that specific workspace.
+See `outputs/ffpa_backward_investigation/flex_cp_memory_rank*.json` and the
+matching probe script. The separate single-GPU D512 measurement was
+144.32/288.75/578.00/1,158.01 MiB at 2k/4k/8k/16k tokens.
+
+The repaired B200 pilot completed two actual optimizer updates and final dev
+evaluation in **1,666.5 seconds (27.8 minutes)**, including initialization and
+cleanup. It used the original 31B instruction model, TP2/CP2 on four GPUs,
+Flex attention, lr `1e-6`, two prompt groups per step and four samples per group.
+Four distinct train prompts produced 16 training trajectories. Filtering was
+disabled; prompt/response caps were 8,192/2,048; no full checkpoint was saved.
+
+| Metric | Step 1 | Step 2 |
+|---|---:|---:|
+| Gradient norm before clipping | 6.8970 | 36.4747 |
+| Mean reward | 3.3250 | 2.3304 |
+| Mean actor/rollout absolute token-logprob difference | 0.003709 | 0.003457 |
+| Maximum actor/rollout absolute token-logprob difference | 0.394307 | 0.221462 |
+| Training-step wall time, seconds | 599.7 | 628.5 |
+
+On the **same eight held-out diagnostic dev prompts**, greedy result matching
+went from 2/8 before training to 7/8 afterward; valid final SQL went from 3/8
+to 8/8. This small, selected subset and two updates do not establish a reliable
+accuracy improvement. The observed change includes much better completion of
+tool/final-answer formatting. Numerical CP parity remains unresolved. The
+controller exited with code 0; the watchdog subsequently terminated remaining
+Ray/vLLM descendants (late EngineCore shutdown messages belong to that cleanup).
+Metrics, paired dev outputs, exact commands and failure diagnostics are in
+`outputs/b200_mini/assessment.json`, `pilot31b_repaired_metrics.json`,
+`paired_dev.json`, and `pilot31b_repaired.status.json`.
+
+## Next: exact attention, near-linear memory, and CP2
+
+The target remains exact Gemma global/sliding attention with near-linear
+attention working-memory growth and usable CP2. Dense attention compute remains
+quadratic. FSDP shards model state; CP shards sequence/attention work; neither
+alone prevents materializing a quadratic attention-score matrix.
+
+1. Establish the simplest supported full-model BF16 control: native verl FSDP2,
+   TP1/CP1, microbatch one, short real BIRD sequences and a plain token loss.
+   Compare against the independent HF SDPA-math reference before adding RL.
+   Native Gemma support must be verified; do not assume a backend/config switch
+   preserves the heterogeneous D256/D512 heads or sliding masks.
+   Native verl FSDP sequence parallelism uses Ulysses; this is distinct from
+   the current adapter's ring CP. Verify the pinned implementation's model and
+   attention support before choosing the sequence-sharding path. See the
+   [upstream FSDP extension checklist](https://verl.readthedocs.io/en/latest/advance/fsdp_extension.html).
+2. Use exact memory-efficient attention in that CP1 control, then change only
+   CP to two. Proposed eight-GPU topology: TP1/CP2/DP4, with FSDP sharding model
+   state across DP×CP. Compare identical global examples, loss normalization,
+   log-probabilities and sampled gradients against CP1. Cover causal boundaries,
+   sliding windows, padding and unequal sequence lengths. The current adapter
+   still restricts CP>1 to one sequence per microbatch; TP1 support is not yet
+   validated. Use the custom Gemma CP adapter only if the native path lacks the
+   required model/attention support, introducing it as a separate tested change.
+3. Measure warm forward **and backward** peak allocated/reserved memory at
+   4k/8k/16k/32k global tokens, fixed batch size and precision, both CP1 and CP2.
+   Separate model/optimizer baseline memory from attention working memory and
+   inspect the executed backend to exclude a dense-score fallback. Earlier
+   attention-only and forward-only capacity results do not certify full training.
+4. Add checkpointing, accumulation and optimizer state one at a time, followed
+   by rewards/tools, GRPO, native DAPO filtering, rollout weight sync and a full
+   checkpoint/evaluation cycle. Rollout TP remains independent of actor TP/CP.
+
+Keep FFPA disabled until its CP backward contract passes. The CP1 recipe remains
+the known working control; it is not evidence that BF16 CP2 is fixed. The runtime
+uses a pinned local Transformers/vLLM bridge rather than an upstream-supported
+version combination. Full optimizer resume from a 31B checkpoint, durable export
+off instance-local NVMe, and serving/training probability mismatch remain checks
+to complete beyond the existing small-model optimizer round trip and full-model
+model-only checkpoint loads.
 
 The implementation was introduced in commit `e95b4cf`; subsequent history moves
 it from `recipes/` to `src/` and updates import/config/launch references. Git
@@ -405,3 +660,101 @@ Primary upstream references: [verl tool/agent extension interfaces](https://verl
 [pinned verl requirements](https://github.com/verl-project/verl/blob/d430157d15516d89e0cc853fd10fcd21d9234c44/requirements.txt),
 [Gemma AutoModel TP plan](https://github.com/NVIDIA-NeMo/Automodel/blob/65866fbce209938cd153f2bc26f01fa0d34cc61e/nemo_automodel/components/models/gemma4_moe/parallelization.py),
 and [vLLM 0.19.1 model registry](https://github.com/vllm-project/vllm/blob/v0.19.1/vllm/model_executor/models/registry.py).
+
+
+## CP1 production recipe
+
+`configs/cp1.yaml` implements the agreed 6,601-train / 640-dev recipe. The
+640 fixed dev rows include the previous 32 and cover all eleven dev databases.
+The 9,428-row raw training dataset is not used. All 6,601 filtered-corpus rows,
+including one duplicate prompt, are retained. Measured prompts range from 4,402
+to 10,786 tokens including the actual tool schema and chat template. The 11,264
+prompt allowance plus the unchanged 2,048-token response budget gives 13,312
+context tokens. Preparation fails rather than dropping a row above that allowance.
+
+The actor topology is TP2 / DP4 / CP1; serving remains TP4 / DP2. Thirty-two accepted prompt groups with sixteen
+trajectories each produce 512 training trajectories. The PPO mini-batch is 32
+prompt-equivalents, with one PPO epoch and one optimizer update per rollout
+batch. Each actor TP group processes two independent trajectories at a time and 128
+per update: 64 accumulation microbatches. Inputs are right-padded into 256-token
+buckets; padding is excluded from attention keys and the loss. Each row keeps
+its own labels, temperature, position IDs and jagged output offsets. Native
+FSDP optimizations defer gradient synchronization until the final microbatch.
+
+GRPO retains consensus's group centering and batch-wide reward standard
+deviation. Native V1 DAPO filtering uses `result`, individual prompt refills,
+and at most two train batches of prompts in flight. That concurrency setting
+is not a total retry budget. Evaluation is greedy with n=1. Full model,
+optimizer/scheduler, per-rank RNG and dataloader checkpoints are saved every
+five updates; the latest two completed saves are retained. The 640-row dev
+set is evaluated before training and every ten updates. Default run length
+is 100 optimizer updates, not the earlier two-hour pilot timer.
+
+The actor uses BF16 compute with FP32 master weights, Adam state and FSDP gradient
+reductions. Serving also uses BF16. TP4 actor compute failed BF16 microbatch
+gradient checks; removing DP alone did not fix it. TP2/DP4 passed the full-model
+BIRD comparison (worst sampled relative L2 0.267%, cosine > 0.999996) and a real
+Adam update with four sequences per DP replica up to 13,312 tokens. That test
+peaked at 117.3 GiB allocated and 164.7 GiB reserved per GPU. TP8 is unsupported
+by the pinned adapter because global-attention layers have only four KV heads.
+The full-model HF BF16/SDPA-math single-GPU control also passed (0.288%). These
+are sampled-gradient checks, not a proof for every parameter or input. End-to-end
+readiness is still governed by `outputs/cp1_recipe/readiness.json`.
+
+Prepare/verify data and inspect the validation report:
+
+```bash
+.venv-verl/bin/python -m src.nl2sql_verl.prepare_cp1_data
+python3 -m src.nl2sql_verl.manage_cp1 check
+```
+
+Start a new run from the base model after the readiness checks pass:
+
+```bash
+python3 -m src.nl2sql_verl.manage_cp1 start
+```
+
+To initialize from the pilot's last completed model instead, use
+`--initial-model /opt/dlami/nvme/nl2sql/b200-tp4-cp2-20261027T015717Z/global_step_6/actor/model`.
+This is model-only initialization with fresh optimizer and dataloader state:
+the new corpus and recipe differ from the pilot. Subsequent starts recover
+complete CP1 checkpoints from `/opt/dlami/nvme/nl2sql/cp1-grpo` automatically.
+
+The persistent user service is `nl2sql-grpo-cp1`. Logs, metrics, heartbeat,
+progress JSON, reward plot and final process status live in
+`outputs/cp1_training/`. Inspect with
+`python3 -m src.nl2sql_verl.manage_cp1 status`. Do not run a second GPU job
+concurrently; the manager checks for existing GPU processes before starting.
+
+Validation commands (the GPU commands each require all eight GPUs):
+
+```bash
+mkdir -p outputs/cp1_recipe
+# Generate the shared tiny fixture and check FP32 save/restore first:
+OMP_NUM_THREADS=2 src/nl2sql_verl/worker_python.sh -m torch.distributed.run --standalone --nproc_per_node=8 -m src.nl2sql_verl.tests.tiny_engine --tp 4 --cp 2 --dtype fp32 --gpu-state
+.venv-verl/bin/python -m pytest src/nl2sql_verl/tests -q > outputs/cp1_recipe/cpu_tests.log 2>&1
+CUDA_VISIBLE_DEVICES='' .venv-verl/bin/python -m pytest outputs/verl_runtime/verl/tests/trainer/ppo/v1/test_replay_buffer_on_cpu.py -q -k 'dapo or filter' > outputs/cp1_recipe/native_dapo_tests.log 2>&1
+OMP_NUM_THREADS=2 src/nl2sql_verl/worker_python.sh -m torch.distributed.run --standalone --nproc_per_node=8 -m src.nl2sql_verl.tests.cp1_microbatch --dtype bf16 --tp 2
+OMP_NUM_THREADS=2 src/nl2sql_verl/worker_python.sh -m torch.distributed.run --standalone --nproc_per_node=8 -m src.nl2sql_verl.tests.full_cp1_probe --dtype bf16 --tp 2 --parity-only --output-tag _tp2dp4_synthetic
+OMP_NUM_THREADS=2 src/nl2sql_verl/worker_python.sh -m torch.distributed.run --standalone --nproc_per_node=8 -m src.nl2sql_verl.tests.full_cp1_probe --dtype bf16 --tp 2 --bird --output-tag _bird_tp2dp4
+python3 -m src.nl2sql_verl.smoke_cp1
+# After nl2sql-cp1-smoke.service has finished successfully:
+python3 -m src.nl2sql_verl.validate_cp1
+```
+
+The smoke run uses the production dataset, 16 generations, two-trajectory
+microbatches, native result filtering, all 640 dev examples, and full checkpoint
+saving. Only its accepted training batch is reduced from 32 prompt groups to two.
+It is a validation job, not the 100-update production run.
+
+The completed base-model smoke run processed 32 accepted trajectories, recorded
+mean training reward 3.11745 and finite gradient norm 3.00863, saved a 346-GiB full
+training checkpoint, and scored 422/640 (65.9375%) on the fixed dev set. It exited
+successfully in 847.5 seconds. One update does not establish a learning trend.
+The small-model BF16 checkpoint round trip restored both model and Adam state
+exactly. CPU recipe tests: 31 passed; native verl DAPO tests: 12 passed.
+The full-model BIRD and synthetic microbatch checks had worst sampled relative
+gradient differences of 0.267% and 0.381%, respectively, below the existing 3%
+gate. A compact record is tracked in
+`benchmark_results/verl_cp1/validation_summary.json`; detailed local logs and
+checkpoints are not committed. The main 100-update run has not been started.
