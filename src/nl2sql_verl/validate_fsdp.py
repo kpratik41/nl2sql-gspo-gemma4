@@ -41,6 +41,7 @@ def main():
         numerical[name] = max(r['relative_l2'] for r in result['rows'])
     attention = {}
     capacity = {}
+    capacity_limits = {}
     for sp in (1, 2):
         rows = read(f'attention_memory_fp32_ieee_static_sp{sp}_rank0.json')
         assert [r['global_tokens'] for r in rows] == [4096, 8192, 16384, 32768]
@@ -49,11 +50,25 @@ def main():
         assert all(b/a < 2.3 for a, b in zip(peaks, peaks[1:])), peaks
         attention[f'cp{sp}'] = rows
         reports = [read(f'full_memory_static_fp32_sp{sp}_rank{rank}.json') for rank in range(8)]
+        completed_lengths=[r['length'] for r in reports[0]['reports']]
+        expected_lengths=[4096,8192,16384,32768]
+        oom_at=None
+        if sp==1 and completed_lengths==expected_lengths[:-1]:
+            # CP1 is a capacity control, not the deployment topology. Its
+            # measured 32K OOM is a boundary, never reported as a 32K pass.
+            for rank in range(8):
+                failure=read(f'full_memory_static_fp32_sp1_oom_rank{rank}.json')
+                assert failure['sp']==1 and failure['length']==32768
+                assert 'CUDA out of memory' in failure['error']
+            oom_at=32768
+        else:
+            assert completed_lengths==expected_lengths
+        capacity_limits[f'cp{sp}']=dict(max_successful_tokens=max(completed_lengths),oom_tokens=oom_at)
         for report in reports:
             assert report['sp'] == sp and report['fp32_residual'] and report['fp32_output']
             assert report['linear_arithmetic']=='ieee' and report['static_shapes']
             assert report['attention_fp32'] and report['attention_arithmetic']=='ieee'
-            assert [r['length'] for r in report['reports']] == [4096, 8192, 16384, 32768]
+            assert [r['length'] for r in report['reports']] == completed_lengths
             for item in report['reports']:
                 for trial in item['passes']:
                     norm = trial['grad_norm']
@@ -103,7 +118,7 @@ def main():
     result = dict(numerical_and_memory_ready=True, integration_ready=integration,
                   microbatch=micro, accumulation_rounds=512//4//micro,
                   numerical=numerical, attention_memory=attention,
-                  full_model_peak_allocated_gib=capacity, dataset_sha256=dataset_hashes,
+                  full_model_peak_allocated_gib=capacity, full_model_capacity_limits=capacity_limits, dataset_sha256=dataset_hashes,
                   source_sha256={str(p.relative_to(REPO)): hashlib.sha256(p.read_bytes()).hexdigest()
                                  for p in sorted(sources)})
     (ROOT / 'readiness.json').write_text(json.dumps(result, indent=2) + '\n')

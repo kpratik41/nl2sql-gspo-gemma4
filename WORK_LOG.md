@@ -626,3 +626,33 @@ Final static true-FP32 CP2 warm update maxima across ranks:
 The pilot supervisor now grants 60 seconds after its watchdog sends SIGTERM,
 then kills the owned process group if needed. This is separate from the normal
 cooperative stop after a completed update.
+
+### 09:01 — CP1 capacity boundary recorded; real RL integration launched
+
+- CP1 full-model numerical check passed. Two Adam updates each passed at 4K,
+  8K and 16K. At 32K all eight ranks OOMed requesting another 32 GiB with
+  about 18 GiB free (already about 150.35 GiB allocated by PyTorch).
+- Readiness records CP1's measured maximum successful length as 16K and its
+  failed 32K attempt separately; it does not report a 32K CP1 pass. CP2 passed
+  32K and is the deployment topology. No numerical thresholds were relaxed.
+- The fail-closed validator passed numerical, attention-memory, full-model
+  capacity, accumulated-update, full-state restore, CPU and data-hash checks.
+- Launched the native FSDP2/CP2 real integration service: 2 updates, 2 accepted
+  groups × 16 generations = 32 trajectories/update, native DAPO filtering,
+  SQL tools/rewards, checkpoint after each update, 640-row evaluation before
+  training and after update 2. Production remains 512 trajectories/update.
+
+### 09:03 — native DAPO dispatch semantics clarified during integration
+
+- The running V1 trainer explicitly overrides `data.gen_batch_size=2` to 1 for
+  exact DAPO refills. Set the checked-in value to 1 to express the actual behavior;
+  the running integration already uses 1, so no behavioral restart is needed.
+- Correction to earlier concurrency descriptions: `max_inflight_gen_batches`
+  multiplies **train_batch_size**, not gen_batch_size. With value 2 the
+  production pending/running cap is 64 prompt groups (32 × 2), versus 4 for
+  the two-group integration test. This includes queued requests; vLLM's
+  32-sequence limit per TP4 replica bounds active GPU sequences.
+- Each rejected result-constant group grants credit for two replacement prompts.
+  Dispatch respects the in-flight cap, then drains outstanding work and discards
+  surplus once enough accepted groups are available. There is no total retry
+  limit enforced by `max_num_gen_batches` in this pinned V1 implementation.

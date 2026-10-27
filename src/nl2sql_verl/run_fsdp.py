@@ -59,7 +59,10 @@ def main():
                     os.killpg(proc.pid,signal.SIGTERM)
                     proc.wait(timeout=60)
                 except subprocess.TimeoutExpired:
-                    os.killpg(proc.pid,signal.SIGKILL)
+                    try:
+                        os.killpg(proc.pid,signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
                 except ProcessLookupError:
                     pass
                 break

@@ -17,7 +17,8 @@ def test_fsdp_recipe_keeps_agreed_data_and_grpo_batch():
     assert cfg.data.expected_train_rows==6601 and cfg.data.expected_val_rows==640
     assert not cfg.data.filter_overlong_prompts
     assert cfg.data.train_batch_size*cfg.actor_rollout_ref.rollout.n==512
-    assert cfg.data.gen_batch_size==2
+    assert cfg.data.gen_batch_size==1
+    assert cfg.algorithm.filter_groups.max_inflight_gen_batches==2
     assert cfg.algorithm.adv_estimator=='nl2sql_batch_grpo'
     assert cfg.algorithm.filter_groups.enable and cfg.algorithm.filter_groups.metric=='result'
     assert cfg.trainer.save_freq==5 and cfg.trainer.test_freq==10

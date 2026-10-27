@@ -11,7 +11,8 @@ data:
   train_files: outputs/cp1_recipe/data/train.parquet
   val_files: outputs/cp1_recipe/data/validation.parquet
   train_batch_size: 32
-  gen_batch_size: 2
+  # Native V1 DAPO requires single-prompt refill dispatches.
+  gen_batch_size: 1
   max_prompt_length: 11264
   max_response_length: 2048
   filter_overlong_prompts: false

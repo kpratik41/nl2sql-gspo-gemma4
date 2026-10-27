@@ -1,5 +1,5 @@
 {
-  "status": "Static IEEE FP32 CP2 eight-GPU numerical/shape-history, accumulation, full31B restore and 4K\u201332K optimizer/capacity checks PASS; CP1 control running; real RL integration pending",
+  "status": "Pre-RL numerical/memory/restore/data/CPU gates pass; CP1 succeeds through 16K and OOMs at 32K, CP2 succeeds through 32K; real two-update/640-eval integration running",
   "gradient_scope": "20 selected parameter tensors, full 31B backward",
   "experiments": [
     {
@@ -1601,6 +1601,40 @@
       "worst_gradient_relative_l2": 4.132238610002093e-06,
       "minimum_gradient_cosine": 0.9999999999915106,
       "all_gates_pass": true
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": null,
+      "cp": 1,
+      "dp": 8,
+      "linear_arithmetic": "ieee",
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "attention_arithmetic": "ieee",
+      "static_shapes": true,
+      "canonical_layout": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.4964467883110046,
+      "seconds": 128.4393060769944,
+      "peak_allocated_gib": 64.34012413024902,
+      "lengths": [
+        5088,
+        5252
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 1.1920928955078125e-07,
+      "max_logprob_abs_difference": 9.5367431640625e-07,
+      "pass_gradient": true,
+      "artifact": "outputs/fsdp_cp_recipe/native_static_fp32_sp1_full.json",
+      "completed_utc": "2026-10-27T08:46:46.550970+00:00",
+      "worst_gradient_relative_l2": 1.2390064766817538e-05,
+      "minimum_gradient_cosine": 0.9999999999316549,
+      "all_gates_pass": true
     }
   ],
   "attention_memory": {
@@ -2169,5 +2203,31 @@
       "peak_reserved_gib": 174.02734375,
       "seconds": 297.6928645990047
     }
-  ]
+  ],
+  "full_model_static_fp32_cp1_warm_updates": [
+    {
+      "tokens": 4096,
+      "peak_allocated_gib": 79.76189041137695,
+      "peak_reserved_gib": 117.609375,
+      "seconds": 30.737100468999415
+    },
+    {
+      "tokens": 8192,
+      "peak_allocated_gib": 86.07625198364258,
+      "peak_reserved_gib": 126.775390625,
+      "seconds": 72.66523072800192
+    },
+    {
+      "tokens": 16384,
+      "peak_allocated_gib": 128.83330154418945,
+      "peak_reserved_gib": 175.7265625,
+      "seconds": 202.75847832999716
+    }
+  ],
+  "cp1_capacity_boundary": {
+    "max_successful_tokens": 16384,
+    "oom_tokens": 32768,
+    "oom_ranks": 8,
+    "failed_allocation_gib": 32
+  }
 }
