@@ -1,5 +1,5 @@
 {
-  "status": "All numerical, attention-memory, capacity, accumulation, full-state restore and two-update RL integration gates passed; full-batch bounded pilot next",
+  "status": "All four validation stages passed; bounded 512-trajectory pilot launched at 2026-10-27 09:37 UTC; full-batch results pending",
   "gradient_scope": "20 selected parameter tensors, full 31B backward",
   "experiments": [
     {
@@ -2302,5 +2302,22 @@
     "exit_code": 0,
     "elapsed_seconds": 2040.0333251953125,
     "limitation": "Two small updates, not a sustained training trend. Ignored DataLoader atexit cleanup exception followed successful final metrics."
+  },
+  "pilot": {
+    "unit": "nl2sql-fsdp-cp2-pilot.service",
+    "launched_utc": "2026-10-27T09:37:00Z",
+    "trajectories_per_update": 512,
+    "generations_per_prompt": 16,
+    "actor_cp": 2,
+    "actor_dp": 4,
+    "actor_tp": 1,
+    "actor_precision": "static IEEE FP32",
+    "training_target_seconds": 7200,
+    "total_job_watchdog_seconds": 10800,
+    "checkpoint_every_updates": 1,
+    "eval_every_updates": 1,
+    "eval_examples": 640,
+    "output": "outputs/fsdp_cp_recipe/pilot/",
+    "state_at_recording": "initializing"
   }
 }

@@ -714,3 +714,21 @@ cooperative stop after a completed update.
 - Remaining: measure actual 512-trajectory throughput and reward progression
   in the bounded pilot; BF16/TF32 and microbatch-2 performance optimization
   remain unapproved because their earlier numerical tests failed.
+
+### 09:37 — bounded full-batch pilot launched
+
+- Started `nl2sql-fsdp-cp2-pilot.service` after all readiness gates passed.
+  Supervisor PID 877614; training launcher PID 877615. Initial state is
+  initialization, followed by 640-example baseline evaluation.
+- Uses all eight B200s, actor TP1/CP2/DP4 with native FSDP2, static IEEE
+  FP32, microbatch 1 and 128 accumulation rounds per update. Production
+  batch is 32 accepted prompts × 16 generations = 512 trajectories.
+  Rollout remains BF16 TP4/DP2, with native DAPO result filtering.
+- This is a fresh base-model run, separate from the two-update smoke.
+  Targets two hours after baseline evaluation, stopping at an update
+  boundary, with a three-hour total-job watchdog. Full checkpoint and
+  fixed-640 evaluation every completed update; retain two checkpoints.
+- Logs/metrics/status: `outputs/fsdp_cp_recipe/pilot/`. Full checkpoints:
+  `/opt/dlami/nvme/nl2sql/fsdp-cp2-pilot`. Actual full-batch throughput and
+  reward progression are pending. The regular train profile remains
+  100 updates with save every 5 and evaluation every 10.
