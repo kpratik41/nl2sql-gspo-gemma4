@@ -54,8 +54,18 @@ def complete_and_prune(root, step, keep):
     directory = root/f'global_step_{step}'
     if directory.is_symlink():
         raise ValueError('Checkpoint directory must not be a symlink')
-    required = [directory/'actor/model', directory/'actor/optim', directory/'data.pt']
-    if not all(path.exists() for path in required) or not list((directory/'actor').glob('rng_rank*.pt')):
+    actor = directory/'actor'
+    automodel = (all((actor/name).exists() for name in ('model', 'optim'))
+                 and bool(list(actor.glob('rng_rank*.pt'))))
+    native_files = list(actor.glob('model_world_size_*_rank_0.pt'))
+    native = False
+    if len(native_files) == 1:
+        match = re.fullmatch(r'model_world_size_(\d+)_rank_0.pt', native_files[0].name)
+        world = int(match.group(1)) if match else 0
+        native = world > 0 and all(
+            (actor/f'{kind}_world_size_{world}_rank_{rank}.pt').is_file()
+            for rank in range(world) for kind in ('model', 'optim', 'extra_state'))
+    if not (directory/'data.pt').is_file() or not (automodel or native):
         raise ValueError('Cannot publish incomplete full training checkpoint')
     atomic_write(directory/MARKER, json.dumps({'format': FORMAT, 'step': step})+'\n')
     atomic_write(root/'latest_checkpointed_iteration.txt', str(step))

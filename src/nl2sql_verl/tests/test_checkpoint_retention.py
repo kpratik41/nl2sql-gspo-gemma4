@@ -45,3 +45,18 @@ def test_retention_does_not_follow_checkpoint_symlinks(tmp_path):
     for step in range(1, 4):
         save(tmp_path, step)
     assert outside.exists() and (tmp_path/'global_step_0').is_symlink()
+
+
+def test_native_fsdp_requires_all_model_optimizer_and_rng_shards(tmp_path):
+    directory=tmp_path/'global_step_1'
+    actor=directory/'actor';actor.mkdir(parents=True)
+    (directory/'data.pt').touch()
+    for rank in range(2):
+        for kind in ('model','optim','extra_state'):
+            (actor/f'{kind}_world_size_2_rank_{rank}.pt').touch()
+    missing=actor/'extra_state_world_size_2_rank_1.pt';missing.unlink()
+    with pytest.raises(ValueError,match='incomplete'):
+        complete_and_prune(tmp_path,1,2)
+    missing.touch()
+    complete_and_prune(tmp_path,1,2)
+    assert (directory/'nl2sql_complete.json').exists()
