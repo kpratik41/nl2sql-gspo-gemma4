@@ -669,3 +669,19 @@ cooperative stop after a completed update.
   before/after result.
 - First actor processing is active on all eight GPUs. No completed real RL
   optimizer update or integration checkpoint has been claimed yet.
+
+### 09:17 — first real GRPO update and complete checkpoint pass
+
+- Step 1 used 32 accepted trajectories, mean composite reward 3.00859,
+  result success 81.25%, finite pre-clipping gradient norm 8.71929.
+  Training reward is measured on DAPO-selected groups, not the dev set.
+- Timings: generation 31.9 s, old log probabilities 106.5 s, actor update
+  216.9 s, checkpoint 48.9 s, rollout refresh 4.35 s; total 408.8 s.
+  This small-batch timing is not a measured 512-trajectory throughput result.
+- The first 345.52-GiB checkpoint has eight model, eight optimizer and eight
+  extra-state shards plus trainer data, its completion marker and the latest
+  pointer. The full state is on local NVMe.
+- Actor/rollout mean absolute logprob difference 0.006705, maximum 0.77814;
+  reported rollout-correction KL 0.004394. Actor remains IEEE FP32 and
+  serving BF16. No importance-sampling correction was enabled.
+- Second update and final 640-example validation remain pending.

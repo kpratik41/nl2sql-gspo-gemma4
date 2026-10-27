@@ -2240,5 +2240,25 @@
     "execution_rate": 0.725,
     "artifact": "outputs/fsdp_cp_recipe/smoke/metrics.jsonl",
     "historical_cp1_comparison": "422/640 was after one update, without a baseline; identical 640 input set but not a paired baseline comparison"
-  }
+  },
+  "integration_updates": [
+    {
+      "step": 1,
+      "trajectory_count": 32,
+      "mean_reward": 3.0085935592651367,
+      "result_rate": 0.8125,
+      "grad_norm": 8.71928596496582,
+      "timings": {
+        "timing_s/gen": 31.921307234995766,
+        "timing_s/old_log_prob": 106.49056182700588,
+        "timing_s/adv": 0.049155938999319915,
+        "timing_s/update_actor": 216.86914818799414,
+        "timing_s/save_checkpoint": 48.87870311900042,
+        "timing_s/update_weights": 4.346516493998934,
+        "timing_s/step": 408.7620110930002
+      },
+      "checkpoint_complete": true,
+      "checkpoint_gib": 345.52
+    }
+  ]
 }
