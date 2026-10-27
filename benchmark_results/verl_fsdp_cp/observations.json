@@ -1,5 +1,5 @@
 {
-  "status": "Static IEEE FP32 eight-GPU CP2 numerical/shape-history and full31B accumulated-update/checkpoint-restore gates pass; final capacity sweep running; CP1 control and real RL integration pending",
+  "status": "Static IEEE FP32 CP2 eight-GPU numerical/shape-history, accumulation, full31B restore and 4K\u201332K optimizer/capacity checks PASS; CP1 control running; real RL integration pending",
   "gradient_scope": "20 selected parameter tensors, full 31B backward",
   "experiments": [
     {
@@ -2142,6 +2142,32 @@
       "scope": "Exact comparison of every model parameter/Adam tensor, scheduler and CPU/CUDA RNG",
       "parameters": 1126,
       "optimizer_tensors": 2316
+    }
+  ],
+  "full_model_static_fp32_cp2_warm_updates": [
+    {
+      "tokens": 4096,
+      "peak_allocated_gib": 79.7580680847168,
+      "peak_reserved_gib": 101.70703125,
+      "seconds": 16.471415973996045
+    },
+    {
+      "tokens": 8192,
+      "peak_allocated_gib": 79.75823593139648,
+      "peak_reserved_gib": 112.365234375,
+      "seconds": 37.20621812000172
+    },
+    {
+      "tokens": 16384,
+      "peak_allocated_gib": 86.07346725463867,
+      "peak_reserved_gib": 127.615234375,
+      "seconds": 96.60111754699756
+    },
+    {
+      "tokens": 32768,
+      "peak_allocated_gib": 128.83143615722656,
+      "peak_reserved_gib": 174.02734375,
+      "seconds": 297.6928645990047
     }
   ]
 }

@@ -603,3 +603,26 @@ measured in the integration run.
   integration evidence. No pilot or sustained training is launched yet.
 - CPU suite: 35 passed, including preservation of the pilot's full batch and
   checkpoint/evaluation contract.
+
+### 08:43 — CP2 validation suite complete; CP1 control starts
+
+- The static true-FP32 CP2 suite completed successfully: four numerical
+  comparisons including shape-history reuse, two accumulated 13,312-token
+  optimizer updates, full31B state restoration, and two Adam updates each at
+  4K/8K/16K/32K. All eight ranks completed the final 32K test.
+- Started the matching eight-GPU CP1 full-context numerical comparison and
+  capacity sweep. This control will establish the actual non-CP capacity bound
+  rather than assuming it can fit 32K. Real RL integration follows these checks.
+
+Final static true-FP32 CP2 warm update maxima across ranks:
+
+| Tokens | Allocated GiB | Reserved GiB | Seconds |
+|---|---:|---:|---:|
+| 4,096 | 79.76 | 101.71 | 16.47 |
+| 8,192 | 79.76 | 112.37 | 37.21 |
+| 16,384 | 86.07 | 127.62 | 96.60 |
+| 32,768 | 128.83 | 174.03 | 297.69 |
+
+The pilot supervisor now grants 60 seconds after its watchdog sends SIGTERM,
+then kills the owned process group if needed. This is separate from the normal
+cooperative stop after a completed update.

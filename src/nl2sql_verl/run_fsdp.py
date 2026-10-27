@@ -55,7 +55,14 @@ def main():
             (run/'heartbeat.json').write_text(json.dumps({'pid':proc.pid,'elapsed_seconds':time.time()-start,'state':'running'})+'\n')
             if wall_limit is not None and time.time()-start>wall_limit:
                 stop_reason='wall_time_limit'
-                os.killpg(proc.pid,signal.SIGTERM);break
+                try:
+                    os.killpg(proc.pid,signal.SIGTERM)
+                    proc.wait(timeout=60)
+                except subprocess.TimeoutExpired:
+                    os.killpg(proc.pid,signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                break
             time.sleep(20)
         code=proc.wait()
     (run/'status.json').write_text(json.dumps({'exit_code':code,'elapsed_seconds':time.time()-start,'checkpoint':str(checkpoint),'stop_reason':stop_reason,'wall_time_limit_seconds':wall_limit},indent=2)+'\n')
