@@ -17,11 +17,18 @@ def main():
     with initialize_config_dir(config_dir=str(REPO / 'src/nl2sql_verl/configs'), version_base=None):
         cfg = compose(config_name='fsdp_cp2')
     micro = int(cfg.actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu)
+    assert micro==1 and cfg.actor_rollout_ref.model.override_config.nl2sql_precision=='tf32'
+    assert cfg.actor_rollout_ref.model.override_config.nl2sql_attention_precision=='ieee'
     numerical = {}
-    for name in ('native_fp32out_sp1_full_bird', 'native_fp32out_sp2_short',
-                 'native_fp32out_sp2_long_bird', f'native_fp32out_sp2_full_bird_micro{micro}'):
+    for name in ('native_ieee_sp1_full_bird', 'native_ieee_sp2_short',
+                 'native_ieee_sp2_long', 'native_ieee_sp2_full_bird'):
         result = read(name + '.json')
-        assert result['fp32_output'] and result['fp32_residual'] and not result['attention_fp32'], name
+        assert result['fp32_output'] and result['fp32_residual'] and result['attention_fp32'], name
+        assert result['attention_arithmetic']=='ieee' and not result['canonical_layout'], name
+        assert result['cp']*result['dp']==8 and result['microbatch']==micro, name
+        launch=read(name+'.launch.json')
+        for source in ('src/nl2sql_verl/fsdp_engine.py','src/nl2sql_verl/fsdp_attention.py','src/nl2sql_verl/worker_python.sh'):
+            assert hashlib.sha256((REPO/source).read_bytes()).hexdigest()==launch['source_sha256'][source], (name,source)
         assert result['pass_gradient'], name
         assert result['loss_abs_difference'] < .01, name
         assert result['max_logprob_abs_difference'] < .1, name
@@ -32,15 +39,16 @@ def main():
     attention = {}
     capacity = {}
     for sp in (1, 2):
-        rows = read(f'attention_memory_bf16_fp32io_sp{sp}_rank0.json')
+        rows = read(f'attention_memory_fp32_ieee_sp{sp}_rank0.json')
         assert [r['global_tokens'] for r in rows] == [4096, 8192, 16384, 32768]
         assert all(r['finite'] and 'mask_construction_peak_mib' in r for r in rows)
         peaks = [r['peak_allocated_mib'] for r in rows]
         assert all(b/a < 2.3 for a, b in zip(peaks, peaks[1:])), peaks
         attention[f'cp{sp}'] = rows
-        reports = [read(f'full_memory_tf32_sp{sp}_rank{rank}.json') for rank in range(8)]
+        reports = [read(f'full_memory_ieee_sp{sp}_rank{rank}.json') for rank in range(8)]
         for report in reports:
             assert report['sp'] == sp and report['fp32_residual'] and report['fp32_output']
+            assert report['attention_fp32'] and report['attention_arithmetic']=='ieee'
             assert [r['length'] for r in report['reports']] == [4096, 8192, 16384, 32768]
             for item in report['reports']:
                 for trial in item['passes']:
@@ -49,11 +57,12 @@ def main():
         capacity[f'cp{sp}'] = max(t['peak_allocated_gib'] for r in reports
                                 for item in r['reports'] for t in item['passes'])
     for rank in range(8):
-        report = read(f'long_update_rank{rank}.json')
-        assert report['sp'] == 2 and report['fp32_residual'] and report['accumulation_rounds'] == 2
+        report = read(f'long_update_ieee_rank{rank}.json')
+        assert report['sp'] == 2 and report['fp32_residual'] and report['fp32_output'] and report['accumulation_rounds'] == 2
+        assert report['attention_fp32'] and report['attention_arithmetic']=='ieee'
         assert report['reports'][0]['length'] == 13312
         assert report['reports'][0]['microbatch'] == micro
-        restore = read(f'long_update_restore_rank{rank}.json')
+        restore = read(f'long_update_ieee_restore_rank{rank}.json')
         assert restore['pass'] and restore['parameters'] > 1000 and restore['optimizer_tensors'] > 1000
     cpu = (ROOT / 'cpu_tests.log').read_text()
     assert '34 passed' in cpu and 'FAILED ' not in cpu

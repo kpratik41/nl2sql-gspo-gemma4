@@ -1,5 +1,5 @@
 {
-  "status": "NOT READY: FP32/TF32 attention matches CP1 vs CP2, but disagrees with higher-accuracy HF tf32x3; testing IEEE attention",
+  "status": "IEEE attention / FP32 outputs passed full 31B longest-fixture CP2 DP4 on eight GPUs; final-policy capacity, CP1 control, restore and RL integration pending",
   "gradient_scope": "20 selected parameter tensors, full 31B backward",
   "experiments": [
     {
@@ -633,6 +633,306 @@
       "selected_gradients": 20,
       "artifact": "outputs/fsdp_cp_recipe/hf_tf32_fp32attn_long.json",
       "completed_utc": "2026-10-27T07:14:37.620666+00:00"
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": [
+        4837,
+        2737
+      ],
+      "cp": 2,
+      "dp": 4,
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.2329809665679932,
+      "seconds": 34.17499772500014,
+      "peak_allocated_gib": 65.0114164352417,
+      "lengths": [
+        10884,
+        10844
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 2.9802322387695312e-08,
+      "max_logprob_abs_difference": 1.0943040251731873e-06,
+      "pass_gradient": true,
+      "artifact": "outputs/fsdp_cp_recipe/native_all_tf32_sp2_long.json",
+      "completed_utc": "2026-10-27T07:20:48.843489+00:00",
+      "worst_gradient_relative_l2": 0.0039666703487762625,
+      "minimum_gradient_cosine": 0.999998291937273,
+      "all_gates_pass": true
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": null,
+      "cp": 1,
+      "dp": 1,
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "attention_arithmetic": "ieee",
+      "canonical_layout": false,
+      "plain_loss": false,
+      "mode": "hf",
+      "backend": "flex_attention",
+      "loss": 1.1815884411334991,
+      "seconds": 31.291787295005633,
+      "peak_allocated_gib": 132.76921033859253,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "artifact": "outputs/fsdp_cp_recipe/hf_ieee_short.json",
+      "completed_utc": "2026-10-27T07:26:15.753659+00:00"
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": null,
+      "cp": 1,
+      "dp": 1,
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "attention_arithmetic": "ieee",
+      "canonical_layout": false,
+      "plain_loss": false,
+      "mode": "hf",
+      "backend": "flex_attention",
+      "loss": 1.4956227242946625,
+      "seconds": 100.28048758999648,
+      "peak_allocated_gib": 144.5793194770813,
+      "lengths": [
+        5088,
+        5252
+      ],
+      "selected_gradients": 20,
+      "artifact": "outputs/fsdp_cp_recipe/hf_ieee_full_bird.json",
+      "completed_utc": "2026-10-27T07:27:23.904163+00:00"
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": [
+        4837,
+        2737
+      ],
+      "cp": 2,
+      "dp": 1,
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "attention_arithmetic": "ieee",
+      "canonical_layout": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.2327069342136383,
+      "seconds": 93.73155554600089,
+      "peak_allocated_gib": 151.48336839675903,
+      "lengths": [
+        10884,
+        10844
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.000688016414642334,
+      "max_logprob_abs_difference": 0.04218149185180664,
+      "pass_gradient": false,
+      "artifact": "outputs/fsdp_cp_recipe/native_ieee_dp1_vs_x3_long.json",
+      "completed_utc": "2026-10-27T07:27:59.310902+00:00",
+      "worst_gradient_relative_l2": 4.230151389147715,
+      "minimum_gradient_cosine": -0.2499189574568965,
+      "all_gates_pass": false
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": [
+        4837,
+        2737
+      ],
+      "cp": 1,
+      "dp": 1,
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "attention_arithmetic": "ieee",
+      "canonical_layout": false,
+      "plain_loss": false,
+      "mode": "hf",
+      "backend": "flex_attention",
+      "loss": 1.232706904411316,
+      "seconds": 171.1468315719976,
+      "peak_allocated_gib": 160.08666038513184,
+      "lengths": [
+        10884,
+        10844
+      ],
+      "selected_gradients": 20,
+      "artifact": "outputs/fsdp_cp_recipe/hf_ieee_long.json",
+      "completed_utc": "2026-10-27T07:28:35.946199+00:00"
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": [
+        4837,
+        2737
+      ],
+      "cp": 1,
+      "dp": 1,
+      "fp32_output": false,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "attention_arithmetic": "ieee",
+      "canonical_layout": false,
+      "plain_loss": false,
+      "mode": "hf",
+      "backend": "flex_attention",
+      "loss": 1.2329999208450317,
+      "seconds": 146.30780848799623,
+      "peak_allocated_gib": 139.17575454711914,
+      "lengths": [
+        10884,
+        10844
+      ],
+      "selected_gradients": 20,
+      "artifact": "outputs/fsdp_cp_recipe/hf_amp_ieee_long.json",
+      "completed_utc": "2026-10-27T07:29:32.466558+00:00"
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": [
+        4837,
+        2737
+      ],
+      "cp": 2,
+      "dp": 1,
+      "fp32_output": false,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "attention_arithmetic": "ieee",
+      "canonical_layout": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.2329999208450317,
+      "seconds": 76.22685303999606,
+      "peak_allocated_gib": 146.72871685028076,
+      "lengths": [
+        10884,
+        10844
+      ],
+      "selected_gradients": 20,
+      "artifact": "outputs/fsdp_cp_recipe/native_amp_ieee_dp1_long.json",
+      "completed_utc": "2026-10-27T07:30:41.481069+00:00"
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": null,
+      "cp": 1,
+      "dp": 1,
+      "fp32_output": false,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "attention_arithmetic": "ieee",
+      "canonical_layout": false,
+      "plain_loss": false,
+      "mode": "hf",
+      "backend": "flex_attention",
+      "loss": 1.1757291555404663,
+      "seconds": 12.168457170002512,
+      "peak_allocated_gib": 127.2794680595398,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "artifact": "outputs/fsdp_cp_recipe/hf_amp_ieee_short.json",
+      "completed_utc": "2026-10-27T07:31:43.123935+00:00"
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": null,
+      "cp": 2,
+      "dp": 1,
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 2,
+      "bucket": 256,
+      "attention_fp32": true,
+      "attention_arithmetic": "ieee",
+      "canonical_layout": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.4951171875,
+      "seconds": 48.20086930000252,
+      "peak_allocated_gib": 140.79735898971558,
+      "lengths": [
+        5088,
+        5252
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.0005055367946624756,
+      "max_logprob_abs_difference": 0.05445528030395508,
+      "pass_gradient": false,
+      "artifact": "outputs/fsdp_cp_recipe/native_ieee_dp1_full_micro2.json",
+      "completed_utc": "2026-10-27T07:32:43.566526+00:00",
+      "worst_gradient_relative_l2": 28.174837184405387,
+      "minimum_gradient_cosine": -0.15419229068631565,
+      "all_gates_pass": false
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": [
+        4837,
+        2737
+      ],
+      "cp": 2,
+      "dp": 4,
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "attention_arithmetic": "ieee",
+      "canonical_layout": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.2327069342136383,
+      "seconds": 96.70620973400219,
+      "peak_allocated_gib": 65.0114164352417,
+      "lengths": [
+        10884,
+        10844
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 2.9802322387695312e-08,
+      "max_logprob_abs_difference": 1.430511474609375e-06,
+      "pass_gradient": true,
+      "artifact": "outputs/fsdp_cp_recipe/native_ieee_sp2_long.json",
+      "completed_utc": "2026-10-27T07:36:51.069506+00:00",
+      "worst_gradient_relative_l2": 0.004246085921758581,
+      "minimum_gradient_cosine": 0.9999963931373899,
+      "all_gates_pass": true
     }
   ],
   "attention_memory": {
@@ -867,6 +1167,106 @@
     "max_logprob_abs_difference": 0.35340166091918945,
     "worst_gradient_relative_l2": 15.833757625792583,
     "minimum_gradient_cosine": -0.010302351301166803,
+    "pass_gradient": false
+  },
+  "ieee_attention_memory": {
+    "cp1": [
+      {
+        "global_tokens": 4096,
+        "local_tokens": 4096,
+        "repeat": 1,
+        "baseline_mib": 320.06640625,
+        "mask_construction_peak_mib": 320.15625,
+        "peak_allocated_mib": 1856.5673828125,
+        "peak_reserved_mib": 1858.0,
+        "seconds": 0.5270127240000875,
+        "finite": true
+      },
+      {
+        "global_tokens": 8192,
+        "local_tokens": 8192,
+        "repeat": 1,
+        "baseline_mib": 640.19140625,
+        "mask_construction_peak_mib": 830.7060546875,
+        "peak_allocated_mib": 3713.1923828125,
+        "peak_reserved_mib": 3844.0,
+        "seconds": 1.9584686210000655,
+        "finite": true
+      },
+      {
+        "global_tokens": 16384,
+        "local_tokens": 16384,
+        "repeat": 1,
+        "baseline_mib": 1280.62890625,
+        "mask_construction_peak_mib": 1408.8486328125,
+        "peak_allocated_mib": 7426.6298828125,
+        "peak_reserved_mib": 7682.0,
+        "seconds": 7.732386989999213,
+        "finite": true
+      },
+      {
+        "global_tokens": 32768,
+        "local_tokens": 32768,
+        "repeat": 1,
+        "baseline_mib": 2562.2578125,
+        "mask_construction_peak_mib": 2819.072265625,
+        "peak_allocated_mib": 14854.2587890625,
+        "peak_reserved_mib": 15364.0,
+        "seconds": 30.775928087001375,
+        "finite": true
+      }
+    ],
+    "cp2": [
+      {
+        "global_tokens": 4096,
+        "local_tokens": 2048,
+        "repeat": 1,
+        "baseline_mib": 160.06640625,
+        "mask_construction_peak_mib": 160.15625,
+        "peak_allocated_mib": 1088.3173828125,
+        "peak_reserved_mib": 1378.0,
+        "seconds": 0.26981760199851124,
+        "finite": true
+      },
+      {
+        "global_tokens": 8192,
+        "local_tokens": 4096,
+        "repeat": 1,
+        "baseline_mib": 320.19140625,
+        "mask_construction_peak_mib": 478.7060546875,
+        "peak_allocated_mib": 2176.6923828125,
+        "peak_reserved_mib": 2818.0,
+        "seconds": 0.9814310989968362,
+        "finite": true
+      },
+      {
+        "global_tokens": 16384,
+        "local_tokens": 8192,
+        "repeat": 1,
+        "baseline_mib": 640.62890625,
+        "mask_construction_peak_mib": 704.8486328125,
+        "peak_allocated_mib": 4353.6298828125,
+        "peak_reserved_mib": 5572.0,
+        "seconds": 3.862344294997456,
+        "finite": true
+      },
+      {
+        "global_tokens": 32768,
+        "local_tokens": 16384,
+        "repeat": 1,
+        "baseline_mib": 1282.2578125,
+        "mask_construction_peak_mib": 1411.072265625,
+        "peak_allocated_mib": 8708.2587890625,
+        "peak_reserved_mib": 11268.0,
+        "seconds": 15.367399498994928,
+        "finite": true
+      }
+    ]
+  },
+  "amp_ieee_longest_comparison": {
+    "loss_abs_difference": 0,
+    "max_logprob_abs_difference": 0,
+    "worst_gradient_relative_l2": 0.03266961276136045,
     "pass_gradient": false
   }
 }

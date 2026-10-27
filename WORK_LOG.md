@@ -419,3 +419,71 @@ full-model checkpoint round trip and real RL integration remain pending.
   selecting fast TF32 attention. The current TF32 attention config remains
   gated/experimental. Next: test IEEE FP32 attention against the higher-accuracy
   reference; retain the completed capacity measurements as diagnostics.
+
+### 07:25 — fast attention capacity complete; accurate attention tests started
+
+- Eight-GPU CP2/DP4 longest-fixture parity with matching TF32 arithmetic passed
+  (worst selected-gradient relative L2 0.3967%, response logprobs 1.095e-6).
+- Full-model Adam updates completed twice each at 4K, 8K, 16K and 32K using
+  FP32 attention/TF32 arithmetic. This confirms capacity for that policy only;
+  its cross-precision discrepancy still blocks training.
+- Started IEEE FP32 attention HF references on short, full ~5K and longest ~11K
+  BIRD fixtures; a two-GPU CP2 comparison against the higher-accuracy `tf32x3`
+  reference; and standalone CP1/CP2 attention-memory sweeps through 32K.
+- Committed and pushed `a386bf5` with diagnostic harnesses, explicit candidate
+  precision configuration and the failed cross-precision evidence.
+
+### 07:29–07:31 — IEEE attention comparison and near-linear attention memory
+
+- The FP32-output/IEEE-attention CP2 run agrees with an independent HF run using
+  IEEE attention: loss difference 2.98e-8, largest response logprob difference
+  1.431e-6, worst selected-gradient relative L2 0.4246%. This was CP2/DP1; the
+  final eight-GPU layout still needs validation for this arithmetic.
+- IEEE versus `tf32x3` attention also showed substantial full-model gradient
+  disagreement (4.230 relative L2), despite response logprobs within 0.0422.
+  Therefore `tf32x3` is not treated as an exact FP32 oracle. IEEE attention is
+  the current reference; attention Tensor Core approximations remain excluded.
+  Linear layers still use the separately recorded TF32 or BF16 policy.
+- Warm IEEE attention peaks including mask construction at 4K/8K/16K/32K:
+  CP1 1856.57/3713.19/7426.63/14854.26 MiB;
+  CP2 1088.32/2176.69/4353.63/8708.26 MiB. All gradients finite, approximately
+  linear memory over the tested range. Timings remain quadratic: CP2
+  0.270/0.981/3.862/15.367 seconds for one global attention forward/backward.
+- Testing BF16 linear compute with FP32 residuals and IEEE attention as a speed
+  option, plus packed microbatch 2 with FP32-output linears. Neither is approved
+  until its full-model comparisons pass.
+
+### 07:32 — BF16 linear option fails the unchanged gradient gate
+
+- BF16 linears with FP32 residuals and IEEE attention matched longest-fixture
+  loss and response logprobs exactly across HF and CP2, but worst selected
+  gradient relative L2 was 3.26696%, above 3%. Rejected without relaxing the gate.
+- Cancelled its remaining ~5K reference/microbatch-2 follow-ups after this
+  disqualifying result. Those cancelled jobs are not numerical failures.
+- Continue with FP32-output linears and IEEE attention; packed microbatch 2
+  is still being checked for that policy.
+
+### 07:33 — packed microbatch 2 rejected; final topology validation starts
+
+- FP32-output linears/IEEE attention with two packed ~5K BIRD trajectories
+  disagreed with the independent per-trajectory HF reference: largest response
+  logprob difference 0.05446 and worst selected-gradient relative L2 28.1748.
+  Forward loss difference alone was only 0.000506. Microbatch remains 1.
+- Started the eight-GPU CP2/DP4 longest-fixture comparison using IEEE attention,
+  followed by full-model Adam updates at 4K/8K/16K/32K. The candidate uses
+  FP32 parameters/residuals/linear outputs, TF32 linear arithmetic, IEEE attention,
+  FP32 gradient reduction and microbatch 1. It retains 512 trajectories per
+  production update: 128 accumulation rounds per CP pair, four DP replicas.
+
+### 07:36–07:37 — final eight-GPU CP2 numerical check passes
+
+- IEEE-attention, FP32-output linears on TP1/CP2/DP4 passed the full 31B
+  longest-real-prompt comparison: selected-gradient worst relative L2 0.42461%,
+  response logprobs within 1.431e-6, loss within 2.98e-8. All 20 selected
+  gradient tensors meet the unchanged relative-L2/cosine/finite gates.
+- The same initialized model continues with the final-policy Adam/memory sweep.
+  CP1 control, 13,312-token accumulation/full-model restore and real two-update
+  GRPO/DAPO/tool integration with 640-row evaluation remain pending.
+- CPU regression suite rerun for the IEEE recipe setting: 34 passed. Updated
+  readiness checks to require IEEE-policy, eight-GPU evidence and matching
+  engine/attention/runtime source hashes. No sustained training launched yet.
