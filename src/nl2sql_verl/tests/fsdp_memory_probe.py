@@ -24,16 +24,19 @@ def make_batch(lengths,seed):
 
 def token_loss(model_output,data,dp_group):
     mask=data['loss_mask'].values().roll(-1)
-    return -(model_output['log_probs'].values()*mask).sum()*tu.get_non_tensor_data(data,'dp_size')/tu.get_non_tensor_data(data,'batch_num_tokens'),{}
+    dp=tu.get_non_tensor_data(data,'dp_size',None)
+    count=tu.get_non_tensor_data(data,'batch_num_tokens',None)
+    assert dp is not None and count is not None and count>0
+    return -(model_output['log_probs'].values()*mask).sum()*dp/count,{}
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--sp',type=int,default=2);p.add_argument('--lengths',type=int,nargs='+',default=[4096,8192,16384,32768]);p.add_argument('--micro',type=int,default=1);p.add_argument('--accum',type=int,default=1);p.add_argument('--fp32-residual',action='store_true');p.add_argument('--output',required=True);p.add_argument('--model',default=MODEL);p.add_argument('--checkpoint');a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--sp',type=int,default=2);p.add_argument('--lengths',type=int,nargs='+',default=[4096,8192,16384,32768]);p.add_argument('--micro',type=int,default=1);p.add_argument('--accum',type=int,default=1);p.add_argument('--fp32-residual',action='store_true');p.add_argument('--fp32-output',action='store_true');p.add_argument('--output',required=True);p.add_argument('--model',default=MODEL);p.add_argument('--checkpoint');a=p.parse_args()
+    if a.fp32_output:a.fp32_residual=True
     torch.cuda.set_device(int(os.environ['LOCAL_RANK']));torch.set_num_threads(2);dist.init_process_group('nccl',device_id=torch.device('cuda',torch.cuda.current_device()))
     precision={'param_dtype':'fp32' if a.fp32_residual else 'bf16','reduce_dtype':'fp32','buffer_dtype':'fp32'}
     if a.fp32_residual:torch.set_autocast_cache_enabled(False)
-    e=GemmaFSDPEngine(HFModelConfig(path=a.model,load_tokenizer=False,use_remove_padding=True,override_config={'attn_implementation':BACKEND}),FSDPEngineConfig(strategy='fsdp2',mixed_precision=precision,use_torch_compile=False,ulysses_sequence_parallel_size=a.sp,use_no_sync_for_gradient_accumulation=False,pad_to_length=True,pad_to_length_bucket=256),FSDPOptimizerConfig(lr=1e-6,total_training_steps=100),CheckpointConfig());e.initialize()
-    if a.fp32_residual:e._autocast_dtype=torch.bfloat16
+    e=GemmaFSDPEngine(HFModelConfig(path=a.model,load_tokenizer=False,use_remove_padding=True,override_config={'attn_implementation':BACKEND,'nl2sql_precision':'tf32' if a.fp32_output else 'amp'}),FSDPEngineConfig(strategy='fsdp2',mixed_precision=precision,use_torch_compile=False,ulysses_sequence_parallel_size=a.sp,use_no_sync_for_gradient_accumulation=False,pad_to_length=True,pad_to_length_bucket=256),FSDPOptimizerConfig(lr=1e-6,weight_decay=0.,total_training_steps=100),CheckpointConfig());e.initialize()
     reports=[]
     for length in a.lengths:
         batch=make_batch([length-i*113 for i in range(a.micro*a.accum)],51+e.get_data_parallel_rank())
@@ -50,7 +53,7 @@ def main():
             passes.append(row)
             print(json.dumps({'rank':dist.get_rank(),'length':length,'micro':a.micro,**row}),flush=True)
         reports.append({'length':length,'microbatch':a.micro,'passes':passes})
-        Path(f'{a.output}_rank{dist.get_rank()}.json').write_text(json.dumps({'sp':a.sp,'fp32_residual':a.fp32_residual,'accumulation_rounds':a.accum,'reports':reports},indent=2)+'\n')
+        Path(f'{a.output}_rank{dist.get_rank()}.json').write_text(json.dumps({'sp':a.sp,'fp32_output':a.fp32_output,'fp32_residual':a.fp32_residual,'accumulation_rounds':a.accum,'reports':reports},indent=2)+'\n')
     if a.checkpoint:
         rng_before={'cpu':torch.get_rng_state().clone(),'cuda':torch.cuda.get_rng_state().clone()}
         scheduler_before=e.lr_scheduler.state_dict().copy()

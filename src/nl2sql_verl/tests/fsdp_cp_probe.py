@@ -10,7 +10,7 @@ from transformers import Gemma4ForConditionalGeneration
 MODEL='/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475'
 
 
-def fixture(model_path, lengths):
+def fixture(model_path, lengths, row_indices=None):
     if 'tiny' in model_path:
         g=torch.Generator().manual_seed(128)
         return [(torch.randint(3,128,(n,),generator=g), torch.arange(n)>=n//2) for n in lengths]
@@ -18,7 +18,9 @@ def fixture(model_path, lengths):
     import pyarrow.parquet as pq
     from src.nl2sql_verl.prepare_data import TOOLS
     tok=AutoTokenizer.from_pretrained(model_path)
-    records=pq.read_table('outputs/cp1_recipe/data/train.parquet').slice(0,len(lengths)).to_pylist()
+    table=pq.read_table('outputs/cp1_recipe/data/train.parquet')
+    records=(table.take(row_indices) if row_indices is not None else table.slice(0,len(lengths))).to_pylist()
+    assert len(records)==len(lengths)
     rows=[]
     for record,n in zip(records,lengths):
         prompt=tok.apply_chat_template(record['prompt'],tools=TOOLS,tokenize=True,add_generation_prompt=True,return_dict=False)
@@ -39,6 +41,7 @@ def main():
     p.add_argument('--micro',type=int,default=1)
     p.add_argument('--fp32-residual',action='store_true')
     p.add_argument('--fp32-output',action='store_true')
+    p.add_argument('--row-indices',type=int,nargs='+')
     p.add_argument('--bucket',type=int,default=1);p.add_argument('--plain-loss',action='store_true');p.add_argument('--compat',action='store_true');p.add_argument('--sp',type=int,default=1);p.add_argument('--output',required=True);p.add_argument('--reference');p.add_argument('--backend',default='sdpa')
     a=p.parse_args();torch.set_num_threads(2);torch.cuda.set_device(int(os.environ.get('LOCAL_RANK',0)))
     if a.fp32_output:
@@ -57,7 +60,7 @@ def main():
             from src.nl2sql_verl import fsdp_engine
         custom=a.backend=='nl2sql_flex_ulysses'
         cls=fsdp_engine.GemmaFSDPEngine if custom else FSDPEngineWithLMHead
-        mc=HFModelConfig(path=a.model,load_tokenizer=False,use_remove_padding=custom,override_config={'attn_implementation':a.backend})
+        mc=HFModelConfig(path=a.model,load_tokenizer=False,use_remove_padding=custom,override_config={'attn_implementation':a.backend,'nl2sql_precision':'tf32' if a.fp32_output else 'amp'})
         precision={'param_dtype':'fp32' if a.fp32_residual else 'bf16','reduce_dtype':'fp32','buffer_dtype':'fp32'}
         engine=cls(mc,FSDPEngineConfig(strategy='fsdp2',mixed_precision=precision,use_torch_compile=False,ulysses_sequence_parallel_size=a.sp,pad_to_length=a.bucket>1,pad_to_length_bucket=a.bucket),FSDPOptimizerConfig(lr=1e-6,total_training_steps=2),CheckpointConfig())
         engine.initialize();model=engine.module
@@ -103,7 +106,7 @@ def main():
                     else:offloaded[name]=grad
                 p.grad=None
             param.register_post_accumulate_grad_hook(release_gradient)
-    model.train();rows=fixture(a.model,a.lengths);count=sum(int(mask[1:].sum()) for ids,mask in rows)
+    model.train();rows=fixture(a.model,a.lengths,a.row_indices);count=sum(int(mask[1:].sum()) for ids,mask in rows)
     loss_sum=0.;lps=[];start=time.monotonic();torch.cuda.reset_peak_memory_stats()
     assert a.micro==1 or a.backend=='nl2sql_flex_ulysses'
     for offset in range(0,len(rows),a.micro):
@@ -159,7 +162,7 @@ def main():
             if rank==0:gradients[name.replace('._checkpoint_wrapped_module','').replace('._fsdp_wrapped_module','')]=grad.detach().float().cpu()
     if rank==0:
         assert gradients, 'No gradients captured'
-        result={'fp32_output':a.fp32_output,'fp32_residual':a.fp32_residual,'microbatch':a.micro,'bucket':a.bucket,'attention_fp32':os.environ.get('NL2SQL_ATTENTION_FP32')=='1','plain_loss':a.plain_loss,'mode':a.mode,'backend':a.backend,'loss':loss_sum,'seconds':time.monotonic()-start,'peak_allocated_gib':torch.cuda.max_memory_allocated()/2**30,'lengths':[len(ids) for ids,mask in rows],'selected_gradients':len(gradients)}
+        result={'model':a.model,'row_indices':a.row_indices,'cp':a.sp if a.mode=='native' else 1,'dp':dist.get_world_size()//a.sp if a.mode=='native' else 1,'fp32_output':a.fp32_output,'fp32_residual':a.fp32_residual,'microbatch':a.micro,'bucket':a.bucket,'attention_fp32':os.environ.get('NL2SQL_ATTENTION_FP32')=='1','plain_loss':a.plain_loss,'mode':a.mode,'backend':a.backend,'loss':loss_sum,'seconds':time.monotonic()-start,'peak_allocated_gib':torch.cuda.max_memory_allocated()/2**30,'lengths':[len(ids) for ids,mask in rows],'selected_gradients':len(gradients)}
         saved={'gradients':gradients,'logprobs':torch.cat(lps),'result':result}
         Path(a.output).parent.mkdir(parents=True,exist_ok=True)
         if a.reference:

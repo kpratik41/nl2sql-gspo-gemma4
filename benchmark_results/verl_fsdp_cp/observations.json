@@ -1,5 +1,5 @@
 {
-  "status": "investigation; full-model CP2 gates unresolved",
+  "status": "TF32/FP32-output CP2 microbatch 1 passes tested full BIRD fixtures; capacity/restore/integration pending",
   "gradient_scope": "20 selected parameter tensors, full 31B backward",
   "experiments": [
     {
@@ -403,6 +403,32 @@
       "worst_gradient_relative_l2": 1.0017070737827787,
       "minimum_gradient_cosine": 0.4322948265279945,
       "all_gates_pass": false
+    },
+    {
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.4860608279705048,
+      "seconds": 34.17791304199636,
+      "peak_allocated_gib": 54.45212984085083,
+      "lengths": [
+        5088,
+        5252
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.0,
+      "max_logprob_abs_difference": 1.430511474609375e-06,
+      "pass_gradient": true,
+      "artifact": "outputs/fsdp_cp_recipe/native_fp32out_sp2_full_bird_micro1.json",
+      "completed_utc": "2026-10-27T06:43:23.168017+00:00",
+      "worst_gradient_relative_l2": 0.025876229123679814,
+      "minimum_gradient_cosine": 0.9996750170037851,
+      "all_gates_pass": true
     }
   ],
   "attention_memory": {

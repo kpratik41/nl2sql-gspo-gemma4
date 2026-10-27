@@ -18,10 +18,10 @@ def main():
         cfg = compose(config_name='fsdp_cp2')
     micro = int(cfg.actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu)
     numerical = {}
-    for name in ('native_amp_sp1_full_bird', 'native_amp_sp2_bucket256',
-                 f'native_amp_sp2_full_bird_micro{micro}'):
+    for name in ('native_fp32out_sp1_full_bird', 'native_fp32out_sp2_short',
+                 'native_fp32out_sp2_long_bird', f'native_fp32out_sp2_full_bird_micro{micro}'):
         result = read(name + '.json')
-        assert result['fp32_residual'] and not result['attention_fp32'], name
+        assert result['fp32_output'] and result['fp32_residual'] and not result['attention_fp32'], name
         assert result['pass_gradient'], name
         assert result['loss_abs_difference'] < .01, name
         assert result['max_logprob_abs_difference'] < .1, name
@@ -32,15 +32,15 @@ def main():
     attention = {}
     capacity = {}
     for sp in (1, 2):
-        rows = read(f'attention_memory_bf16_sp{sp}_rank0.json')
+        rows = read(f'attention_memory_bf16_fp32io_sp{sp}_rank0.json')
         assert [r['global_tokens'] for r in rows] == [4096, 8192, 16384, 32768]
         assert all(r['finite'] and 'mask_construction_peak_mib' in r for r in rows)
         peaks = [r['peak_allocated_mib'] for r in rows]
         assert all(b/a < 2.3 for a, b in zip(peaks, peaks[1:])), peaks
         attention[f'cp{sp}'] = rows
-        reports = [read(f'full_memory_amp_sp{sp}_rank{rank}.json') for rank in range(8)]
+        reports = [read(f'full_memory_tf32_sp{sp}_rank{rank}.json') for rank in range(8)]
         for report in reports:
-            assert report['sp'] == sp and report['fp32_residual']
+            assert report['sp'] == sp and report['fp32_residual'] and report['fp32_output']
             assert [r['length'] for r in report['reports']] == [4096, 8192, 16384, 32768]
             for item in report['reports']:
                 for trial in item['passes']:
@@ -56,7 +56,7 @@ def main():
         restore = read(f'long_update_restore_rank{rank}.json')
         assert restore['pass'] and restore['parameters'] > 1000 and restore['optimizer_tensors'] > 1000
     cpu = (ROOT / 'cpu_tests.log').read_text()
-    assert '33 passed' in cpu and 'FAILED ' not in cpu
+    assert '34 passed' in cpu and 'FAILED ' not in cpu
     manifest = json.loads((REPO / 'outputs/cp1_recipe/data/manifest.json').read_text())
     assert manifest['raw_9428_used'] is False
     dataset_hashes = {}

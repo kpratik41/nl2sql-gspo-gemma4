@@ -24,7 +24,7 @@ engine:
   strategy: fsdp2
   model_dtype: fp32
   mixed_precision:
-    # FP32 parameters retain FP32 residuals; GemmaFSDPEngine uses BF16 autocast.
+    # FP32 outputs/residuals; the selected engine policy uses TF32 Tensor Cores.
     param_dtype: fp32
     reduce_dtype: fp32
     buffer_dtype: fp32

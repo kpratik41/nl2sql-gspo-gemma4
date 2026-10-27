@@ -290,3 +290,38 @@ Evidence: `outputs/fsdp_cp_recipe/`; compact tracked observations are under
 - A repeated SSH push succeeded (`Everything up-to-date`); the chronological log
   and compact experiment evidence are now being committed alongside the gated
   experimental FSDP/Ulysses code. Optimizer/memory/restore/RL gates remain pending.
+
+### 06:43–06:46 — single-trajectory TF32 gate passed; capacity testing started
+
+- The TF32/FP32-output CP2 test passed on the complete 5,088/5,252-token BIRD
+  examples when processed separately: exact scalar loss, maximum response-token
+  logprob difference 1.43e-6, worst selected gradient relative L2 2.5876%.
+- The candidate config now explicitly selects this TF32 policy, BF16 Flex
+  attention, and microbatch one. This is not BF16 linear compute. Two packed
+  trajectories remain disabled because they failed the gradient check.
+- With CP2/DP4 and 512 accepted trajectories, microbatch one implies 128
+  accumulation rounds per optimizer update. Each CP pair shares one trajectory
+  per microbatch; these are not 128 distinct prompt groups per GPU.
+- Started full-model CP2 memory/Adam sweeps at 4K/8K/16K/32K. Additional
+  longest-prompt parity, CP1 control, restore and RL integration remain pending.
+- The longest measured train prompts are rows 4837 and 2737, at 10,786 and
+  10,774 prompt tokens. They are retained in the training set.
+
+### 06:48–06:50 — harness correction and tiny restore gate
+
+- The first full-model memory sweep failed before its first optimizer update:
+  the diagnostic loss callback omitted a required `default` argument in native
+  verl's metadata accessor. This was a harness/API error, not a capacity result.
+  The failed attempt is retained as `full_memory_tf32_sp2_attempt0.log`.
+- Corrected the callback and added a CPU regression for its native metadata and
+  global-token normalization. The CPU suite now has 34 passing tests.
+- An eight-rank tiny Gemma test passed two accumulation rounds, two Adam updates,
+  full checkpoint save/load, exact comparison of every model/Adam tensor,
+  scheduler state and CPU/CUDA RNG on all eight ranks. This verifies the harness;
+  the full 31B round trip is still pending.
+- Restarted the full 31B CP2 4K/8K/16K/32K sweep. The production candidate uses
+  zero weight decay, LR 1e-6, constant scheduling, and FP32 gradient reductions.
+- Candidate generation batches now contain two prompt groups, with two native
+  DAPO batches allowed in flight. That permits up to four prompt groups / 64
+  sampled trajectories in flight, subject to agent and serving scheduling.
+  It does not change the 32 accepted groups / 512 trajectories per update.

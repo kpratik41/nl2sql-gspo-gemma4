@@ -1,4 +1,5 @@
 """Small Gemma extension of native verl FSDP2 for exact Flex/Ulysses attention."""
+import os
 import torch
 from verl.workers.engine.base import EngineRegistry
 from verl.workers.engine.fsdp.transformer_impl import FSDPEngineWithLMHead
@@ -12,10 +13,11 @@ vllm_compat.register()
 class GemmaFSDPEngine(FSDPEngineWithLMHead):
     def _build_fsdp_module(self, module):
         module=super()._build_fsdp_module(module)
-        # Keep FP32 embeddings/residuals when param_dtype=fp32, while linear
-        # projections still use BF16 autocast. Avoid retaining a second full
-        # model's worth of cached casts across a checkpointed forward.
-        self._autocast_dtype=torch.bfloat16
+        # Both modes retain FP32 embeddings/residuals with FP32 parameters.
+        # AMP rounds linear outputs to BF16; TF32 keeps outputs in FP32 and
+        # uses lower-precision Tensor Core arithmetic through the BLAS policy.
+        # Avoid retaining a second model's worth of cached autocast weights.
+        self._autocast_dtype=torch.float32 if self.nl2sql_precision=='tf32' else torch.bfloat16
         torch.set_autocast_cache_enabled(False)
         return module
 
@@ -25,7 +27,10 @@ class GemmaFSDPEngine(FSDPEngineWithLMHead):
         return super().save_checkpoint(local_path, hdfs_path, global_step, max_ckpt_to_keep=None, **kwargs)
 
     def _build_module(self):
-        torch.set_float32_matmul_precision('highest')
+        self.nl2sql_precision=self.model_config.override_config.get('nl2sql_precision','amp')
+        if self.nl2sql_precision not in ('amp','tf32'):raise ValueError('Unknown recipe precision policy')
+        torch.set_float32_matmul_precision('medium' if self.nl2sql_precision=='tf32' else 'highest')
+        if self.nl2sql_precision=='tf32':os.environ['NL2SQL_ATTENTION_BF16_IO']='1'
         torch.backends.cuda.preferred_blas_library('cublaslt')
         torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction=(False,False)
         torch._dynamo.config.recompile_limit=512
