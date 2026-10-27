@@ -41,7 +41,7 @@ def main():
                         '--property=KillMode=control-group','--property=TimeoutStopSec=60',
                         str(REPO/'.venv-verl/bin/python'),'-m','src.nl2sql_verl.run_fsdp',a.mode,'--run'],check=True)
         return
-    env=os.environ.copy();env.update(CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7',OMP_NUM_THREADS='2',TORCHINDUCTOR_COMPILE_THREADS='2',NL2SQL_ATTENTION_FP32='1',NL2SQL_FLEX_FP32_PRECISION='ieee',NL2SQL_FLEX_CANONICAL_LAYOUT='0',NL2SQL_DATABASE_DIR=str(REPO/'databases'),NL2SQL_EXEC_TIMEOUT_S='30',NL2SQL_LENGTH_MAX='2048',NL2SQL_LENGTH_BUFFER='512',VERL_FILE_LOGGER_PATH=str(run/'metrics.jsonl'))
+    env=os.environ.copy();env.update(CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7',OMP_NUM_THREADS='2',TORCHINDUCTOR_COMPILE_THREADS='2',NL2SQL_ATTENTION_FP32='1',NL2SQL_FLEX_FP32_PRECISION='ieee',NL2SQL_FLEX_CANONICAL_LAYOUT='0',NL2SQL_FLEX_STATIC='1',NL2SQL_DATABASE_DIR=str(REPO/'databases'),NL2SQL_EXEC_TIMEOUT_S='30',NL2SQL_LENGTH_MAX='2048',NL2SQL_LENGTH_BUFFER='512',VERL_FILE_LOGGER_PATH=str(run/'metrics.jsonl'))
     cmd=command(run,checkpoint,a.mode=='smoke');(run/'command.json').write_text(json.dumps(cmd,indent=2)+'\n')
     start=time.time()
     with (run/'training.log').open('w',buffering=1) as log:

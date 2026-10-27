@@ -35,90 +35,7 @@ def selected(name):
     return 'language_model' in name and any(f'.layers.{i}.' in name for i in (0,1,5,59)) and any(x in name for x in ('q_proj','k_proj','o_proj','down_proj','input_layernorm'))
 
 
-def main():
-    p=argparse.ArgumentParser();p.add_argument('--mode',choices=['hf','native'],required=True)
-    p.add_argument('--model',default=MODEL);p.add_argument('--lengths',type=int,nargs='+',default=[257,385])
-    p.add_argument('--micro',type=int,default=1)
-    p.add_argument('--fp32-residual',action='store_true')
-    p.add_argument('--fp32-output',action='store_true')
-    p.add_argument('--row-indices',type=int,nargs='+')
-    p.add_argument('--cpu-saved-tensors',action='store_true')
-    p.add_argument('--exercise-output')
-    p.add_argument('--exercise-lengths',type=int,nargs='+',default=[4096,8192,16384,32768])
-    p.add_argument('--exercise-accum',type=int,default=1)
-    p.add_argument('--exercise-checkpoint')
-    p.add_argument('--bucket',type=int,default=1);p.add_argument('--plain-loss',action='store_true');p.add_argument('--compat',action='store_true');p.add_argument('--sp',type=int,default=1);p.add_argument('--output',required=True);p.add_argument('--reference');p.add_argument('--backend',default='sdpa')
-    a=p.parse_args();torch.set_num_threads(2);torch.cuda.set_device(int(os.environ.get('LOCAL_RANK',0)))
-    if a.fp32_output:
-        a.fp32_residual=True
-        os.environ['NL2SQL_ATTENTION_BF16_IO']='1'
-    from src.nl2sql_verl.tests.probe_metadata import record_probe
-    record_probe(a)
-    if a.fp32_residual:torch.set_autocast_cache_enabled(False)
-    torch.set_float32_matmul_precision('highest');torch.backends.cuda.preferred_blas_library('cublaslt')
-    torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction=(False,False)
-    rank=0
-    if a.mode=='native':
-        dist.init_process_group('nccl',device_id=torch.device('cuda',torch.cuda.current_device()));rank=dist.get_rank()
-        from verl.workers.config import HFModelConfig,FSDPEngineConfig,FSDPOptimizerConfig
-        from verl.workers.engine.fsdp.transformer_impl import FSDPEngineWithLMHead
-        from verl.trainer.config import CheckpointConfig
-        if a.compat:
-            from src.nl2sql_verl import fsdp_engine
-        custom=a.backend=='nl2sql_flex_ulysses'
-        cls=fsdp_engine.GemmaFSDPEngine if custom else FSDPEngineWithLMHead
-        mc=HFModelConfig(path=a.model,load_tokenizer=False,use_remove_padding=custom,override_config={'attn_implementation':a.backend,'nl2sql_precision':'tf32' if a.fp32_output else 'amp',**({'nl2sql_attention_precision':os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3')} if os.environ.get('NL2SQL_ATTENTION_FP32')=='1' else {})})
-        precision={'param_dtype':'fp32' if a.fp32_residual else 'bf16','reduce_dtype':'fp32','buffer_dtype':'fp32'}
-        engine=cls(mc,FSDPEngineConfig(strategy='fsdp2',mixed_precision=precision,use_torch_compile=False,ulysses_sequence_parallel_size=a.sp,pad_to_length=a.bucket>1,pad_to_length_bucket=a.bucket,use_no_sync_for_gradient_accumulation=False),FSDPOptimizerConfig(lr=1e-6,weight_decay=0.,total_training_steps=100),CheckpointConfig())
-        engine.initialize();model=engine.module
-        if a.fp32_residual:engine._autocast_dtype=torch.bfloat16
-        if a.fp32_output:engine._autocast_dtype=torch.float32
-    else:
-        if a.backend=='flex_attention' and a.fp32_residual and os.environ.get('NL2SQL_ATTENTION_FP32')!='1':
-            from transformers import AttentionInterface
-            from transformers.integrations.flex_attention import flex_attention_forward
-            def aligned_attention(module,q,k,v,mask,**kwargs):
-                if a.fp32_output:
-                    output_dtype=q.dtype
-                    q,k,v=(x.bfloat16() for x in (q,k,v))
-                    if os.environ.get('NL2SQL_FLEX_CANONICAL_LAYOUT')=='1':q,k,v=(x.contiguous() for x in (q,k,v))
-                    out,weights=flex_attention_forward(module,q,k,v,mask,**kwargs)
-                    if os.environ.get('NL2SQL_FLEX_CANONICAL_LAYOUT')=='1':
-                        # HF returns BSHD; ensure the Flex backward sees contiguous BHSD.
-                        if out.requires_grad:out.register_hook(lambda grad:grad.transpose(1,2).contiguous().transpose(1,2))
-                    return out.to(output_dtype),weights
-                return flex_attention_forward(module,q.to(v.dtype),k.to(v.dtype),v,mask,**kwargs)
-            AttentionInterface.register('flex_attention',aligned_attention)
-        if a.backend=='flex_attention' and os.environ.get('NL2SQL_ATTENTION_FP32')=='1':
-            from transformers import AttentionInterface
-            from transformers.integrations.flex_attention import flex_attention_forward
-            def precise_attention(module,q,k,v,mask,**kwargs):
-                dtype=q.dtype
-                options=dict(kwargs.pop('kernel_options',{}))
-                options.update(BLOCK_M=16,BLOCK_N=16,FLOAT32_PRECISION=repr(os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3')))
-                with torch.autocast('cuda',enabled=False):
-                    output,weights=flex_attention_forward(module,q.float(),k.float(),v.float(),mask,kernel_options=options,**kwargs)
-                return output.to(dtype),weights
-            AttentionInterface.register('flex_attention',precise_attention)
-        model=Gemma4ForConditionalGeneration.from_pretrained(a.model,dtype=torch.float32 if a.fp32_residual else torch.bfloat16,device_map={'':'cuda'},attn_implementation=a.backend)
-        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant':False})
-    if a.fp32_output:torch.set_float32_matmul_precision('medium')
-    for name,param in model.named_parameters():
-        if any(x in name for x in ('vision_tower','embed_vision','multi_modal_projector','audio_tower','embed_audio')):param.requires_grad_(False)
-    offloaded={}
-    if a.mode=='hf' and a.fp32_residual:
-        # Compute every parameter gradient, but release it as soon as accumulated
-        # so an independent FP32-weight HF reference fits one B200. Retain the
-        # same selected tensors on CPU across the two backward passes.
-        for name,param in model.named_parameters():
-            if not param.requires_grad:continue
-            def release_gradient(p,name=name):
-                if selected(name):
-                    grad=p.grad.detach().float().cpu()
-                    if name in offloaded:offloaded[name].add_(grad)
-                    else:offloaded[name]=grad
-                p.grad=None
-            param.register_post_accumulate_grad_hook(release_gradient)
+def run_comparison(a,model,engine,rank,offloaded):
     model.train();rows=fixture(a.model,a.lengths,a.row_indices);count=sum(int(mask[1:].sum()) for ids,mask in rows)
     loss_sum=0.;lps=[];start=time.monotonic();torch.cuda.reset_peak_memory_stats()
     assert a.micro==1 or a.backend=='nl2sql_flex_ulysses'
@@ -176,7 +93,7 @@ def main():
             if rank==0:gradients[name.replace('._checkpoint_wrapped_module','').replace('._fsdp_wrapped_module','')]=grad.detach().float().cpu()
     if rank==0:
         assert gradients, 'No gradients captured'
-        result={'model':a.model,'row_indices':a.row_indices,'cp':a.sp if a.mode=='native' else 1,'dp':dist.get_world_size()//a.sp if a.mode=='native' else 1,'fp32_output':a.fp32_output,'fp32_residual':a.fp32_residual,'microbatch':a.micro,'bucket':a.bucket,'attention_fp32':os.environ.get('NL2SQL_ATTENTION_FP32')=='1','attention_arithmetic':os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3') if os.environ.get('NL2SQL_ATTENTION_FP32')=='1' else 'bf16','canonical_layout':os.environ.get('NL2SQL_FLEX_CANONICAL_LAYOUT')=='1','plain_loss':a.plain_loss,'mode':a.mode,'backend':a.backend,'loss':loss_sum,'seconds':time.monotonic()-start,'peak_allocated_gib':torch.cuda.max_memory_allocated()/2**30,'lengths':[len(ids) for ids,mask in rows],'selected_gradients':len(gradients)}
+        result={'model':a.model,'row_indices':a.row_indices,'cp':a.sp if a.mode=='native' else 1,'dp':dist.get_world_size()//a.sp if a.mode=='native' else 1,'linear_arithmetic':'ieee' if a.fp32_ieee else ('tf32' if a.fp32_output else 'bf16'),'fp32_output':a.fp32_output,'fp32_residual':a.fp32_residual,'microbatch':a.micro,'bucket':a.bucket,'attention_fp32':os.environ.get('NL2SQL_ATTENTION_FP32')=='1','attention_arithmetic':os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3') if os.environ.get('NL2SQL_ATTENTION_FP32')=='1' else 'bf16','static_shapes':not torch._dynamo.config.automatic_dynamic_shapes,'canonical_layout':os.environ.get('NL2SQL_FLEX_CANONICAL_LAYOUT')=='1','plain_loss':a.plain_loss,'mode':a.mode,'backend':a.backend,'loss':loss_sum,'seconds':time.monotonic()-start,'peak_allocated_gib':torch.cuda.max_memory_allocated()/2**30,'lengths':[len(ids) for ids,mask in rows],'selected_gradients':len(gradients)}
         saved={'gradients':gradients,'logprobs':torch.cat(lps),'result':result}
         Path(a.output).parent.mkdir(parents=True,exist_ok=True)
         if a.reference:
@@ -188,19 +105,125 @@ def main():
         path=Path(a.output);path.parent.mkdir(parents=True,exist_ok=True);torch.save(saved,path.with_suffix('.pt'));path.with_suffix('.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result),flush=True)
         if a.reference:
             assert result['pass_gradient'] and result['max_logprob_abs_difference']<.1 and result['loss_abs_difference']<.01,result
+    if a.mode=='native':dist.barrier()
+
+
+def main():
+    p=argparse.ArgumentParser();p.add_argument('--mode',choices=['hf','native'],required=True)
+    p.add_argument('--model',default=MODEL);p.add_argument('--lengths',type=int,nargs='+',default=[257,385])
+    p.add_argument('--micro',type=int,default=1)
+    p.add_argument('--fp32-residual',action='store_true')
+    p.add_argument('--fp32-output',action='store_true')
+    p.add_argument('--fp32-ieee',action='store_true',help='IEEE FP32 linear arithmetic as well as FP32 outputs')
+    p.add_argument('--row-indices',type=int,nargs='+')
+    p.add_argument('--cpu-saved-tensors',action='store_true')
+    p.add_argument('--additional-comparisons',help='JSON list of fixture/reference/output overrides; reuse the initialized native model')
+    p.add_argument('--additional-exercises',help='JSON list of memory/update/restore overrides after the primary exercise')
+    p.add_argument('--exercise-output')
+    p.add_argument('--exercise-lengths',type=int,nargs='+',default=[4096,8192,16384,32768])
+    p.add_argument('--exercise-accum',type=int,default=1)
+    p.add_argument('--exercise-checkpoint')
+    p.add_argument('--bucket',type=int,default=1);p.add_argument('--plain-loss',action='store_true');p.add_argument('--compat',action='store_true');p.add_argument('--sp',type=int,default=1);p.add_argument('--output',required=True);p.add_argument('--reference');p.add_argument('--backend',default='sdpa')
+    a=p.parse_args();torch.set_num_threads(2);torch.cuda.set_device(int(os.environ.get('LOCAL_RANK',0)))
+    if os.environ.get('NL2SQL_FLEX_STATIC')=='1':torch._dynamo.config.automatic_dynamic_shapes=False
+    if a.fp32_ieee:a.fp32_output=True
+    if a.fp32_output:
+        a.fp32_residual=True
+        os.environ['NL2SQL_ATTENTION_BF16_IO']='1'
+    from src.nl2sql_verl.tests.probe_metadata import record_probe
+    record_probe(a)
+    if a.fp32_residual:torch.set_autocast_cache_enabled(False)
+    torch.set_float32_matmul_precision('highest');torch.backends.cuda.preferred_blas_library('cublaslt')
+    torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction=(False,False)
+    rank=0
+    if a.mode=='native':
+        dist.init_process_group('nccl',device_id=torch.device('cuda',torch.cuda.current_device()));rank=dist.get_rank()
+        from verl.workers.config import HFModelConfig,FSDPEngineConfig,FSDPOptimizerConfig
+        from verl.workers.engine.fsdp.transformer_impl import FSDPEngineWithLMHead
+        from verl.trainer.config import CheckpointConfig
+        if a.compat:
+            from src.nl2sql_verl import fsdp_engine
+        custom=a.backend=='nl2sql_flex_ulysses'
+        cls=fsdp_engine.GemmaFSDPEngine if custom else FSDPEngineWithLMHead
+        mc=HFModelConfig(path=a.model,load_tokenizer=False,use_remove_padding=custom,override_config={'attn_implementation':a.backend,'nl2sql_precision':'ieee' if a.fp32_ieee else ('tf32' if a.fp32_output else 'amp'),**({'nl2sql_attention_precision':os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3'),**({'nl2sql_static_shapes':True} if os.environ.get('NL2SQL_FLEX_STATIC')=='1' else {})} if os.environ.get('NL2SQL_ATTENTION_FP32')=='1' else {})})
+        precision={'param_dtype':'fp32' if a.fp32_residual else 'bf16','reduce_dtype':'fp32','buffer_dtype':'fp32'}
+        engine=cls(mc,FSDPEngineConfig(strategy='fsdp2',mixed_precision=precision,use_torch_compile=False,ulysses_sequence_parallel_size=a.sp,pad_to_length=a.bucket>1,pad_to_length_bucket=a.bucket,use_no_sync_for_gradient_accumulation=False),FSDPOptimizerConfig(lr=1e-6,weight_decay=0.,total_training_steps=100),CheckpointConfig())
+        engine.initialize();model=engine.module
+        if a.fp32_residual:engine._autocast_dtype=torch.bfloat16
+        if a.fp32_output:engine._autocast_dtype=torch.float32
+    else:
+        if a.backend=='flex_attention' and a.fp32_residual and os.environ.get('NL2SQL_ATTENTION_FP32')!='1':
+            from transformers import AttentionInterface
+            from transformers.integrations.flex_attention import flex_attention_forward
+            def aligned_attention(module,q,k,v,mask,**kwargs):
+                if a.fp32_output:
+                    output_dtype=q.dtype
+                    q,k,v=(x.bfloat16() for x in (q,k,v))
+                    if os.environ.get('NL2SQL_FLEX_CANONICAL_LAYOUT')=='1':q,k,v=(x.contiguous() for x in (q,k,v))
+                    out,weights=flex_attention_forward(module,q,k,v,mask,**kwargs)
+                    if os.environ.get('NL2SQL_FLEX_CANONICAL_LAYOUT')=='1':
+                        # HF returns BSHD; ensure the Flex backward sees contiguous BHSD.
+                        if out.requires_grad:out.register_hook(lambda grad:grad.transpose(1,2).contiguous().transpose(1,2))
+                    return out.to(output_dtype),weights
+                return flex_attention_forward(module,q.to(v.dtype),k.to(v.dtype),v,mask,**kwargs)
+            AttentionInterface.register('flex_attention',aligned_attention)
+        if a.backend=='flex_attention' and os.environ.get('NL2SQL_ATTENTION_FP32')=='1':
+            from transformers import AttentionInterface
+            from transformers.integrations.flex_attention import flex_attention_forward
+            def precise_attention(module,q,k,v,mask,**kwargs):
+                dtype=q.dtype
+                options=dict(kwargs.pop('kernel_options',{}))
+                options.update(BLOCK_M=16,BLOCK_N=16,FLOAT32_PRECISION=repr(os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3')))
+                with torch.autocast('cuda',enabled=False):
+                    output,weights=flex_attention_forward(module,q.float(),k.float(),v.float(),mask,kernel_options=options,**kwargs)
+                return output.to(dtype),weights
+            AttentionInterface.register('flex_attention',precise_attention)
+        model=Gemma4ForConditionalGeneration.from_pretrained(a.model,dtype=torch.float32 if a.fp32_residual else torch.bfloat16,device_map={'':'cuda'},attn_implementation=a.backend)
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant':False})
+    if a.fp32_output:torch.set_float32_matmul_precision('highest' if a.fp32_ieee else 'medium')
+    if a.fp32_ieee:torch.backends.cuda.preferred_blas_library('cublas')
+    for name,param in model.named_parameters():
+        if any(x in name for x in ('vision_tower','embed_vision','multi_modal_projector','audio_tower','embed_audio')):param.requires_grad_(False)
+    offloaded={}
+    if a.mode=='hf' and a.fp32_residual:
+        # Compute every parameter gradient, but release it as soon as accumulated
+        # so an independent FP32-weight HF reference fits one B200. Retain the
+        # same selected tensors on CPU across the two backward passes.
+        for name,param in model.named_parameters():
+            if not param.requires_grad:continue
+            def release_gradient(p,name=name):
+                if selected(name):
+                    grad=p.grad.detach().float().cpu()
+                    if name in offloaded:offloaded[name].add_(grad)
+                    else:offloaded[name]=grad
+                p.grad=None
+            param.register_post_accumulate_grad_hook(release_gradient)
+    run_comparison(a,model,engine if a.mode=='native' else None,rank,offloaded)
+    if a.additional_comparisons:
+        assert a.backend in ('nl2sql_flex_ulysses','flex_attention')
+        for item in json.loads(Path(a.additional_comparisons).read_text()):
+            assert set(item)<=set(('lengths','row_indices','reference','output','micro'))
+            extra=argparse.Namespace(**(vars(a)|item))
+            assert extra.reference and extra.output!=a.output
+            if a.mode=='native':engine.optimizer_zero_grad()
+            else:model.zero_grad(set_to_none=True)
+            offloaded.clear();torch.cuda.empty_cache()
+            record_probe(extra)
+            run_comparison(extra,model,engine if a.mode=='native' else None,rank,offloaded)
     if a.exercise_output:
         assert a.mode=='native' and a.reference and a.backend=='nl2sql_flex_ulysses'
         from types import SimpleNamespace
         from src.nl2sql_verl.tests.fsdp_memory_probe import exercise_engine
-        del output
-        engine.optimizer_zero_grad();gradients.clear();lps.clear()
-        if rank==0:
-            saved.clear();ref.clear();del x,y,grad
-        del inputs,output_args,batch,native_lp,direct,local_direct
-        torch.cuda.empty_cache()
-        exercise_engine(engine,SimpleNamespace(sp=a.sp,lengths=a.exercise_lengths,micro=a.micro,
+        engine.optimizer_zero_grad();torch.cuda.empty_cache()
+        exercise=SimpleNamespace(sp=a.sp,lengths=a.exercise_lengths,micro=a.micro,
             accum=a.exercise_accum,fp32_residual=a.fp32_residual,fp32_output=a.fp32_output,
-            output=a.exercise_output,checkpoint=a.exercise_checkpoint))
+            output=a.exercise_output,checkpoint=a.exercise_checkpoint)
+        exercise_engine(engine,exercise)
+        if a.additional_exercises:
+            for item in json.loads(Path(a.additional_exercises).read_text()):
+                assert set(item)<=set(('lengths','micro','accum','output','checkpoint'))
+                assert item['output']!=a.exercise_output
+                exercise_engine(engine,SimpleNamespace(**(vars(exercise)|item)))
     if a.mode=='native':dist.destroy_process_group()
 
 if __name__=='__main__':main()

@@ -16,7 +16,7 @@ def record_probe(args):
            'src/nl2sql_verl/worker_python.sh']
     keys=['CUDA_VISIBLE_DEVICES','WORLD_SIZE','NL2SQL_ATTENTION_FP32',
           'NL2SQL_ATTENTION_BF16_IO','NL2SQL_FLEX_FP32_PRECISION',
-          'NL2SQL_FLEX_CANONICAL_LAYOUT','TORCHINDUCTOR_COMPILE_THREADS','OMP_NUM_THREADS']
+          'NL2SQL_FLEX_CANONICAL_LAYOUT','NL2SQL_FLEX_STATIC','TORCHINDUCTOR_COMPILE_THREADS','OMP_NUM_THREADS']
     result={'recorded_utc':datetime.now(timezone.utc).isoformat(),'argv':sys.argv,
             'arguments':vars(args),'environment':{k:os.environ[k] for k in keys if k in os.environ},
             'source_sha256':{p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in files}}

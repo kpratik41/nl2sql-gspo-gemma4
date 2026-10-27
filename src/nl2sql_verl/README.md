@@ -4,11 +4,43 @@ The dated investigation history, failed checks, completed work and pending
 gates are recorded in [WORK_LOG.md](../../WORK_LOG.md). Native FSDP2/Ulysses
 experiments in `configs/fsdp_cp2.yaml` are **not production-ready**; their
 launcher requires numerical, memory, restore and integration evidence.
-The October 27 full-model tests now isolate an attention precision issue:
-FP32 tensors with fast TF32 attention agree across CP layouts, but substantially
-disagree with a higher-accuracy HF attention reference. That fast mode is not
-approved for training. IEEE attention passes the longest-fixture CP2/DP1 check; final topology,
-optimizer/restore and real RL integration remain pending. See the dated log.
+The October 27 tests found shape-history-dependent numerical changes under
+automatic dynamic-shape compilation. The current candidate uses static
+compilation and IEEE FP32 arithmetic throughout the actor; rollout remains BF16.
+Numerical, optimizer/restore and real RL integration gates are still in progress.
+
+## Current native FSDP2/CP2 candidate (October 27)
+
+A true-FP32 full 31B CP2 comparison passed on two GPUs. Final-topology and
+shape-history validation for the current candidate remain pending. The check
+compares 20 selected parameter gradients; it is not an exhaustive gradient
+comparison. Remaining validation is tracked in the chronological work log.
+
+| Component | Candidate setting |
+|---|---|
+| Actor layout | 8 B200s, TP1 × CP2 × DP4; native FSDP2 shards model/Adam state across all eight |
+| Actor precision | IEEE FP32 linear/attention arithmetic, parameters, residuals, outputs and gradient reduction; static shape compilation |
+| Attention | Upstream HF Flex masks and attention; exact causal global and sliding attention; Ulysses CP collectives |
+| Training data / evaluation | All 6,601 filtered training rows; fixed 640-row dev subset; no 9,428-row dataset |
+| Context | 11,264 prompt + 2,048 response tokens; no length-based row filtering |
+| Update batch | 32 accepted prompt groups × 16 generations = 512 trajectories |
+| Actor microbatch / accumulation | 1 trajectory per CP pair; 128 accumulation rounds per DP replica; one PPO pass |
+| Rollout | BF16 vLLM TP4 × DP2; up to 32 sequences per replica |
+| Dynamic sampling | Native verl V1 DAPO filtering on execution `result`; 2 prompt groups per generation batch, up to 2 batches in flight |
+| Objective | GRPO group centering / batch reward std; token-mean loss; clip 0.2 / 0.28; no KL or entropy bonus |
+| Optimizer | AdamW, LR 1e-6, weight decay 0, gradient clipping 1.0 |
+| Persistence | Full model/optimizer/scheduler/RNG checkpoints every 5 updates, retain latest 2 completed saves on NVMe; eval every 10 updates |
+
+A generation batch is not a fixed per-GPU prompt allocation: vLLM TP4 spans four
+GPUs and schedules the trajectories. DAPO may sample more than 32 groups to obtain
+32 accepted groups. The pinned V1 implementation does not enforce a total retry
+bound through `max_num_gen_batches`.
+
+Earlier microbatch-2 and BF16-linear candidates failed numerical checks.
+The current candidate retains microbatch 1. The IEEE attention-only 4K–32K tests show approximately linear memory
+in the tested range; dense global attention compute remains quadratic. Full
+model/optimizer memory also includes substantial fixed state. The earlier BF16
+TP2/CP1 control and earlier pilots below describe separate recipes.
 
 This ports the task behavior from `origin/consensus` commit
 `588e1378777c64fa1a48d2548efccd51edd29270` to verl, with a repository-local

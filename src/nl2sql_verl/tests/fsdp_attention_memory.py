@@ -8,6 +8,7 @@ from verl.utils.ulysses import set_ulysses_sequence_parallel_group
 
 
 def main():
+    if os.environ.get('NL2SQL_FLEX_STATIC')=='1':torch._dynamo.config.automatic_dynamic_shapes=False
     torch.cuda.set_device(int(os.environ['LOCAL_RANK']));torch.set_num_threads(2)
     dist.init_process_group('nccl',device_id=torch.device('cuda',torch.cuda.current_device()))
     sp=dist.get_world_size();rank=dist.get_rank()
@@ -33,6 +34,7 @@ def main():
             if repeat==1:rows.append(row)
         del masks,tensors,pos
     precision=('fp32_'+os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3')) if os.environ.get('NL2SQL_ATTENTION_FP32')=='1' else ('bf16_fp32io' if os.environ.get('NL2SQL_ATTENTION_BF16_IO')=='1' else 'bf16')
+    if os.environ.get('NL2SQL_FLEX_STATIC')=='1':precision+='_static'
     Path(f'outputs/fsdp_cp_recipe/attention_memory_{precision}_sp{sp}_rank{rank}.json').write_text(json.dumps(rows,indent=2)+'\n')
     dist.destroy_process_group()
 

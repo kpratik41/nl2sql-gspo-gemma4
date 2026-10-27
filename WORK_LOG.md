@@ -487,3 +487,67 @@ full-model checkpoint round trip and real RL integration remain pending.
 - CPU regression suite rerun for the IEEE recipe setting: 34 passed. Updated
   readiness checks to require IEEE-policy, eight-GPU evidence and matching
   engine/attention/runtime source hashes. No sustained training launched yet.
+
+### 07:49 — final-policy CP2 full-model capacity complete
+
+- IEEE attention / FP32-output linears completed two actual Adam updates at
+  each of 4K, 8K, 16K and 32K on all eight B200s (CP2/DP4, microbatch 1).
+  All reported source-rank gradient norms were finite and positive.
+- Started short and full ~5K SQL comparisons using the same initialized model,
+  followed by two 13,312-token updates with two accumulation rounds, then an
+  exact full-model/Adam/scheduler/CPU+CUDA RNG checkpoint round trip on NVMe.
+- The remaining separate control is CP1 numerical/capacity validation. Real
+  GRPO/DAPO/tool integration remains gated on these checks.
+
+Final-policy CP2 warm update maxima across all ranks:
+
+| Tokens | Allocated GiB | Reserved GiB | Seconds |
+|---|---:|---:|---:|
+| 4,096 | 79.76 | 105.42 | 8.89 |
+| 8,192 | 79.76 | 117.28 | 22.35 |
+| 16,384 | 86.08 | 128.01 | 67.62 |
+| 32,768 | 128.84 | 174.14 | 231.86 |
+
+These are synthetic full-model optimizer updates, not complete RL steps; they
+exclude rollout, SQL tools, evaluation and checkpoint I/O. IEEE attention trades
+throughput for the tested numerical behavior. Production throughput must be
+measured in the integration run.
+
+### 07:52–08:00 — shape-history failure isolated; true FP32 baseline added
+
+- The combined short→~5K CP2 probe failed on the ~5K fixture: worst gradient
+  relative L2 5.341, maximum response logprob difference 0.17014. It stopped
+  before accumulated optimizer updates or checkpoint writing.
+- A fresh CP2 process passed that same fixture (0.2608% gradient relative L2),
+  and a fresh HF rerun was bit-identical. The discrepancy affected the first
+  5,088-token example; the second 5,252-token example matched within 1.91e-6.
+  This implicates shape history, not a universally failing length.
+- Testing automatic dynamic-shape compilation explicitly, including HF
+  short→full and static-shape variants. A related upstream report exists at
+  https://github.com/pytorch/pytorch/issues/186775, but it reports NaNs under
+  different mask conditions; it is not proof that our failure is the same bug.
+- Added a true IEEE FP32 linear-arithmetic control (TF32 disabled, standard
+  cuBLAS), retaining IEEE attention. The fresh full-model CP2 comparison on
+  ~5K fixtures passed at 3.296e-6 relative L2 (0.000330%), much tighter than
+  the TF32-linear result; response logprobs within 1.91e-6. Runtime was not
+  worse in these diagnostic runs. Static true-FP32 short/full/long HF
+  references are now running. All earlier TF32-policy capacity results remain
+  diagnostic evidence; they do not override this new shape-history failure.
+
+### 08:01–08:07 — HF reproduces shape-history drift; static policy established
+
+- Unsharded HF also changes on short→full shape history: the same ~5K example
+  shifts response logprobs by 0.170145, matching the native CP2 drift. This
+  failure does not require context parallelism or FSDP.
+- Disabling automatic dynamic shapes makes fresh and warmed HF forward results
+  identical. Their selected-gradient difference is 0.2044% with TF32 linears.
+  CP2 against the matching static HF reference passes at 0.2210% gradient
+  relative L2 and 1.073e-6 logprob difference. Comparisons of static runs against
+  older dynamic references are retained as failures, not silently overwritten.
+- Current candidate selects IEEE FP32 linears (standard cuBLAS), IEEE attention
+  and static compilation explicitly in config. True-FP32 HF references are
+  complete for short/~5K/~11K contexts; longest reference took 224.8 seconds.
+- Added shape-history sequences and sequential memory/restore exercises to the
+  probe harness, so reuse is tested before any optimizer step. CPU suite remains
+  34 passed. Eight-GPU checks and final-policy capacity/restore/integration are
+  still required; earlier TF32 passes do not certify the new candidate.

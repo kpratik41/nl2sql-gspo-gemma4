@@ -13,11 +13,11 @@ vllm_compat.register()
 class GemmaFSDPEngine(FSDPEngineWithLMHead):
     def _build_fsdp_module(self, module):
         module=super()._build_fsdp_module(module)
-        # Both modes retain FP32 embeddings/residuals with FP32 parameters.
+        # All policies retain FP32 embeddings/residuals with FP32 parameters.
         # AMP rounds linear outputs to BF16; TF32 keeps outputs in FP32 and
-        # uses lower-precision Tensor Core arithmetic through the BLAS policy.
+        # uses Tensor Core arithmetic; IEEE keeps ordinary FP32 arithmetic.
         # Avoid retaining a second model's worth of cached autocast weights.
-        self._autocast_dtype=torch.float32 if self.nl2sql_precision=='tf32' else torch.bfloat16
+        self._autocast_dtype=torch.bfloat16 if self.nl2sql_precision=='amp' else torch.float32
         torch.set_autocast_cache_enabled(False)
         return module
 
@@ -28,16 +28,19 @@ class GemmaFSDPEngine(FSDPEngineWithLMHead):
 
     def _build_module(self):
         self.nl2sql_precision=self.model_config.override_config.get('nl2sql_precision','amp')
-        if self.nl2sql_precision not in ('amp','tf32'):raise ValueError('Unknown recipe precision policy')
+        if self.nl2sql_precision not in ('amp','tf32','ieee'):raise ValueError('Unknown recipe precision policy')
         torch.set_float32_matmul_precision('medium' if self.nl2sql_precision=='tf32' else 'highest')
-        if self.nl2sql_precision=='tf32':os.environ['NL2SQL_ATTENTION_BF16_IO']='1'
+        if self.nl2sql_precision!='amp':os.environ['NL2SQL_ATTENTION_BF16_IO']='1'
+        static_shapes=self.model_config.override_config.get('nl2sql_static_shapes')
+        if static_shapes is not None:
+            torch._dynamo.config.automatic_dynamic_shapes=not static_shapes
         attention_precision=self.model_config.override_config.get('nl2sql_attention_precision')
         if attention_precision is not None:
             if attention_precision not in ('bf16','tf32','tf32x3','ieee'):
                 raise ValueError('Unknown attention precision policy')
             os.environ['NL2SQL_ATTENTION_FP32']='0' if attention_precision=='bf16' else '1'
             if attention_precision!='bf16':os.environ['NL2SQL_FLEX_FP32_PRECISION']=attention_precision
-        torch.backends.cuda.preferred_blas_library('cublaslt')
+        torch.backends.cuda.preferred_blas_library('cublas' if self.nl2sql_precision=='ieee' else 'cublaslt')
         torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction=(False,False)
         torch._dynamo.config.recompile_limit=512
         torch._dynamo.config.accumulated_recompile_limit=4096
