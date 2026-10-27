@@ -325,3 +325,37 @@ Evidence: `outputs/fsdp_cp_recipe/`; compact tracked observations are under
   DAPO batches allowed in flight. That permits up to four prompt groups / 64
   sampled trajectories in flight, subject to agent and serving scheduling.
   It does not change the 32 accepted groups / 512 trajectories per update.
+
+### 06:53 — CP2 full-model memory sweep completed
+
+Eight actual synthetic Adam updates completed on the full 31B model (cold/warm
+updates at each length), with finite gradients on all data-parallel replicas.
+Warm worst-rank measurements for microbatch one:
+
+| Global tokens | Peak allocated GiB/GPU | Peak reserved GiB/GPU | Update seconds |
+|---:|---:|---:|---:|
+| 4,096 | 79.76 | 107.12 | 2.88 |
+| 8,192 | 79.76 | 117.37 | 5.59 |
+| 16,384 | 86.08 | 127.67 | 12.63 |
+| 32,768 | 128.84 | 174.71 | 36.99 |
+
+These include model, gradients and Adam state. They are not RL-step timings
+(rollout, SQL tools, logprob recomputation, checkpoint I/O and evaluation add
+work). The 32K reserved peak is close to the GPU limit; production remains at
+13,312 total tokens. The candidate's longest-real-prompt parity, CP1 sweep,
+full-model checkpoint round trip and real RL integration remain pending.
+
+### 06:55–06:57 — production attention I/O and longest-reference capacity
+
+- The attention sweep with FP32 Q/K/V inputs and FP32 outputs around the BF16
+  Flex kernel passed, including mask construction. Peak allocated MiB at
+  4K/8K/16K/32K: CP1 = 1888.57/3777.19/7554.63/15110.26;
+  CP2 = 944.32/1888.69/3777.63/7556.26. All gradients were finite.
+- The longest-prompt independent HF reference OOMed during backward on one
+  B200. Restarted that reference with saved-tensor CPU offload, preserving its
+  arithmetic. This is a reference-only capacity workaround; the distributed
+  production actor does not offload its parameters or optimizer.
+- The new dedicated SSH key now authenticates successfully as `kpratik41`.
+  Updated this repository's SSH command to use
+  `/home/ubuntu/.ssh/id_ed25519_nl2sql_github`; pushes no longer depend on the
+  older key. Neither private key is committed.

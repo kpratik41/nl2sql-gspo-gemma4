@@ -524,5 +524,136 @@
         "finite": true
       }
     ]
+  },
+  "full_model_memory_cp2": {
+    "scope": "Actual synthetic full-model Adam updates, TF32 linear arithmetic with FP32 outputs and BF16 Flex",
+    "rows": [
+      {
+        "global_tokens": 4096,
+        "microbatch": 1,
+        "warm_peak_allocated_gib": 79.763352394104,
+        "warm_peak_reserved_gib": 107.1171875,
+        "worst_rank_seconds": 2.8779281219976838,
+        "finite_nonzero_gradient": true
+      },
+      {
+        "global_tokens": 8192,
+        "microbatch": 1,
+        "warm_peak_allocated_gib": 79.76352024078369,
+        "warm_peak_reserved_gib": 117.365234375,
+        "worst_rank_seconds": 5.593673829003819,
+        "finite_nonzero_gradient": true
+      },
+      {
+        "global_tokens": 16384,
+        "microbatch": 1,
+        "warm_peak_allocated_gib": 86.07850742340088,
+        "warm_peak_reserved_gib": 127.669921875,
+        "worst_rank_seconds": 12.627917336001701,
+        "finite_nonzero_gradient": true
+      },
+      {
+        "global_tokens": 32768,
+        "microbatch": 1,
+        "warm_peak_allocated_gib": 128.83708667755127,
+        "warm_peak_reserved_gib": 174.712890625,
+        "worst_rank_seconds": 36.987563691000105,
+        "finite_nonzero_gradient": true
+      }
+    ]
+  },
+  "attention_memory_fp32_io": {
+    "cp1": [
+      {
+        "global_tokens": 4096,
+        "local_tokens": 4096,
+        "repeat": 1,
+        "baseline_mib": 320.06640625,
+        "mask_construction_peak_mib": 320.15625,
+        "peak_allocated_mib": 1888.5673828125,
+        "peak_reserved_mib": 2018.0,
+        "seconds": 0.03468274299666518,
+        "finite": true
+      },
+      {
+        "global_tokens": 8192,
+        "local_tokens": 8192,
+        "repeat": 1,
+        "baseline_mib": 640.19140625,
+        "mask_construction_peak_mib": 830.7060546875,
+        "peak_allocated_mib": 3777.1923828125,
+        "peak_reserved_mib": 4100.0,
+        "seconds": 0.1365928349987371,
+        "finite": true
+      },
+      {
+        "global_tokens": 16384,
+        "local_tokens": 16384,
+        "repeat": 1,
+        "baseline_mib": 1280.62890625,
+        "mask_construction_peak_mib": 1408.8486328125,
+        "peak_allocated_mib": 7554.6298828125,
+        "peak_reserved_mib": 8086.0,
+        "seconds": 0.5278577260032762,
+        "finite": true
+      },
+      {
+        "global_tokens": 32768,
+        "local_tokens": 32768,
+        "repeat": 1,
+        "baseline_mib": 2562.2578125,
+        "mask_construction_peak_mib": 2819.072265625,
+        "peak_allocated_mib": 15110.2587890625,
+        "peak_reserved_mib": 16152.0,
+        "seconds": 2.102430250000907,
+        "finite": true
+      }
+    ],
+    "cp2": [
+      {
+        "global_tokens": 4096,
+        "local_tokens": 2048,
+        "repeat": 1,
+        "baseline_mib": 160.06640625,
+        "mask_construction_peak_mib": 160.15625,
+        "peak_allocated_mib": 944.3173828125,
+        "peak_reserved_mib": 1270.0,
+        "seconds": 0.021038139006122947,
+        "finite": true
+      },
+      {
+        "global_tokens": 8192,
+        "local_tokens": 4096,
+        "repeat": 1,
+        "baseline_mib": 320.19140625,
+        "mask_construction_peak_mib": 478.7060546875,
+        "peak_allocated_mib": 1888.6923828125,
+        "peak_reserved_mib": 2530.0,
+        "seconds": 0.0732139140018262,
+        "finite": true
+      },
+      {
+        "global_tokens": 16384,
+        "local_tokens": 8192,
+        "repeat": 1,
+        "baseline_mib": 640.62890625,
+        "mask_construction_peak_mib": 704.8486328125,
+        "peak_allocated_mib": 3777.6298828125,
+        "peak_reserved_mib": 5060.0,
+        "seconds": 0.27493753399903653,
+        "finite": true
+      },
+      {
+        "global_tokens": 32768,
+        "local_tokens": 16384,
+        "repeat": 1,
+        "baseline_mib": 1282.2578125,
+        "mask_construction_peak_mib": 1411.072265625,
+        "peak_allocated_mib": 7556.2587890625,
+        "peak_reserved_mib": 10116.0,
+        "seconds": 1.087703708006302,
+        "finite": true
+      }
+    ]
   }
 }

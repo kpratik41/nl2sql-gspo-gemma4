@@ -42,6 +42,7 @@ def main():
     p.add_argument('--fp32-residual',action='store_true')
     p.add_argument('--fp32-output',action='store_true')
     p.add_argument('--row-indices',type=int,nargs='+')
+    p.add_argument('--cpu-saved-tensors',action='store_true')
     p.add_argument('--bucket',type=int,default=1);p.add_argument('--plain-loss',action='store_true');p.add_argument('--compat',action='store_true');p.add_argument('--sp',type=int,default=1);p.add_argument('--output',required=True);p.add_argument('--reference');p.add_argument('--backend',default='sdpa')
     a=p.parse_args();torch.set_num_threads(2);torch.cuda.set_device(int(os.environ.get('LOCAL_RANK',0)))
     if a.fp32_output:
@@ -121,7 +122,8 @@ def main():
                 pos=torch.cat([pos,torch.arange(pad,device='cuda')[None]],-1)
         from contextlib import nullcontext
         ctx=engine.train_mode(disable_auto_offload=True,zero_grad_on_exit=False) if a.mode=='native' else nullcontext()
-        with ctx,sdpa_kernel(SDPBackend.MATH),torch.autocast('cuda',dtype=torch.bfloat16,enabled=not a.fp32_output):
+        saved_ctx=torch.autograd.graph.save_on_cpu(pin_memory=True) if a.cpu_saved_tensors else nullcontext()
+        with ctx,saved_ctx,sdpa_kernel(SDPBackend.MATH),torch.autocast('cuda',dtype=torch.bfloat16,enabled=not a.fp32_output):
             if a.backend=='nl2sql_flex_ulysses':
                 from tensordict import TensorDict
                 from verl.utils import tensordict_utils as tu
