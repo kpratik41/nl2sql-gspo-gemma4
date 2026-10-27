@@ -36,3 +36,13 @@ def test_memory_probe_loss_accepts_native_metadata_and_normalizes_gradients():
     assert loss.item()==1.5
     loss.backward()
     torch.testing.assert_close(lp.grad,torch.tensor([-.5,-.5,0.]))
+
+
+def test_bounded_pilot_keeps_batch_and_preserves_final_checkpoint_eval_contract():
+    from src.nl2sql_verl.run_fsdp import command
+    args=command(Path('/tmp/run'),Path('/tmp/checkpoint'),smoke=False,pilot=True)
+    assert 'trainer.nl2sql_training_seconds=7200' in args
+    assert 'trainer.save_freq=1' in args and 'trainer.test_freq=1' in args
+    assert not any(x.startswith('data.train_batch_size=') for x in args)
+    production=command(Path('/tmp/run'),Path('/tmp/checkpoint'),smoke=False)
+    assert not any(x.startswith(('trainer.save_freq=','trainer.test_freq=','trainer.nl2sql_training_seconds=')) for x in production)

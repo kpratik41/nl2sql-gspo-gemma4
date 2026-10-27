@@ -588,3 +588,18 @@ measured in the integration run.
   model/state restoration check, unlike the selected-gradient numerical checks.
 - The same process continues with the final-policy 4K–32K capacity sweep.
   CP1 control and the real two-update RL/640-row evaluation test remain pending.
+
+### 08:39 — bounded pilot launch option prepared
+
+- Added an optional `run_fsdp pilot` mode without changing the regular `train`
+  profile (100 updates, checkpoint every 5, eval every 10). Pilot keeps the
+  full 512-trajectory batch and 16 generations per prompt.
+- Pilot targets two hours after initial validation, checking at completed-update
+  boundaries. It saves/evaluates every update to satisfy the already-tested
+  bounded-runtime contract, retains the latest two complete checkpoints, and
+  has a three-hour total-job watchdog. The watchdog can interrupt an unfinished
+  update; status records that reason and the last complete checkpoint remains.
+- Both pilot and train require completed numerical/memory/restore and real RL
+  integration evidence. No pilot or sustained training is launched yet.
+- CPU suite: 35 passed, including preservation of the pilot's full batch and
+  checkpoint/evaluation contract.

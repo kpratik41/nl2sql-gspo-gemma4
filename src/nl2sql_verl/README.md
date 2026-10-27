@@ -33,6 +33,15 @@ comparison. Remaining validation is tracked in the chronological work log.
 | Optimizer | AdamW, LR 1e-6, weight decay 0, gradient clipping 1.0 |
 | Persistence | Full model/optimizer/scheduler/RNG checkpoints every 5 updates, retain latest 2 completed saves on NVMe; eval every 10 updates |
 
+After all gates pass, `python -m src.nl2sql_verl.run_fsdp pilot` selects a
+bounded full-batch pilot: a two-hour training-phase target, full checkpoint and
+640-row evaluation after every completed update, latest two checkpoints kept,
+and a three-hour total-job watchdog. The training clock excludes initial
+validation. The target is checked at update boundaries, so a slow update can
+overshoot it; the watchdog may interrupt an update and preserve the last
+completed checkpoint. `train` retains 100 updates, checkpoint every 5 and
+evaluation every 10. Neither command bypasses the validation gates.
+
 A generation batch is not a fixed per-GPU prompt allocation: vLLM TP4 spans four
 GPUs and schedules the trajectories. DAPO may sample more than 32 groups to obtain
 32 accepted groups. The pinned V1 implementation does not enforce a total retry

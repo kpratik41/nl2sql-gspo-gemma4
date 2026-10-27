@@ -70,7 +70,7 @@ def main():
         restore = read(f'long_update_static_fp32_restore_rank{rank}.json')
         assert restore['pass'] and restore['parameters'] > 1000 and restore['optimizer_tensors'] > 1000
     cpu = (ROOT / 'cpu_tests.log').read_text()
-    assert '34 passed' in cpu and 'FAILED ' not in cpu
+    assert '35 passed' in cpu and 'FAILED ' not in cpu
     manifest = json.loads((REPO / 'outputs/cp1_recipe/data/manifest.json').read_text())
     assert manifest['raw_9428_used'] is False
     dataset_hashes = {}
