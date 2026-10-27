@@ -685,3 +685,32 @@ cooperative stop after a completed update.
   reported rollout-correction KL 0.004394. Actor remains IEEE FP32 and
   serving BF16. No importance-sampling correction was enabled.
 - Second update and final 640-example validation remain pending.
+
+### 09:36 — all four validation stages pass; final paired dev result
+
+- Native two-update integration exited 0 after 2,040 seconds. Both updates
+  processed 32 trajectories and published complete full checkpoints. Step 2
+  gradient norm was 10.04689; selected training reward was 1.69178 versus
+  3.00859 at step 1. These batches contain different DAPO-selected prompts.
+- On the same 640 dev inputs, execution-result accuracy rose from **337/640
+  (52.65625%) to 439/640 (68.59375%)**. Composite dev reward rose from
+  **2.22944 to 2.91306**. Paired outcomes: 121 newly correct, 19 newly wrong,
+  318 correct both times and 182 wrong both times. Two small updates are
+  encouraging integration evidence, not a sustained learning trend.
+- Step 2 native DAPO metrics: six result-constant groups rejected, two surplus
+  accepted groups discarded. Generation took 368.3 s, old log probabilities
+  106.1 s, actor update 254.4 s, checkpoint 50.3 s, refresh 5.38 s. The step
+  took 784.6 s excluding its 296.7-s final evaluation.
+- Step 2 actor/rollout mean absolute logprob difference was 0.02378, maximum
+  19.022, reported KL 0.01271. The average remained modest but the tail is
+  a pending monitoring concern; no sampling correction was silently added.
+- A DataLoader worker emitted an ignored `atexit` cleanup exception after
+  final validation and metrics had been written. Supervisor exit was 0,
+  checkpoints were complete and GPU workers exited. This is recorded as
+  cleanup noise, not a failed optimizer/evaluation step.
+- Re-ran the fail-closed validator: numerical/memory and integration readiness
+  are both true. The CPU suite has 35 passing checks. All four requested
+  validation stages are complete for static IEEE FP32, microbatch 1, CP2.
+- Remaining: measure actual 512-trajectory throughput and reward progression
+  in the bounded pilot; BF16/TF32 and microbatch-2 performance optimization
+  remain unapproved because their earlier numerical tests failed.

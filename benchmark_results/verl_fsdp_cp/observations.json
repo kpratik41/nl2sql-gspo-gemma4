@@ -1,5 +1,5 @@
 {
-  "status": "Pre-RL numerical/memory/restore/data/CPU gates pass; CP1 succeeds through 16K and OOMs at 32K, CP2 succeeds through 32K; real two-update/640-eval integration running",
+  "status": "All numerical, attention-memory, capacity, accumulation, full-state restore and two-update RL integration gates passed; full-batch bounded pilot next",
   "gradient_scope": "20 selected parameter tensors, full 31B backward",
   "experiments": [
     {
@@ -2258,7 +2258,49 @@
         "timing_s/step": 408.7620110930002
       },
       "checkpoint_complete": true,
-      "checkpoint_gib": 345.52
+      "checkpoint_gib": 345.52,
+      "sampling_metrics": {},
+      "actor_rollout_logprob_mean_abs_diff": 0.006705026607960463,
+      "actor_rollout_logprob_max_abs_diff": 0.7781417369842529,
+      "rollout_kl": 0.00439355568960309
+    },
+    {
+      "step": 2,
+      "trajectory_count": 32,
+      "mean_reward": 1.6917802095413208,
+      "result_rate": 0.21875,
+      "grad_norm": 10.046892166137695,
+      "timings": {
+        "timing_s/gen": 368.3130403019968,
+        "timing_s/old_log_prob": 106.1051553599973,
+        "timing_s/adv": 0.05000777399982326,
+        "timing_s/update_actor": 254.4364015530009,
+        "timing_s/save_checkpoint": 50.305923202002305,
+        "timing_s/update_weights": 5.378316791000543,
+        "timing_s/step": 784.6046832979991,
+        "timing_s/testing": 296.739042154004
+      },
+      "checkpoint_complete": true,
+      "checkpoint_gib": 345.52,
+      "sampling_metrics": {
+        "training/filter_groups/evicted_samples": 6.0,
+        "training/filter_groups/discarded_surplus_samples": 2.0
+      },
+      "actor_rollout_logprob_mean_abs_diff": 0.023780709132552147,
+      "actor_rollout_logprob_max_abs_diff": 19.022010803222656,
+      "rollout_kl": 0.012705976143479347
     }
-  ]
+  ],
+  "integration_final": {
+    "step": 2,
+    "count": 640,
+    "correct": 439,
+    "accuracy": 0.6859375,
+    "mean_reward": 2.913057421690246,
+    "paired_improved": 121,
+    "paired_regressed": 19,
+    "exit_code": 0,
+    "elapsed_seconds": 2040.0333251953125,
+    "limitation": "Two small updates, not a sustained training trend. Ignored DataLoader atexit cleanup exception followed successful final metrics."
+  }
 }

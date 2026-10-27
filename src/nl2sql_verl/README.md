@@ -1,24 +1,28 @@
 # Gemma 4 NL2SQL tool-calling RL in verl
 
 The dated investigation history, failed checks, completed work and pending
-gates are recorded in [WORK_LOG.md](../../WORK_LOG.md). Native FSDP2/Ulysses
-experiments in `configs/fsdp_cp2.yaml` are **not production-ready**; their
-launcher requires numerical, memory, restore and integration evidence.
+gates are recorded in [WORK_LOG.md](../../WORK_LOG.md). The native FSDP2/Ulysses
+recipe in `configs/fsdp_cp2.yaml` has passed numerical, memory, full-state
+restore and two-update RL integration checks; full-batch throughput remains
+to be measured. Its launcher checks the saved validation evidence.
 The October 27 tests found shape-history-dependent numerical changes under
 automatic dynamic-shape compilation. The current candidate uses static
 compilation and IEEE FP32 arithmetic throughout the actor; rollout remains BF16.
-Numerical, optimizer/restore and real RL integration gates are still in progress.
+All four validation stages passed. The 640-example dev result improved from
+337/640 to 439/640 after two small updates; this is not a sustained training
+trend. Full checkpoints were completed after both updates.
 
-## Current native FSDP2/CP2 candidate (October 27)
+## Validated native FSDP2/CP2 recipe (October 27)
 
 The true-FP32 full 31B CP2 recipe passed short/full/long/repeated-full
 comparisons on all eight GPUs. Repeated full-context results were bit-identical
-after the long-context run. Optimizer/restore, capacity and RL integration
-checks remain in progress. The check
+after the long-context run. Full-state restore and CP2 optimizer updates through
+32K passed; CP1 reached 16K and OOMed at 32K. The real RL integration exited
+successfully with both updates and evaluations complete. The numerical check
 compares 20 selected parameter gradients; it is not an exhaustive gradient
-comparison. Remaining validation is tracked in the chronological work log.
+comparison. Remaining performance work is tracked in the chronological work log.
 
-| Component | Candidate setting |
+| Component | Validated setting |
 |---|---|
 | Actor layout | 8 B200s, TP1 × CP2 × DP4; native FSDP2 shards model/Adam state across all eight |
 | Actor precision | IEEE FP32 linear/attention arithmetic, parameters, residuals, outputs and gradient reduction; static shape compilation |
@@ -33,7 +37,7 @@ comparison. Remaining validation is tracked in the chronological work log.
 | Optimizer | AdamW, LR 1e-6, weight decay 0, gradient clipping 1.0 |
 | Persistence | Full model/optimizer/scheduler/RNG checkpoints every 5 updates, retain latest 2 completed saves on NVMe; eval every 10 updates |
 
-After all gates pass, `python -m src.nl2sql_verl.run_fsdp pilot` selects a
+`python -m src.nl2sql_verl.run_fsdp pilot` selects a
 bounded full-batch pilot: a two-hour training-phase target, full checkpoint and
 640-row evaluation after every completed update, latest two checkpoints kept,
 and a three-hour total-job watchdog. The training clock excludes initial
@@ -198,16 +202,18 @@ It does not build missing schemas or remove arbitrary hints embedded in user
 text. The upstream generation scripts remain on `consensus`; they were not
 copied into this branch as part of the directory move.
 
-## Which framework we used, and what changes here
+## Earlier AutoModel implementation and framework history
 
 Earlier four-GPU measurements ran **NeMo AutoModel directly**, with PyTorch TP
 and Gemma's own ring CP attention. They were not NeMo RL or Megatron-LM training.
 The `megatron_fsdp` import/fallback warning in environment logs does not mean we
 trained a Megatron model. NeMo RL documentation was an integration reference.
 
-Here, **verl** owns the RL trainer, group advantages, policy loss, agent loop and
-rollout scheduling; **vLLM** generates trajectories; **NeMo AutoModel + PyTorch
-FSDP2/TP** execute the policy. The default four-GPU topology is TP2 × CP2 × DP1.
+In the earlier `base`/AutoModel recipe, **verl** owns the RL trainer, group
+advantages, policy loss, agent loop and rollout scheduling; **vLLM** generates
+trajectories; **NeMo AutoModel + PyTorch FSDP2/TP** execute the policy. That
+four-GPU topology is TP2 × CP2 × DP1. The current `fsdp_cp2` recipe above uses
+the native verl FSDP2 engine and Ulysses CP instead.
 Each CP partition has two TP GPUs. CP2 splits one example; it is not two
 independent examples. vLLM uses TP2 replicas on the same four GPUs in alternating
 rollout/training phases. Generation itself does not use the AutoModel CP ring.
