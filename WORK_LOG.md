@@ -551,3 +551,27 @@ measured in the integration run.
   probe harness, so reuse is tested before any optimizer step. CPU suite remains
   34 passed. Eight-GPU checks and final-policy capacity/restore/integration are
   still required; earlier TF32 passes do not certify the new candidate.
+
+### 08:09 — static FP32 attention memory complete; eight-GPU suite launched
+
+- Static IEEE attention passed CP1 and CP2 4K–32K memory sweeps, including mask
+  construction and finite backward gradients. Peaks remain approximately linear
+  and match the earlier IEEE attention measurements.
+- Launched full31B TP1/CP2/DP4 static IEEE FP32 validation on all eight B200s:
+  short→full→long→full comparisons against independent static HF references;
+  then 13,312-token accumulated updates/full-state restore; then the final-policy
+  4K–32K Adam/memory sweep. Each stage stops on a failed numerical assertion.
+- GitHub is current through `c6ccce3`. No full RL training has been launched.
+
+### 08:18 — eight-GPU static true-FP32 numerical and shape-history gates pass
+
+- Full 31B, TP1/CP2/DP4, IEEE linear and attention arithmetic, static compilation:
+  worst selected-gradient relative L2 was 0.002158% (short), 0.000413% (~5K),
+  0.003361% (~11K), and 0.000413% (repeated ~5K after ~11K).
+- The two ~5K runs have bit-identical response logprobs and every one of the
+  20 selected gradient tensors. All four comparisons pass the unchanged
+  independent-HF gates. This resolves the observed shape-history drift for
+  these tested fixtures and policy; it does not certify every possible input.
+- Accumulated 13,312-token updates are now running, before full-state save/load
+  and the final-policy capacity sweep. CP1 control and real RL integration
+  remain pending. The recipe remains fail-closed until those checks complete.

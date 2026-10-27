@@ -11,8 +11,10 @@ Numerical, optimizer/restore and real RL integration gates are still in progress
 
 ## Current native FSDP2/CP2 candidate (October 27)
 
-A true-FP32 full 31B CP2 comparison passed on two GPUs. Final-topology and
-shape-history validation for the current candidate remain pending. The check
+The true-FP32 full 31B CP2 recipe passed short/full/long/repeated-full
+comparisons on all eight GPUs. Repeated full-context results were bit-identical
+after the long-context run. Optimizer/restore, capacity and RL integration
+checks remain in progress. The check
 compares 20 selected parameter gradients; it is not an exhaustive gradient
 comparison. Remaining validation is tracked in the chronological work log.
 

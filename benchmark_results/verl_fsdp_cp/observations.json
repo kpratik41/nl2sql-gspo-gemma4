@@ -1,5 +1,5 @@
 {
-  "status": "NOT READY: shape-history failure found in HF and native CP2; current candidate is static compilation with IEEE FP32 throughout actor; final eight-GPU checks pending",
+  "status": "Static IEEE FP32 actor passes eight-GPU CP2 short/full/long/repeated-full numerical gates; accumulation/restore/capacity running; CP1 control and RL integration pending",
   "gradient_scope": "20 selected parameter tensors, full 31B backward",
   "experiments": [
     {
@@ -1462,6 +1462,145 @@
       "selected_gradients": 20,
       "artifact": "outputs/fsdp_cp_recipe/hf_static_fp32_long.json",
       "completed_utc": "2026-10-27T08:04:51.994660+00:00"
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": null,
+      "cp": 2,
+      "dp": 4,
+      "linear_arithmetic": "ieee",
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "attention_arithmetic": "ieee",
+      "static_shapes": true,
+      "canonical_layout": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.1797215938568115,
+      "seconds": 12.852667053004552,
+      "peak_allocated_gib": 52.074445724487305,
+      "lengths": [
+        257,
+        385
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 8.940696716308594e-08,
+      "max_logprob_abs_difference": 1.0205840226262808e-06,
+      "pass_gradient": true,
+      "artifact": "outputs/fsdp_cp_recipe/native_static_fp32_sp2_short.json",
+      "completed_utc": "2026-10-27T08:11:44.743332+00:00",
+      "worst_gradient_relative_l2": 2.158138243637516e-05,
+      "minimum_gradient_cosine": 0.9999999998950744,
+      "all_gates_pass": true
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": null,
+      "cp": 2,
+      "dp": 4,
+      "linear_arithmetic": "ieee",
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "attention_arithmetic": "ieee",
+      "static_shapes": true,
+      "canonical_layout": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.4964467883110046,
+      "seconds": 104.17087579100189,
+      "peak_allocated_gib": 54.44989585876465,
+      "lengths": [
+        5088,
+        5252
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 1.1920928955078125e-07,
+      "max_logprob_abs_difference": 9.5367431640625e-07,
+      "pass_gradient": true,
+      "artifact": "outputs/fsdp_cp_recipe/native_static_fp32_sp2_full.json",
+      "completed_utc": "2026-10-27T08:13:36.823195+00:00",
+      "worst_gradient_relative_l2": 4.132238610002093e-06,
+      "minimum_gradient_cosine": 0.9999999999915106,
+      "all_gates_pass": true
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": [
+        4837,
+        2737
+      ],
+      "cp": 2,
+      "dp": 4,
+      "linear_arithmetic": "ieee",
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "attention_arithmetic": "ieee",
+      "static_shapes": true,
+      "canonical_layout": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.233002245426178,
+      "seconds": 113.31680783100455,
+      "peak_allocated_gib": 65.00918245315552,
+      "lengths": [
+        10884,
+        10844
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 0.0,
+      "max_logprob_abs_difference": 1.430511474609375e-06,
+      "pass_gradient": true,
+      "artifact": "outputs/fsdp_cp_recipe/native_static_fp32_sp2_long.json",
+      "completed_utc": "2026-10-27T08:15:39.072949+00:00",
+      "worst_gradient_relative_l2": 3.361451207318717e-05,
+      "minimum_gradient_cosine": 0.9999999996031848,
+      "all_gates_pass": true
+    },
+    {
+      "model": "/home/ubuntu/.cache/huggingface/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "row_indices": null,
+      "cp": 2,
+      "dp": 4,
+      "linear_arithmetic": "ieee",
+      "fp32_output": true,
+      "fp32_residual": true,
+      "microbatch": 1,
+      "bucket": 256,
+      "attention_fp32": true,
+      "attention_arithmetic": "ieee",
+      "static_shapes": true,
+      "canonical_layout": false,
+      "plain_loss": false,
+      "mode": "native",
+      "backend": "nl2sql_flex_ulysses",
+      "loss": 1.4964467883110046,
+      "seconds": 43.635232175001875,
+      "peak_allocated_gib": 54.44989728927612,
+      "lengths": [
+        5088,
+        5252
+      ],
+      "selected_gradients": 20,
+      "loss_abs_difference": 1.1920928955078125e-07,
+      "max_logprob_abs_difference": 9.5367431640625e-07,
+      "pass_gradient": true,
+      "artifact": "outputs/fsdp_cp_recipe/native_static_fp32_sp2_full_repeat.json",
+      "completed_utc": "2026-10-27T08:16:32.363758+00:00",
+      "worst_gradient_relative_l2": 4.132238610002093e-06,
+      "minimum_gradient_cosine": 0.9999999999915106,
+      "all_gates_pass": true
     }
   ],
   "attention_memory": {
@@ -1847,5 +1986,104 @@
       "pass_gradient": true,
       "worst_gradient_relative_l2": 3.2963523525104325e-06
     }
+  },
+  "static_fp32_shape_history": {
+    "logprobs_bit_identical": true,
+    "selected_gradient_tensors": 20,
+    "all_selected_gradients_bit_identical": true
+  },
+  "static_ieee_attention_memory": {
+    "cp1": [
+      {
+        "global_tokens": 4096,
+        "local_tokens": 4096,
+        "repeat": 1,
+        "baseline_mib": 320.06640625,
+        "mask_construction_peak_mib": 320.15625,
+        "peak_allocated_mib": 1856.5673828125,
+        "peak_reserved_mib": 1858.0,
+        "seconds": 0.5238453990023118,
+        "finite": true
+      },
+      {
+        "global_tokens": 8192,
+        "local_tokens": 8192,
+        "repeat": 1,
+        "baseline_mib": 640.19140625,
+        "mask_construction_peak_mib": 830.7060546875,
+        "peak_allocated_mib": 3713.1923828125,
+        "peak_reserved_mib": 3844.0,
+        "seconds": 2.072457852002117,
+        "finite": true
+      },
+      {
+        "global_tokens": 16384,
+        "local_tokens": 16384,
+        "repeat": 1,
+        "baseline_mib": 1280.62890625,
+        "mask_construction_peak_mib": 1535.1591796875,
+        "peak_allocated_mib": 7426.6298828125,
+        "peak_reserved_mib": 7682.0,
+        "seconds": 8.117054408001422,
+        "finite": true
+      },
+      {
+        "global_tokens": 32768,
+        "local_tokens": 32768,
+        "repeat": 1,
+        "baseline_mib": 2562.2578125,
+        "mask_construction_peak_mib": 2944.818359375,
+        "peak_allocated_mib": 14854.2587890625,
+        "peak_reserved_mib": 15364.0,
+        "seconds": 32.39076311599638,
+        "finite": true
+      }
+    ],
+    "cp2": [
+      {
+        "global_tokens": 4096,
+        "local_tokens": 2048,
+        "repeat": 1,
+        "baseline_mib": 160.06640625,
+        "mask_construction_peak_mib": 160.15625,
+        "peak_allocated_mib": 1088.3173828125,
+        "peak_reserved_mib": 1378.0,
+        "seconds": 0.2714210900012404,
+        "finite": true
+      },
+      {
+        "global_tokens": 8192,
+        "local_tokens": 4096,
+        "repeat": 1,
+        "baseline_mib": 320.19140625,
+        "mask_construction_peak_mib": 478.7060546875,
+        "peak_allocated_mib": 2176.6923828125,
+        "peak_reserved_mib": 2818.0,
+        "seconds": 1.0325242250037263,
+        "finite": true
+      },
+      {
+        "global_tokens": 16384,
+        "local_tokens": 8192,
+        "repeat": 1,
+        "baseline_mib": 640.62890625,
+        "mask_construction_peak_mib": 831.1591796875,
+        "peak_allocated_mib": 4353.6298828125,
+        "peak_reserved_mib": 5572.0,
+        "seconds": 4.06685157600441,
+        "finite": true
+      },
+      {
+        "global_tokens": 32768,
+        "local_tokens": 16384,
+        "repeat": 1,
+        "baseline_mib": 1282.2578125,
+        "mask_construction_peak_mib": 1536.818359375,
+        "peak_allocated_mib": 8708.2587890625,
+        "peak_reserved_mib": 11268.0,
+        "seconds": 16.288655279000523,
+        "finite": true
+      }
+    ]
   }
 }
