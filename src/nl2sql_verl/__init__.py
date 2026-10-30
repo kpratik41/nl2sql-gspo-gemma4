@@ -1,1 +1,1 @@
-"""Gemma 4 NL2SQL tool-calling RL recipes for verl and AutoModel ring CP."""
+"""Gemma NL2SQL RL: native FSDP2/Flex/Ulysses, with isolated legacy adapters."""

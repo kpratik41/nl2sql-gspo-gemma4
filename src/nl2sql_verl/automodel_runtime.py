@@ -1,3 +1,2 @@
-"""Load the legacy AutoModel engine and generic training lifecycle hooks."""
-from . import engine  # noqa: F401
-from . import bounded_runtime  # noqa: F401
+"""Legacy runtime compatibility entry point; native runs use native_runtime.py."""
+from .legacy.automodel import automodel_runtime  # noqa: F401

@@ -1266,3 +1266,37 @@ cooperative stop after a completed update.
   report. No training settings or processes were changed.
 - Updated README introduction to identify the active8K run, remove obsolete
   no-active-run claims and link the report and W&B dashboard.
+
+
+### 2026-10-30 — Source handoff cleanup; native recipe unchanged
+
+- Corrected setup documentation to identify committed local adapters, the latest
+  recorded screened 8K run, and the separate 4K and retired 2K configurations.
+  Added a root README and explicit current-versus-historical runtime boundaries.
+- Moved the optional AutoModel engine/setup/preflight into `legacy/automodel/`
+  and old CP1/eight-B200 launcher implementations into `legacy/launchers/`.
+  Original import, shell and module command paths remain compatibility entry
+  points. Shared task/tools/consensus, native actor code, YAML defaults and
+  numerical/checkpoint tests were retained. Training settings were not changed.
+- Replaced duplicate replay-report implementations with one renderer supporting
+  both stored JSON formats; original command names remain supported. Regenerated
+  the report from existing measurements without rerunning GPU experiments or
+  claiming missing checks passed.
+- Isolated local review environment uses Python 3.13/PyTorch 2.10 and the pinned
+  upstream verl source, not the full H200 Python 3.12/vLLM runtime. Baseline CPU
+  checks: 49 passed/6 skipped after matching the recorded PyArrow 26 dependency.
+  An earlier unpinned PyArrow 23 check failed the prompt-hash round trip and is
+  preserved in local review logs; production prompt hashing was not changed.
+- Post-refactor CPU checks, including native module imports, legacy command
+  exports, current Hydra configurations and both report schemas: 52 passed,
+  6 skipped initially. Skips cover optional NeMo, the historical tokenizer
+  path and unavailable source fixtures; GPU/CP jobs were not launched. Review logs stay under `outputs/`.
+- Source hashes necessarily change after a refactor. Existing readiness records
+  remain historical; destination/runtime validation must be rerun normally.
+
+- Final CPU rerun uses `NL2SQL_TEST_MODEL` to point the real native tool-loop
+  regression at this host's cached tokenizer: **53 passed, 5 skipped** (three
+  optional NeMo configurations and two absent original reference JSONL fixtures).
+  Python/shell syntax, both replay command outputs, and byte-identity checks for
+  active actor/launcher files and every YAML config passed. No training settings,
+  probability-correction policy or GPU jobs were changed.

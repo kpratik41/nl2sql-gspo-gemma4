@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from pathlib import Path
 import re
 import sqlite3
@@ -58,7 +59,8 @@ def test_real_native_agent_executes_error_repairs_and_masks_actual_observations(
     from verl.workers.rollout.replica import TokenOutput
     from src.nl2sql_verl.native_agent_loop import NL2SQLNativeAgentLoop
     from src.nl2sql_verl.reward_entry_native import compute_score
-    model = Path('/home/ubuntu/nl2sql-checkpoints/dapo-fsdp-cp2-16gpu-train/global_step_5')
+    model = Path(os.environ.get('NL2SQL_TEST_MODEL',
+        '/home/ubuntu/nl2sql-checkpoints/dapo-fsdp-cp2-16gpu-train/global_step_5'))
     if not model.exists():
         pytest.skip('Integration test requires the local Gemma tokenizer')
     monkeypatch.setenv('NL2SQL_DATABASE_DIR', str(tmp_path))

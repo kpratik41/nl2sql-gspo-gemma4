@@ -1,64 +1,100 @@
 # Gemma decoder-layer replay results
 
-## Main objective and why we are doing this
+## Objective and scope
 
-Enable **CP=2 context parallelism** and **FFPA, or another validated memory-efficient attention backend**, for **`google/gemma-4-31B-it`**, with **verl** as the target framework for eventual **full-parameter NL2SQL RL**. CP=2 distributes one long sequence across two GPU ranks to reduce per-rank sequence/activation pressure. Efficient attention avoids materializing quadratic attention-score tensors; FFPA is a candidate for faster eligible global-attention operations. We want measured capacity and speed improvements while preserving model semantics, token probabilities, and gradients. Global-attention compute/latency is not expected to become linear merely because working memory is approximately linear.
-
-We currently have one GPU, so we validate local behavior first and design the distributed recipe for a future two-node allocation with an explicit GPUs-per-node setting. CP=2 counts GPU ranks, not nodes. Standalone kernels or successful forward execution do not establish distributed training correctness. Existing TRL/ZeRO-3 code on `consensus` is prior task work; NL2SQL integration comes after the systems checks.
-
-**Incremental validation sequence:**
-
-1. Establish a reproducible environment and model snapshot; benchmark single-GPU attention and full-model forward latency/memory across context lengths, with and without FFPA. Measure mask construction and cached generation separately.
-2. Resolve numerical discrepancies with identical inputs/weights, teacher-forced token probabilities, FP32 references, fixed-input layer replay, and causal/window/padding/document-boundary checks. This is why we are investigating precision and masks before scaling further.
-3. Validate real CP=2 forward correctness, per-rank memory, communication, and speed on separate GPUs; compare efficient-attention backends under the same allocation and effective batch.
-4. Validate attention backward, model gradients, activation checkpointing, optimizer steps/state memory, and save/resume; increase context incrementally toward the provisional 40,960-total-token target.
-5. Integrate the validated AutoModel/Gemma path into verl, including CP token mapping, loss normalization, actor/reference probabilities, rollout weight synchronization, and one complete resumable RL update.
-6. Add NL2SQL data, executable rewards, and held-out database evaluation; measure complete RL iteration performance before choosing a production recipe.
-
-**Success means correct long-context training with CP=2 and an efficient attention path. FFPA is optional:** retain a correct FlexAttention or other efficient baseline if FFPA is unsupported or offers an unfavorable speed/memory tradeoff. Record performance observations separately from correctness acceptance. Detailed roadmap: [GEMMA4_LONG_CONTEXT_RL.md](GEMMA4_LONG_CONTEXT_RL.md).
-
-Date: 2026-10-22 (America/New_York).
+Enable Gemma 4 31B CP=2 with validated efficient attention for full-parameter NL2SQL RL in verl. The current training path is native FSDP2, Ulysses and FlexAttention; FFPA remains optional and gated on correctness. These historical single-GPU replays isolate numerical and masking behavior before distributed training. See [the current recipe](src/nl2sql_verl/README.md) and [chronological work log](WORK_LOG.md) for subsequent results.
 
 ## Method
 
-The same checkpoint and environment as GEMMA4_MODEL_PARITY.md were used. One BF16 eager full-model pass per length captured identical decoder inputs for layers 0, 5, 6, and 59. Tests cover 128, 1024, and 1025 tokens from the versioned SQL fixture. Each layer was copied and upcast to FP32, including normalization, Q/K/V projections, positional-embedding inputs, attention, output projection, residual paths, and MLP. This uses the exact BF16 checkpoint weight values in FP32 arithmetic; it does not recover higher-precision pretrained weights. TF32 matmul was disabled through highest FP32 matmul precision.
+Each backend replays captured decoder inputs from the same BF16 checkpoint. The reference upcasts those quantized weights and inputs to FP32; it is not a full-FP32 model reference or a higher-precision pretrained checkpoint. Attention, projected attention, and decoder outputs are compared. The stored measurements are descriptive; no new BF16 acceptance threshold is imposed.
 
-FP32 eager supplies the reference, controlled by FP32 SDPA with its math backend forced. BF16 candidates receive the exact same saved hidden states. The three measured stages are attention output before output projection, projected attention output, and full decoder output. Flex uses explicit causal/window BlockMasks and 32×32 tiles. FFPA is a benchmark-only causal global-layer adapter with scale 1.0; this is not AutoModel dispatch or CP validation.
+The result schemas record different harness versions. This report preserves the supplied measurements and semantic checks without inventing missing reference rows, input hashes, or checks. Consult the corresponding execution log for mask-construction details.
 
-## Aggregate numerical results
-
-Maximum relative L2 over tested layers and lengths:
+## Maximum relative L2 error
 
 | Backend | Cases | Attention | Projected attention | Decoder |
 |---|---:|---:|---:|---:|
-| fp32_sdpa_math | 12 | 0.0000000 | 0.0000000 | 0.0000000 |
-| eager | 12 | 0.0072245 | 0.0060670 | 0.0057603 |
-| sdpa | 12 | 0.0060717 | 0.0054887 | 0.0056107 |
-| flex_attention | 12 | 0.0060709 | 0.0054888 | 0.0055340 |
-| replay_ffpa | 6 | 0.0060714 | 0.0054886 | 0.0055959 |
+| eager | 12 | 0.00722447 | 0.00606696 | 0.00576028 |
+| flex_attention | 12 | 0.00607094 | 0.00548878 | 0.00553399 |
+| fp32_sdpa_math | 12 | 0.00000000 | 0.00000000 | 0.00000000 |
+| replay_ffpa | 6 | 0.00607136 | 0.00548865 | 0.00559588 |
+| sdpa | 12 | 0.00607170 | 0.00548868 | 0.00561072 |
 
-## Semantic controls
+## Semantic checks
 
-- Causality: 42 tests replaced the second half of the layer hidden states with perturbed values and compared the first-half decoder outputs. Maximum absolute change: 0.00000000.
-- Sliding-window isolation: 6 tests at length 1025 perturbed token zero, outside the last query’s 1024-token window. Maximum last-query attention-output change: 0.00000000.
-- FP32 eager versus forced FP32 SDPA math: identical outputs at all three measured stages across all 12 cases.
-- These controls cover individual unpacked, unpadded layers at the tested lengths. They do not cover padded batches, cached decoding, packed documents, arbitrary contexts, gradients, or CP.
+Recorded replay cases: 54. Recorded semantic checks: 48. Semantic failures: 0.
+
+Maximum recorded semantic difference: 0.00000000.
+
+FP32 SDPA-math reference comparisons: 12; exact agreement at all measured stages: True.
+
+## Decoder error by case
+
+| Tokens | Layer | Backend | Relative L2 | Maximum absolute |
+|---:|---:|---|---:|---:|
+| 128 | 0 | fp32_sdpa_math | 0.00000000 | 0.00000000 |
+| 128 | 0 | eager | 0.00492755 | 0.70647430 |
+| 128 | 0 | sdpa | 0.00461113 | 0.68390274 |
+| 128 | 0 | flex_attention | 0.00460187 | 0.68390274 |
+| 128 | 5 | fp32_sdpa_math | 0.00000000 | 0.00000000 |
+| 128 | 5 | eager | 0.00354921 | 1.11830139 |
+| 128 | 5 | sdpa | 0.00353071 | 1.11830139 |
+| 128 | 5 | flex_attention | 0.00352823 | 1.11830139 |
+| 128 | 5 | replay_ffpa | 0.00353045 | 1.11830139 |
+| 128 | 6 | fp32_sdpa_math | 0.00000000 | 0.00000000 |
+| 128 | 6 | eager | 0.00301867 | 1.33850098 |
+| 128 | 6 | sdpa | 0.00297622 | 1.33850098 |
+| 128 | 6 | flex_attention | 0.00297820 | 1.33850098 |
+| 128 | 59 | fp32_sdpa_math | 0.00000000 | 0.00000000 |
+| 128 | 59 | eager | 0.00514818 | 0.13617992 |
+| 128 | 59 | sdpa | 0.00514994 | 0.10711098 |
+| 128 | 59 | flex_attention | 0.00512618 | 0.10711098 |
+| 128 | 59 | replay_ffpa | 0.00521183 | 0.10711098 |
+| 1024 | 0 | fp32_sdpa_math | 0.00000000 | 0.00000000 |
+| 1024 | 0 | eager | 0.00433135 | 0.60680389 |
+| 1024 | 0 | sdpa | 0.00397317 | 0.69442368 |
+| 1024 | 0 | flex_attention | 0.00397037 | 0.69442368 |
+| 1024 | 5 | fp32_sdpa_math | 0.00000000 | 0.00000000 |
+| 1024 | 5 | eager | 0.00334102 | 1.34507751 |
+| 1024 | 5 | sdpa | 0.00329672 | 1.34507751 |
+| 1024 | 5 | flex_attention | 0.00330015 | 1.34507751 |
+| 1024 | 5 | replay_ffpa | 0.00330332 | 1.34507751 |
+| 1024 | 6 | fp32_sdpa_math | 0.00000000 | 0.00000000 |
+| 1024 | 6 | eager | 0.00301413 | 1.42327881 |
+| 1024 | 6 | sdpa | 0.00299533 | 1.42327881 |
+| 1024 | 6 | flex_attention | 0.00299903 | 1.42327881 |
+| 1024 | 59 | fp32_sdpa_math | 0.00000000 | 0.00000000 |
+| 1024 | 59 | eager | 0.00535345 | 0.24178505 |
+| 1024 | 59 | sdpa | 0.00509259 | 0.16791916 |
+| 1024 | 59 | flex_attention | 0.00501602 | 0.16853142 |
+| 1024 | 59 | replay_ffpa | 0.00506778 | 0.14378548 |
+| 1025 | 0 | fp32_sdpa_math | 0.00000000 | 0.00000000 |
+| 1025 | 0 | eager | 0.00474892 | 0.78073120 |
+| 1025 | 0 | sdpa | 0.00439483 | 0.78073120 |
+| 1025 | 0 | flex_attention | 0.00438880 | 0.78073120 |
+| 1025 | 5 | fp32_sdpa_math | 0.00000000 | 0.00000000 |
+| 1025 | 5 | eager | 0.00340129 | 1.29798889 |
+| 1025 | 5 | sdpa | 0.00340684 | 1.23439026 |
+| 1025 | 5 | flex_attention | 0.00339850 | 1.29798889 |
+| 1025 | 5 | replay_ffpa | 0.00340606 | 1.23439026 |
+| 1025 | 6 | fp32_sdpa_math | 0.00000000 | 0.00000000 |
+| 1025 | 6 | eager | 0.00304106 | 1.53913879 |
+| 1025 | 6 | sdpa | 0.00300902 | 1.39674377 |
+| 1025 | 6 | flex_attention | 0.00300508 | 1.39674377 |
+| 1025 | 59 | fp32_sdpa_math | 0.00000000 | 0.00000000 |
+| 1025 | 59 | eager | 0.00576028 | 0.20132256 |
+| 1025 | 59 | sdpa | 0.00561072 | 0.20132256 |
+| 1025 | 59 | flex_attention | 0.00553399 | 0.20132256 |
+| 1025 | 59 | replay_ffpa | 0.00559588 | 0.20132256 |
 
 ## Interpretation
 
-The BF16 optimized paths are comparable to, and slightly closer than BF16 eager to, this FP32 layer reference in the worst relative-error summaries. The tested masks obey causality and window isolation. No local masking failure was detected. This supports investigating accumulated numerical drift as a cause of full-model differences; it does not prove that drift is the sole cause or establish acceptable RL probability errors. Max absolute and RMS errors, layer identities, input hashes, and individual invariant results are preserved in the JSON.
-
-The earlier whole-model screening gates remain unresolved. A roughly 0.5% layer-relative error is not itself a training acceptance threshold, and the previous large target-logprob errors must not be dismissed as harmless.
-
-## Next controlled experiment
-
-Replay the whole model with BF16 weights/linear operations but FP32 attention score, softmax, and value accumulation, casting attention output back to BF16. Compare this with ordinary BF16 eager and optimized backends on independent natural-text/SQL examples. Include an option to keep Q/K normalization and RoPE arithmetic in FP32, changing one precision boundary at a time. This can test whether reducing local attention-rounding errors reduces the observed downstream logprob drift without requiring a full FP32 31B model. Keep same-weight teacher forcing, per-layer tracing, and per-token errors. Padding/document-boundary invariants should follow before integration.
+Local replay does not resolve whole-model log-probability disagreement. Passing these controls does not validate every mask, cached decoding, packing, backward, or CP. Later native FSDP2/CP2 validation and the current H200 training results are recorded separately in WORK_LOG.md.
 
 ## Reproduction
 
 ```bash
-.venv-bench/bin/python benchmarks/layer_replay.py
-.venv-bench/bin/python benchmarks/summarize_replay.py
+python benchmarks/summarize_replay.py --input benchmark_results/layer_replay/results.json
 ```
 
-Raw data: [benchmark_results/layer_replay/results.json](benchmark_results/layer_replay/results.json). Execution log: [benchmark_results/layer_replay.log](benchmark_results/layer_replay.log). Input fixture and preceding investigation: [GEMMA4_MODEL_PARITY.md](GEMMA4_MODEL_PARITY.md).
+Both summarize_replay.py and the older summarize_layer_replay.py entry point use this one renderer. Neither command reruns GPU experiments.

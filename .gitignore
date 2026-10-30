@@ -27,3 +27,6 @@ __pycache__/
 /ARCHIVE_MANIFEST.json
 /ARCHIVE_README.txt
 /temp_cpu_2pct.log
+
+# Locally generated committed-source handoffs
+/verl_committed_*.zip

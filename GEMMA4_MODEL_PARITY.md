@@ -1,5 +1,10 @@
 # Gemma full-model numerical parity investigation
 
+> Historical planning/benchmark record. The current native FSDP2/Flex/Ulysses
+> run and its dated results are described in [the runtime guide](src/nl2sql_verl/README.md)
+> and [WORK_LOG.md](WORK_LOG.md). Older AutoModel proposals and pending
+> statements below describe their original experiment stage.
+
 ## Later CP investigation
 
 The CP follow-up in [GEMMA4_BENCHMARK_RESULTS.md](GEMMA4_BENCHMARK_RESULTS.md)

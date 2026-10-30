@@ -1,5 +1,10 @@
 # Gemma 4 31B: incremental validation of CP=2 and FFPA for verl RL
 
+> Historical planning/benchmark record. The current native FSDP2/Flex/Ulysses
+> run and its dated results are described in [the runtime guide](src/nl2sql_verl/README.md)
+> and [WORK_LOG.md](WORK_LOG.md). Older AutoModel proposals and pending
+> statements below describe their original experiment stage.
+
 ## Tool-calling verl recipe — 2026-10-22 (America/New_York)
 
 The task code from `consensus` has been adapted into

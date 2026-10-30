@@ -32,7 +32,7 @@ The later consensus/AutoModel sections retain historical adapter notes and are
 not the setup instructions for the H200 run. Task behavior originated from
 `origin/consensus` commit `588e1378777c64fa1a48d2548efccd51edd29270`.
 
-## Exact environment of the retired H200 run
+## Pinned environment shared by the H200 runs
 
 Captured on 2026-10-29 from both selected nodes:
 
@@ -104,8 +104,9 @@ recorded host stack when reproducing the full workload, including JIT extensions
 
 ### Replicate in another workspace
 
-Copy this repository **including its local adapter changes**. The recorded git
-base revision alone does not contain the uncommitted implementation. Use Linux
+Clone or copy this repository at the desired **committed `verl` revision**.
+The repository-local adapters are committed alongside the recipe; cloning the
+upstream verl revision alone does not supply those adapters. Use Linux
 x86_64, Python 3.12 (tested 3.12.3), a compatible NVIDIA driver and the recorded
 toolkit/compiler for JIT compilation. Install OS tools such as `git`, `rsync`,
 `python3.12-venv` and `build-essential` separately.
@@ -149,12 +150,40 @@ Triton/Inductor caches for its hardware. Authenticate W&B separately; do not cop
 API keys into requirements or config files.
 
 This reproduces the software environment. Distributed correctness, capacity and
-end-to-end checks still apply on a new cluster. The active run retains a 2,048-token
-response limit; the checked-in **future-run** profile has 4,096. Those are training
-configuration choices, not Python environment differences. See
-[`DAPO_16GPU.md`](DAPO_16GPU.md) for the recipe and monitoring commands.
+end-to-end checks still apply on a new cluster. The latest recorded screened run
+uses an **8,192-token cumulative response budget** via
+`configs/dapo_screened_8k_16gpu.yaml`; `dapo_fsdp_cp2_16gpu.yaml` is the separate
+4K native profile. The stopped legacy run used 2K. These are distinct training
+configurations, not environment versions. See the active-run section below for
+8K launch/monitoring and [`DAPO_16GPU.md`](DAPO_16GPU.md) for the 4K profile.
 
-## What the consensus recipe does
+## Current runtime versus historical implementations
+
+| Purpose | Entry points / implementation |
+|---|---|
+| Latest recorded screened 8K run | `run_screened_pipeline.py`, `run_screened_training.py`, `configs/dapo_screened_8k_16gpu.yaml` |
+| Native training and attention | `train.py`, `native_runtime.py`, `fsdp_runtime.py`, `fsdp_engine.py`, `fsdp_attention.py`, `fsdp_projection.py` |
+| Native task and shared dependencies | `native_agent_loop.py`, `native_tools.py`, `reward_entry_native.py`, plus `agent_loop.py`, `tools.py`, `task.py`, `consensus/` |
+| Environment replication | root `requirements.txt`, `setup_fsdp_env.sh`, `worker_python.sh` |
+| Historical AutoModel engine/setup | `legacy/automodel/`; old module/script names remain compatibility entry points |
+| Historical CP1 / eight-B200 launchers | `legacy/launchers/`; old module names remain compatibility entry points |
+| Validation and experiment evidence | `tests/`, `benchmarks/`, `benchmark_results/`, `WORK_LOG.md`, `reports/` |
+
+See [legacy boundaries](legacy/README.md) before using an older launcher. Current
+Hydra configurations still share defaults with historical profiles; those YAML
+names remain in `configs/` for compatibility. An old-looking shared module is
+not automatically dead code. None of these cleanup changes enables FFPA,
+importance-sampling correction, or changes the screened run's training settings.
+
+## Historical context: consensus and the earlier AutoModel port
+
+The sections from here through “Remaining integration work” describe earlier
+implementations and their validation at the time. They are retained as evidence,
+not current FSDP2 launch instructions. Later dated results supersede earlier
+pending-status statements; use WORK_LOG.md and the screened-run report for the
+latest recorded status.
+
+### What the consensus recipe does
 
 The active launcher is `scripts/launch_train.sh`, calling
 `src/nl2sql_gspo/train_gspo_nl2sql.py`. It uses

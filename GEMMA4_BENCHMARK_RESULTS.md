@@ -1,5 +1,10 @@
 # Gemma 4 benchmark results
 
+> Historical planning/benchmark record. The current native FSDP2/Flex/Ulysses
+> run and its dated results are described in [the runtime guide](src/nl2sql_verl/README.md)
+> and [WORK_LOG.md](WORK_LOG.md). Older AutoModel proposals and pending
+> statements below describe their original experiment stage.
+
 ## TP=2 forward comparison and capacity measurement — 2026-10-23
 
 The new requested layouts are TP2/CP1 on GPUs 0–1 and TP2/CP2 on GPUs 0–3.
