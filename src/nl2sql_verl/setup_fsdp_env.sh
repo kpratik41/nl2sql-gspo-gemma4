@@ -23,7 +23,7 @@ if ! "$check_only"; then
     "$runtime_python" -m venv "$runtime_venv"
   fi
   "$runtime_venv/bin/python" -m pip install 'pip==26.2.2'
-  "$runtime_venv/bin/python" -m pip install -r "$repo_root/src/nl2sql_verl/requirements.txt"
+  "$runtime_venv/bin/python" -m pip install -r "$repo_root/requirements.txt"
   if [[ ! -d "$source_root/.git" ]]; then
     if [[ -e "$source_root" ]]; then
       echo "Choose an unused VERL_SOURCE directory; $source_root already exists without a git checkout." >&2
@@ -63,7 +63,7 @@ from urllib.parse import urldefrag,unquote
 root, source = map(Path,sys.argv[1:])
 assert sys.version_info[:2] == (3,12)
 checked = 0
-for raw in (root/'src/nl2sql_verl/requirements.txt').read_text().splitlines():
+for raw in (root/'requirements.txt').read_text().splitlines():
     line=raw.strip()
     if not line or line.startswith(('#','--')):
         continue

@@ -36,9 +36,11 @@ not the setup instructions for the H200 run. Task behavior originated from
 
 Captured on 2026-10-29 from both selected nodes:
 
-- [`requirements.txt`](requirements.txt): all **240 installed Python package
-  versions**, including transitive dependencies and build tools. The repository
-  root [`requirements.txt`](../../requirements.txt) includes this file.
+- Repository-root [`requirements.txt`](../../requirements.txt): the canonical
+  snapshot of all **240 installed Python package versions**, including transitive
+  dependencies and build tools. [`src/nl2sql_verl/requirements.txt`](requirements.txt)
+  remains a compatibility include of that root file, so either install path uses
+  the same pins.
 - [`environment-h200.json`](environment-h200.json): OS, driver, compiler,
   CUDA-library, interconnect and package-version snapshot, plus wheel provenance
   and the pinned source revision. It contains no authentication credentials.
