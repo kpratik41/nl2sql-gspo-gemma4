@@ -1,23 +1,31 @@
 # Gemma 4 NL2SQL tool-calling RL in verl
 
-The retired **16-H200 run used native verl FSDP2**, with actor TP1 / Ulysses CP2 /
-DP8 and four BF16 vLLM TP4 rollout replicas. Actor updates use IEEE FP32 and
-FlexAttention. The current path does not use NeMo AutoModel, Megatron, DeepSpeed,
-or Ring Attention. Full-model policy updates, weight synchronization and the
-step-5 model-only export have completed. Executed tool-call counts are not yet
-instrumented; emitted tool-call text alone does not prove tool execution.
+The active **16-H200 screened DAPO run** uses native verl FSDP2, FlexAttention,
+Ulysses CP2 / DP8, IEEE FP32 actor updates and four BF16 async vLLM TP4 rollout
+replicas. It trains on 1,039 screened prompts with 16 generations per prompt and
+an 8K cumulative response budget. The current path does not use NeMo AutoModel,
+Megatron, DeepSpeed or Ring Attention. Native tools execute during rollouts and
+their actual executions are recorded.
 
-That incorrect legacy run was stopped at nine completed updates on 2026-10-29
-at the user's request. No new training run is active. Inference-only tests are
-comparing 4K and 8K cumulative response budgets on the same hard prompts.
-The complete step-5 model-only export is preserved on node 0. Cleanup manifests
-for obsolete run/debug artifacts are in `outputs/h200_checks/cleanup_20261029/`.
+See the [run results through update 7](reports/screened1039-8k-2026-10-30.md)
+for the timestamped reward progression, evaluation results, filtering costs,
+numerical observations and checkpoint details. At that snapshot, step-5
+validation accuracy was **73.28%**, versus **72.50%** before training, on the
+same 640 questions at temperature 0.
 
-Future launches use the versioned `gemma4_native_v1` dataset/profile with native
-Gemma call delimiters, resolved implicit foreign keys, a cumulative 4K response
-budget and actual tool-execution telemetry. The retired run used its old
-data and 2K limits. See [versioned data preparation](DATA_PREPARATION.md) for
-provenance, rebuilding, and the fixed-sample validation workflow.
+**W&B:** [screened1039/8K training dashboard](https://forge.coreweave.com/wandb/kpratik41/nl2sql-gemma4-verl/runs/75et1rl9).
+
+The earlier incorrect run, using old data and 2K limits, was stopped at nine
+completed updates on 2026-10-29 at the user's request. Its complete step-5
+model-only export is preserved separately on node 0. Cleanup manifests are in
+`outputs/h200_checks/cleanup_20261029/`.
+
+The active run uses the versioned `gemma4_native_v1` profile with native Gemma
+call delimiters, resolved implicit foreign keys and actual tool-execution
+telemetry. Its run-specific data changes the system budget instruction to 8K;
+the separate 4K config remains available. See
+[versioned data preparation](DATA_PREPARATION.md) for provenance, rebuilding,
+and the fixed-sample validation workflow.
 
 The environment instructions below describe that native FSDP2 environment.
 The later consensus/AutoModel sections retain historical adapter notes and are

@@ -1251,3 +1251,18 @@ cooperative stop after a completed update.
 - Validation: full CPU suite51 passed/3 optional-NeMo skips; after restoring the
   token-count regression test, all8 task tests passed. Shell syntax and Git
   whitespace checks passed; source scan found no credential patterns.
+
+### 2026-10-30 — Results report through update 7
+
+- Added src/nl2sql_verl/reports/screened1039-8k-2026-10-30.md with the W&B
+  dashboard, all seven completed-update rewards, filtering costs, numerical
+  diagnostics, configuration, checkpoint location and evidence provenance.
+- Step5 fixed640/T0 native accuracy469/640=73.28125%, versus464/640=72.50%
+  at step0. Independently paired identical prompts/gold:11 gains,6 regressions.
+  Both evaluations use60s SQL timeout; official30s full-dev EX is separate.
+- Verified640 rows per evaluation, per-question metric aggregates, 512 accepted
+  trajectories per update, and the completed step5 export marker/all12 indexed
+  safetensors shards (62,546,340,072 bytes). Raw metrics snapshot hash is in the
+  report. No training settings or processes were changed.
+- Updated README introduction to identify the active8K run, remove obsolete
+  no-active-run claims and link the report and W&B dashboard.
