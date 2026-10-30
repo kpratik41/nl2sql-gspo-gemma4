@@ -51,7 +51,7 @@ def exercise_engine(e,a):
             passes.append(row)
             print(json.dumps({'rank':dist.get_rank(),'length':length,'micro':a.micro,**row}),flush=True)
         reports.append({'length':length,'microbatch':a.micro,'passes':passes})
-        Path(f'{a.output}_rank{dist.get_rank()}.json').write_text(json.dumps({'sp':a.sp,'linear_arithmetic':e.nl2sql_precision,'static_shapes':not torch._dynamo.config.automatic_dynamic_shapes,'attention_fp32':os.environ.get('NL2SQL_ATTENTION_FP32')=='1','attention_arithmetic':os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3') if os.environ.get('NL2SQL_ATTENTION_FP32')=='1' else 'bf16','fp32_output':a.fp32_output,'fp32_residual':a.fp32_residual,'accumulation_rounds':a.accum,'reports':reports},indent=2)+'\n')
+        Path(f'{a.output}_rank{dist.get_rank()}.json').write_text(json.dumps({'gather_global_key_projection':bool(e.model_config.override_config.get('nl2sql_gather_global_key_projection',False)),'sp':a.sp,'linear_arithmetic':e.nl2sql_precision,'static_shapes':not torch._dynamo.config.automatic_dynamic_shapes,'attention_fp32':os.environ.get('NL2SQL_ATTENTION_FP32')=='1','attention_arithmetic':os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3') if os.environ.get('NL2SQL_ATTENTION_FP32')=='1' else 'bf16','fp32_output':a.fp32_output,'fp32_residual':a.fp32_residual,'accumulation_rounds':a.accum,'reports':reports},indent=2)+'\n')
     if a.checkpoint:
         rng_before={'cpu':torch.get_rng_state().clone(),'cuda':torch.cuda.get_rng_state().clone()}
         scheduler_before=e.lr_scheduler.state_dict().copy()

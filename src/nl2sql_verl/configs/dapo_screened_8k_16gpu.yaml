@@ -1,0 +1,35 @@
+defaults:
+  - dapo_fsdp_cp2_recipe
+  - _self_
+
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+
+data:
+  train_files: outputs/screened_dapo_8k/data/train.parquet
+  val_files: outputs/screened_dapo_8k/data/validation.parquet
+  expected_train_rows: 1039
+  expected_val_rows: 640
+  max_response_length: 8192
+
+actor_rollout_ref:
+  actor:
+    ppo_max_token_len_per_gpu: 38912
+  rollout:
+    max_model_len: 38912
+    max_num_batched_tokens: 38912
+    log_prob_max_token_len_per_gpu: 38912
+
+trainer:
+  experiment_name: bird-dapo-screened1039-8k-cp2-16gpu
+  default_local_dir: /opt/dlami/nvme/nl2sql/checkpoints/screened1039-8k
+  # Zero disables pruning of both source and published model-only exports.
+  max_actor_ckpt_to_keep: 0
+  nl2sql_model_backup_dir: /opt/dlami/nvme/nl2sql/model-exports/screened1039-8k
+
+ray_kwargs:
+  ray_init:
+    runtime_env:
+      env_vars:
+        NL2SQL_LENGTH_MAX: "8192"

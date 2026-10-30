@@ -1,0 +1,7 @@
+defaults:
+  - dapo_fsdp_cp2_recipe
+  - _self_
+
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config

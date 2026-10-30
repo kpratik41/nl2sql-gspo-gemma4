@@ -1,0 +1,3 @@
+# Exact environment for the ongoing native FSDP2 H200 run.
+# Setup instructions: src/nl2sql_verl/README.md
+-r src/nl2sql_verl/requirements.txt

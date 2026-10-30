@@ -732,3 +732,522 @@ cooperative stop after a completed update.
   `/opt/dlami/nvme/nl2sql/fsdp-cp2-pilot`. Actual full-batch throughput and
   reward progression are pending. The regular train profile remains
   100 updates with save every 5 and evaluation every 10.
+
+
+### 2026-10-29 UTC — two-node H200 setup and model-only cadence
+
+- Staged identical Python/CUDA runtimes, pinned verl, Gemma snapshot, BIRD SQLite
+  databases and prepared parquet data on node0/node1 NVMe. Dedicated Ray cluster
+  has 16 H200 GPUs. Sixteen-rank NCCL all-reduce/all-to-all and node-local CP-pair
+  placement passed. Node2 is outside this job.
+- DAPO profile uses 32 accepted prompts × 16 generations = 512 trajectories per
+  optimizer update, CP2/DP8, 32K total context, microbatch 1 pending measurement.
+- User-selected save/eval cadence is 5 optimizer updates. Save contents are HF
+  model-only BF16 weights/config/tokenizer, published to node0 EBS under
+  /home/ubuntu/nl2sql-checkpoints/, retaining two completed exports per run.
+  No optimizer/RNG checkpoint set is written; full-state resume is disabled.
+  Tiny real FSDP2 model export/reload and publication/retention checks passed.
+- W&B credentials supplied in chat were rejected by the SDK. They are kept
+  outside the repository; no secret appears in commands/configs/job metadata.
+  Supervisor supports offline W&B plus JSONL metrics until authentication works.
+- Training has NOT started. Full-model CP1 matches independent HF real-prompt
+  gradients (worst sampled relative L2 ~0.000104), whereas native CP2 fails
+  (~0.827); log probabilities remain close. TF32 failed the short comparison
+  (~0.306) and is rejected. Fresh-process, canonical-layout and SDPA-math
+  diagnostics did not resolve the CP2 failure. Isolated random and real-operand
+  attention forward/backward replay checks passed. Layer traces show tiny
+  forward differences growing across the model and large early-layer adjoint
+  differences. Replicated full-shape attention diagnostic is in progress.
+- Numerical gates have not been relaxed. Full-model microbatch/memory testing,
+  end-to-end five-update smoke and the production-batch pilot remain gated.
+  No H200 readiness marker has been issued. Prior eight-B200 pilot entries in
+  this log describe a different machine/run.
+
+
+### H200 global-key projection correction and gated continuation
+
+- Repeating full attention on both CP ranks did not change the failed gradient
+  result, ruling out head partitioning as the cause. An isolated matrix test
+  showed full-token versus half-token IEEE SGEMM produced exactly equal Q/O/MLP
+  results for the tested real shape, but the narrow global K projection differed
+  by relative L2 ~1.26e-6. That small change is amplified through this model.
+- Gathering inputs only for global-attention K projections made the eight-GPU
+  real-prompt comparison pass: worst sampled gradient relative L2 2.142e-5,
+  max log-probability difference 9.97e-7, loss difference 2.98e-8. Added the
+  modular fsdp_projection.py implementation behind an explicit H200 config flag.
+- Ten focused configuration/checkpoint/cadence tests passed. Verified W&B mode
+  and directory reach the Ray controller without putting an API key in Ray env.
+- Started nl2sql-h200-prepare.service. It performs sixteen-GPU production-code
+  numerical comparisons, 13K/32K warm Adam/memory checks, optional microbatch-2
+  checks, then gated five-update smoke and the authorized full-batch pilot.
+  Every required stage must pass; failures stop progression. Pipeline status/log:
+  outputs/h200_checks/pipeline_status.json and pipeline.log. No production
+  readiness or RL-training success is claimed by launching the validation job.
+
+
+### H200 validation complete; W&B authenticated; integration retry
+
+- All required 16-GPU microbatch-1 numerical checks passed, including independent
+  HF long references and repeatability. 13K warm-update peak allocated/reserved:
+  64.36/89.62 GiB; 32K: 114.37/135.19 GiB. Microbatch 2 failed the numerical
+  comparison (worst sampled gradient relative L2 ~0.516); retain microbatch 1.
+- First smoke stopped before model setup: Ray reported only 8 available GPUs.
+  Node1 Ray worker had been killed by the host OOM killer during the earlier
+  no-checkpoint CPU-offload diagnostic. Replaced its transient service with an
+  enabled persistent user unit, Restart=on-failure. Verified Ray reports 16 GPUs.
+  Preserved failed logs at outputs/h200_training/smoke_failed_ray_worker/.
+- Complete W&B credentials verified against the service and saved in node0's
+  mode-600 SDK credential store. Removed the superseded incomplete private key
+  file. Credentials are excluded from source, commands and Ray runtime env.
+  Enabled W&B for the smoke as well as the pilot; kept offline fallback.
+- Restarted the gated continuation with --from-smoke. It revalidates measured
+  evidence/source hashes, retries smoke, and launches the pilot only after
+  integration checks pass. Save/eval cadence remains 5; model-only BF16 exports
+  remain on node0 EBS, latest two retained per run.
+
+
+### vLLM CUDA build mismatch fixed
+
+- The retried smoke exited during rollout initialization: the default vLLM
+  0.19.1 wheel linked libcudart.so.12, while this environment uses CUDA 13.
+  The gated pipeline stopped without launching the pilot; GPUs were idle.
+- Installed the official 0.19.1+cu130 wheel without changing torch/dependencies
+  and synchronized it to node1. Actual vllm._C, LLM and verl ServerAdapter imports
+  now pass; pip check passes on both nodes. Requirements pin the CUDA-13 wheel,
+  and setup_env.sh explicitly checks the CUDA extension before declaring setup.
+- Preserved the failed attempt at outputs/h200_training/smoke_failed_vllm_cuda12/.
+  Restarted the supervised smoke/pilot continuation. Model initialization and
+  first generation are still being checked; no optimizer-update success is
+  implied by process startup.
+
+
+### Distributed paths corrected; real rollout generation confirmed
+
+- After the CUDA fix, node1 reward workers exposed a relative-path failure.
+  train.py now resolves local train/eval parquet, reward module, tool config and
+  agent config paths against the repository before serializing Ray config.
+  Node1 Ray service also has an explicit repository WorkingDirectory.
+- Verified reward-module import and agent/tool/data files from /tmp on node1.
+  Four focused config tests passed. Retained failed attempt separately under
+  outputs/h200_training/smoke_failed_relative_reward_path/.
+- Restarted the gated smoke. Actor initialization and all four TP4 rollout
+  servers succeeded. Real initial validation generation is confirmed: last
+  observed 130/640 finished, 510 running, zero failures. Optimizer updates have
+  not yet begun. W&B is syncing run half8sml; live link:
+  https://forge.coreweave.com/wandb/kpratik41/nl2sql-gemma4-verl/runs/half8sml
+
+
+### Attachable monitoring installed
+
+- Created tmux session nl2sql on node0: status, automatically following active
+  run logs, GPU queries on both nodes, Ray CLI and supervisor logs. Training
+  remains under systemd; attaching/detaching the terminal does not restart it.
+- Added read-only monitor_h200.py. Status reports heartbeat age, last logged
+  optimizer update, baseline evaluation completion, checkpoint/eval boundaries,
+  and active W&B/log paths. Live logs follow smoke → pilot automatically.
+- The initial 640-example evaluation completed; baseline result accuracy is
+  0.1671875. Smoke is in its first training cycle, last logged update zero.
+  Last physical-GPU sample: all 16 selected H200s at 100% utilization, roughly
+  61–63 GiB used each. Node2's eight GPUs remain outside the job and idle.
+- Verified tmux windows, status output, GPU queries, Ray CLI and Python syntax.
+  The web dashboard is disabled; no cluster restart was needed for monitoring.
+
+- Subsequent check confirmed the first smoke optimizer update completed; metrics are logged at step 1.
+
+
+### Full training started at the user's explicit request
+
+- User instructed starting the full training run immediately. Stopped the smoke
+  after 3 completed updates and cancelled its queued pilot. No checkpoint export
+  was in progress. Preserved smoke logs/metrics and recorded the requested stop.
+- Revalidated existing numerical/memory evidence and source/data hashes. Added an
+  explicit train-only --allow-incomplete-smoke switch; full integration remains
+  false, and the default gate remains enforced. No readiness evidence was forged.
+- Started nl2sql-h200-dapo-train.service: fresh base Gemma model, 16 H200s, native
+  DAPO CP2/DP8, 32 accepted prompts × 16 generations = 512 trajectories, microbatch
+  1 / 64 accumulation rounds, target 100 updates, no bounded-pilot time limit.
+- Save/eval every 5, BF16 model-only exports to node0 EBS, latest two retained.
+  Skip repeating the completed base evaluation; a provenance reference and its
+  metrics are stored in outputs/h200_training/train/initial_evaluation_reference.json.
+- Online W&B enabled. Existing tmux nl2sql now follows the train log automatically;
+  attach with tmux attach -t nl2sql. The full run is initializing, not yet updated.
+
+- Full-run actor/rollout initialization succeeded and the 0/100 training loop started. Online W&B run: https://forge.coreweave.com/wandb/kpratik41/nl2sql-gemma4-verl/runs/cwxyqeok. No full-batch update is completed yet.
+
+
+### Live utilization diagnosis during full update 7
+
+- Six full optimizer updates completed; step-5 BF16 HF export is complete on EBS
+  (62,546,340,072 weight bytes). Current worker process names indicate actor update.
+- Read-only three-second NVML GPM samples across all eight GPUs on each node:
+  node0 mean GPU-busy 100%, SM-active 93.16%, SM occupancy 12.87%, Tensor activity
+  0.020%, DRAM bandwidth activity 11.41%, VRAM used 81.68 GiB; node1 100%,
+  92.89%, 13.20%, 0.023%, 10.80%, 80.94 GiB respectively.
+- The actor's IEEE FP32 arithmetic largely bypasses Tensor Cores; GPU-busy time
+  alone overstates effective hardware use. Microbatch 1/CP2 and repeated FSDP
+  collectives/recomputation also need kernel profiling to apportion their costs.
+- Step 6 took 98.0 minutes: rollout generation 27.3, old log probabilities 16.8,
+  actor update 53.8. DAPO filtered 263 prompt groups and discarded 9 surplus groups
+  while collecting 32 accepted groups. This increases sampling cost.
+- Pinned verl explicitly warns Gemma4 is unsupported by its FLOP estimator, so
+  perf/mfu/actor=0 is not a valid measured utilization. GPU samples and timing
+  diagnosis saved in outputs/h200_checks/gpu_utilization_*.json. No runtime
+  settings were changed by this diagnosis.
+
+
+### Multi-turn budget and retrospective tool-call audit
+
+- Verified vLLM each-call max_tokens defaults to min(response_length=2048,
+  remaining overall context). ToolAgentLoop also stops/slices the accumulated
+  retained response sequence at 2048, including tool-message context. This is
+  not an independent retained allowance of 2048 for each of nine turns.
+- Saved eval JSONL has decoded mixed response text but no executed tool counters
+  or traces. Regex counts: base 701 call expressions /640=1.0953; step5 905/640
+  =1.4141 (849 sqlite_query, 40 bm25_search_sqlite, 16 sqlite_peek), median 1,
+  max 14. These are emitted call-shaped expressions, not verified executions.
+- Both eval turn counters report min=max=mean=2, so genuine multi-assistant-turn
+  tool round trips are not demonstrated. Actual executed-call averages cannot
+  be reconstructed reliably from these dumps; tool execution/termination needs
+  further tracing. No live configuration was changed. Audit JSON is in
+  outputs/h200_checks/eval_tool_call_audit.json.
+
+
+### Future runs: response limit raised to 4096; active run untouched
+
+- User explicitly limited this change to future runs. Updated only future-launch
+  H200 config/launcher: response length 4096 for training and eval, prompt limit
+  remains 30720, total context and actor/log-prob/prefill budgets 34816.
+- Updated the soft overlong reward maximum to 4096, retaining its 512-token
+  buffer (penalty starts at 3584). Reaching the cap does not itself remove a
+  rollout; DAPO filtering remains based on homogeneous result groups.
+- Four config tests pass; launcher shell syntax and Python compilation pass.
+  Future validation now requires capacity evidence at the configured context;
+  a direct check confirmed 32768-token results cannot validate 34816 tokens.
+  No new GPU capacity workload was launched on the busy training cluster.
+- Staged future-launch files on both nodes. Verified active driver PID 345962
+  is unchanged, its environment still has LENGTH_MAX=2048/BUFFER=512, heartbeat
+  remains live and no exit status exists. Current training was not restarted;
+  its existing readiness evidence and saved model/config were not overwritten.
+
+
+### Ongoing environment replication artifacts
+
+- Captured the installed 240-package environment in src/nl2sql_verl/requirements.txt
+  with exact version pins, PyTorch cu130 index, and the exact vLLM CUDA-13 wheel
+  URL/SHA256. Root requirements.txt includes this file. Broader unpinned runtime
+  requirement files remain as development inputs, not the exact snapshot.
+- Added environment-h200.json with both hosts' Ubuntu/Python/glibc/compiler,
+  driver/toolkit/runtime-library, EFA/libfabric/NCCL and source revision details.
+  Both nodes import the same versions. Node1 pip freeze's 24.0 report is stale
+  duplicate metadata; imported pip is 26.2.2. Active packages were not modified.
+- Added setup_fsdp_env.sh for a separate fresh virtualenv, exact clean verl
+  d430157 source checkout and .pth wiring. --check-only verifies an existing
+  environment read-only. It does not install the unused NeMo adapter.
+- README now leads with the current native FSDP2 H200 environment and explains
+  NVIDIA driver 595.112.07 vs system nvcc 13.2.51 vs torch/vLLM CUDA-13.0 builds,
+  CUDA library precedence, replication commands, source/workspace copying,
+  host/network prerequisites and distinction from future 4K token settings.
+- Validation: read-only verification succeeded on both nodes (240 package pins,
+  dependency check, CUDA extension + native FSDP2/vLLM adapter imports), pip
+  requirements dry run was already satisfied, shell syntax and git diff checks
+  passed. Snapshot hash verified; artifacts staged on both nodes. A fresh full
+  environment installation was not performed. Training PID 345962 stayed active.
+
+### 2026-10-29 — Rollout format/execution investigation
+
+- Replayed all 4,096 accepted rollout responses from updates 1–8 with the actual
+  format predicates and SQLite executor. All eight batches exactly matched their
+  logged format/execution aggregates. Replayed the 640 step-5 dev responses with
+  zero per-row execution-label disagreements.
+- Update 8: 474 executable, format-valid answers; 7 format-valid SQL errors;
+  31 incomplete final answers. Thirty incomplete answers have the fully saturated
+  length penalty, matching the 30 responses at the active 2,048-token cap. The
+  remaining incomplete response ends after a bare sqlite_peek call. Execution
+  among format-valid responses is 474/481 = 98.54%.
+- The seven actual SQL errors are five nonexistent torrent_tags tables, one
+  ambiguous ProductID, and one unquoted reserved index identifier. No missing DB
+  or timeout issue explains these failures.
+- Found implicit foreign-key targets rendered as `.None` in the reproduced
+  prompts (2,068/6,601 train; 82/640 fixed dev). For music_tracker, SQLite's
+  omitted target references torrents.id; several outputs invent a junction table
+  while reasoning about tags.id=torrents.None. Existing parquets were preserved.
+- Confirmed a mismatch between the prompt's bare call syntax and the native
+  Gemma parser's required special-token wrappers/string delimiters. A controlled
+  actual-agent check executes zero tools for a bare call, but executes SQLite and
+  feeds back its real row for a correctly delimited call.
+- Staged a separate runtime, completed step-5 model export, source and read-only
+  databases on idle node 2. It never joined the training Ray cluster. Ran TP4
+  vLLM at temperature 1.2/top-p .95 on four selected prompts x two seeds:
+  existing syntax/2K: format 4/8, execution 2/8, zero actual tools, four capped;
+  existing syntax/4K: format 6/8, execution 5/8, zero actual tools, two capped;
+  explicit native syntax/4K: format 8/8, execution 8/8, 13 actual tools, zero capped.
+  Raw tokens confirm absent call wrappers in all 16 current-syntax responses.
+  The native condition includes actual ambiguous-column feedback and a repaired
+  executable query. These selected cases establish the mechanism and candidate
+  repair, not a population pass-rate estimate or SQL correctness improvement.
+- User confirmed the other environment uses a 4,096-token limit and temperature
+  1.2. The running job remains at 2,048; future profile remains at 4,096.
+- Added independent audit_rollout_failures.py and tests/h200_tool_trace.py.
+  Full report, per-row failures, raw-token GPU traces, actual tool events and
+  machine-readable diagnosis are under outputs/h200_checks/rollout_failure_audit.
+  Compile/diff checks and assertions over all 24 probe trajectories/13 tool
+  events passed. Node-2 GPU memory returned to zero after the probe. No active
+  training package, prompt data, config, tool/parser or model was modified.
+
+### 2026-10-29 — Versioned native Gemma corrections and revalidation
+
+- User authorized correcting the future Gemma profile, versioning FK-corrected
+  data, retaining the future 4K budget, and larger-sample actual-tool validation
+  on the spare node. The ongoing legacy training service remains unchanged.
+- Added gemma4_native_v1 with a model-specific native serializer and corrected
+  instructions/demonstrations; semantic tool schemas and legacy gemma4 prompts
+  are preserved. All five native demonstrations round-trip through the parser.
+- Created outputs/gemma4_native_v1/data/{train,validation,dev_full}.parquet with
+  6601/640/1534 rows, preserving all ordering, gold SQL and evaluation membership.
+  Only the system wire contract and implicit FK targets in the schema change.
+  Corrected 2068 train, 82 fixed-dev and 193 full-dev prompts; 179 unique edges
+  were checked independently against SQLite PK order, including composite keys.
+  Maximum prompt lengths: 10911/29618/29775, all below 30720. No row was dropped
+  or truncated; user content outside the schema, including few-shots, is intact.
+- Added a dedicated native agent/tools/reward/runtime route. Task reward weights
+  remain unchanged. Actual executions/errors, successful SQL checks, exact final
+  SQL verification, cumulative-budget exhaustion and generation traces are
+  recorded. The V1 runtime writes companion <step>.tools.jsonl and numeric
+  metrics suitable for console/file/W&B. Each generation receives only the
+  remainder of the cumulative 4096-token response/context budget.
+- Updated future 16-GPU config to the new data and route; it retains DAPO,
+  TP1/CP2/DP8 actor, TP4 rollout replicas and 34816 context. Future full launches
+  now request a fresh baseline instead of reusing the legacy prompt evaluation.
+  Old full-run readiness is not overwritten or relabeled.
+- Fixed sample: 128 train + 128 validation prompts, every 69/11 DB covered, eight
+  longest each split plus seeded fill. Ran both base and saved step-5 weights
+  on independent TP4 engines on node 2, temperature 1.2/top-p .95, 34816 context.
+  Base: format 255/256 (99.61%), execution 253/256 (98.83%), result 191/256.
+  Step5: format 255/256 (99.61%), execution 254/256 (99.22%), result 190/256.
+  Both passed all 128 train format/execution checks. All 512 trajectories used
+  real tools, with 672 executions, four observed errors followed by recovery,
+  no 4K caps, and maximum retained response 3690. Remaining dev failures include
+  turn-limit exhaustion and final SQL damaged after successful tool checks.
+  Raw traces and summaries are under outputs/h200_checks/native_v1/{base,step5}.
+- Eight-GPU CP2/DP4 actor capacity: longest corrected prompt 10911 plus 4096
+  response loss tokens, sequence 15007 padded 15104, microbatch 1, IEEE FP32/Flex
+  and canonical global-key projection. Two actual forward/backward/Adam updates
+  passed every rank; max allocated 82.78 GiB/reserved 124.40 GiB, finite gradient
+  norms 5.7523/3.5831. Prior unchanged 16-GPU selected-gradient gates still pass.
+- Fresh original-parent validation verified all 6,601 raw/gold rows and all 4,602
+  retrieved eval demonstrations. Targeted CPU tests: 17 passed; compile/diff
+  checks passed. Separate node-2 Ray6381 one-update DAPO integration is running;
+  results will be appended once actual optimizer/telemetry persistence completes.
+
+- The initial Ray DAPO smoke completed one real 32-trajectory update, exit 0,
+  grad norm 7.9142, 175 actual tools, and saved companion traces/metrics. Its two
+  accepted groups were harder than the broad fixed sample: format23/32,
+  original execution24/32, six 4K caps and three additional turn-limit failures.
+  Thirteen homogeneous groups were discarded. The movielens question requests
+  movie names although movies has only movieid/year/isEnglish/country/runningtime;
+  responses inspect repeatedly. No question/gold correction was made.
+- This exposed a native reward boundary bug: one unfinished trajectory could
+  earn draft-SQL execution/result credit through the shared legacy fenced-SQL
+  fallback. Native reward_entry now requires a completed final answer before
+  semantic rewards; legacy/current-run scorer remains unchanged. Regression
+  coverage added; 18 tests pass. Strict offline replay of the 32 original smoke
+  trajectories gives format23/execution23/result13. No completion was fabricated.
+- Re-scored all 512 immutable fixed-sample generations with the strict scorer:
+  every reward was unchanged. Original raw outputs/provenance remain preserved;
+  strict_results/strict_summary and strict_rescoring.json record input/output
+  hashes and the terminal-only source change, without rerunning generation.
+- Fresh strict-scorer Ray smoke: 8 GPUs, CP2/DP4, reduced 1 group × 4 generations,
+  one optimizer update, exit 0, all 4 format/executable, 3 correct, 21 actual tools,
+  zero caps/errors, finite grad norm 4.5886. Metrics and all 4 tool traces persisted.
+  Full runtime 590s, training step 313s. This is integration evidence, not another
+  pass-rate estimate. Shutdown DataLoader weakref tracebacks occurred after the
+  successful step/exit 0 and were retained in logs; they did not invalidate results.
+- validate_native_readiness passed source/data/sample/trace/count reconciliation,
+  capacity and unchanged 16-rank numerical controls. New evidence is ready for a
+  full 16-GPU native smoke; full two-node training is not marked revalidated. The
+  original readiness artifact was not overwritten. Both private node2 Ray runs
+  were stopped and all 8 spare GPUs returned to 0 MiB. No active training restart,
+  runtime-package install, optimizer checkpoint or full model export was done.
+
+
+### 2026-10-29 — User-requested stop, cleanup and inference-only 8K test
+
+- User explicitly authorized stopping the incorrect legacy run and removing
+  obsolete smoke/debug artifacts; explicitly prohibited starting a new run.
+  Stopped nl2sql-h200-dapo-train after update 9, stopped its Ray head/worker,
+  disabled the persistent node-1 worker, and verified all 24 GPUs initially idle.
+  No new training/optimizer/actor smoke was started in this task.
+- Preserved the complete EBS step-5 model-only checkpoint, verified all 12 shards
+  against its index/completion marker. Kept original/versioned data, DB/model
+  caches, environments, compiled kernels, source and useful numerical/native
+  validation evidence. Archived compact old metrics/config/eval scores and
+  compressed stdout; removed the bulk retired run folders and raw debug dumps.
+- Cleanup manifests: outputs/h200_checks/cleanup_20261029/. Apparent bytes removed
+  total 237.08 GiB (node0 170.56, node1 8.19, node2 58.33), across root and NVMe.
+  Node0 root free space about 485 GiB. No current datasets/models were deleted;
+  removed full-size checkpoint copies were redundant NVMe stages/old test copies.
+  Old default readiness was archived and replaced with not-ready/stopped flags.
+- Added test_output_budget.py, an inference-only paired-seed comparison. Same
+  hard prompts (food_inspection_2 row2552, movielens row5358), 16 generations each
+  per budget; 64 responses total across 4K and 8K. Base weights, native tools,
+  strict scorer, T1.2/top-p.95, TP4, max9 assistant turns, shared38912 context.
+  Matched seeds; matching budget instruction updated per arm. No actor loaded.
+- Fresh4K: format27/32, execution27/32, correct14/32, three token caps,163 tools.
+  8K: format28/32, execution28/32, correct14/32, zero token caps,172 tools.
+  All64 responses used real tools. Four remaining8K format failures hit nine
+  assistant turns. Largest8K retained response5404 tokens, assistant-only4745.
+  Format pairing:3 recoveries/2 regressions; correctness6 recoveries/6 regressions.
+  No observed net correctness gain; sample is small and deliberately difficult.
+- Validated response bounds, per-call budgets, matching sample IDs/seeds,
+  actual execution counters and strict no-final-answer reward gating. Compilation
+  and diff checks passed. Existing default4K training config/data were not changed
+  to8K. Full8K actor/context launch validation remains a separate scope.
+- Results and report: outputs/h200_checks/output_budget_8k/. Both inference engines
+  completed and released their GPUs. No training is running; all24 GPUs idle.
+### 2026-10-29 — Full 1,534-question greedy base-model evaluation
+
+- User selected original base Gemma-4-31B-it. Launched inference only, without
+  restarting training: twelve independent async vLLM TP2 engines, four per node,
+  all 24 H200s. One local model snapshot per node is shared by its four replicas.
+- Verified matching model index/config/tokenizer, weight-file sizes, corrected
+  full-dev parquet and native tool/scorer source hashes across all three nodes.
+  All 1,534 prompts retain exactly three retrieved examples, enriched schema and
+  original reference indices. No prompt filtering or dataset rewrite.
+- Added evaluate_full_dev.py and manage_full_dev_eval.py: explicit greedy
+  temperature0/n1, 8K cumulative response budget, context38912, max9 turns,
+  async concurrency16 per replica, 80% memory allocation, prefix caching,
+  chunked prefill8192 and the validated eager Gemma compatibility path.
+- TP2 preflight produced five valid/executable results with actual tools.
+  Fixed startup-only version reporting for source-installed verl before the
+  full run generated answers. Preflight outputs/log preserved separately.
+- Detached services nl2sql-dev-eval-s00..s11 and a collecting monitor run outside
+  tmux; tmux session nl2sql-eval exposes progress plus all three nodes' logs.
+  Results/provenance/heartbeats are persisted per sample, and the monitor merges
+  only once all reference indices 0–1533 are present exactly once.
+- Artifacts: outputs/full_dev_base_t0_8k_20261029/. Initial progress111/1534;
+  all24 GPUs active, approximately114GiB perGPU during inference.
+- Completed all1534 exactly once; full prompt/source/token/tool accounting passed.
+  Native format1521/1534 (99.15%), executable1520 (99.09%), result1090 (71.06%).
+  All1534 used actual tools,1971 calls,5 errors; zero8K caps, max5464 totaltokens,
+  seven over4K. Thirteen unfinished answers;15 trajectories reached nine turns.
+- Independently ran saved official BIRD evaluator, default30s timeout, with
+  read-only SQLite connections and original BIRD gold/metadata. EX1088/1534
+  (70.925684485%, reported70.93%). Simple701/925, moderate297/464, hard90/145.
+  Native-vs-official differences518/1127 both independently confirmed30s
+  timeouts; retained as incorrect in official EX. Dependency isolated in
+  output-local target; existing GPU runtime unchanged. All24 GPUs idle and
+  all inference/monitor/scoring units exited. Training remains stopped.
+- Final report, official labels, predictions, provenance, diagnosis and validation
+  saved under outputs/full_dev_base_t0_8k_20261029/.
+
+### 2026-10-29 — Full training-prompt screening and greedy periodic evaluation
+
+- User requested all6601 train prompts ×16 responses, keep heterogeneous groups
+  plus random10% all-correct groups, using all24 GPUs; explicitly confirmed
+  retaining DAPO's online result filter. No optimizer training is authorized here.
+- Added screen_training_prompts.py and manage_prompt_screening.py. Detached
+  twelve TP2 async vLLM engines, four/node, base weights, T1.2/top-p.95,
+ 8K response/context38912/max9 turns, concurrency32, GPUmem.8, actual native
+  tools and same binary SQL-result/60s reward. All69 training DBs, data, model
+  files and pipeline source hashes matched across nodes before launch.
+- Train parquet is shuffled: data_index denotes position; reference_index retains
+  original source ID. Preserved both rather than assuming source IDs are sorted.
+  Full16 samples and independently seeded requests are required for classification.
+- Automatic completion stage validates105616 distinct pairs, exports every1..15
+  group plus floor(N_16/10) uniformly sampled16/16 groups with seed20261029.
+  It excludes0/16, keeps exact original RL rows/schema/order, produces per-group
+  labels/selection hashes and next-launch overrides, and never starts training.
+  Raw source data and training4K actor settings are retained; screening is8K.
+- systemd units nl2sql-screen-s00..s11 plus nl2sql-screen-monitor are detached;
+  tmux nl2sql-screen shows progress and all nodes' logs. Monitor retries transient
+  collection errors and backs up in-progress worker results every five minutes.
+- Updated dapo_fsdp_cp2_16gpu.yaml: explicit step0 validation, evalevery5, common
+  greedy eval settings T0/top-p1/top-k-1/n1/do_samplefalse; training remainsT1.2,
+  n16, DAPO result filterenabled. Config synchronized to all three nodes.
+- Nine targeted tests passed, including complete synthetic6601×16 export,
+  shuffled reference IDs, correct subset sampling and rejection of incomplete
+  groups. Actual pinned V1 generation dispatch verified greedy temperatures at
+  steps0,5,10 and stochasticT1.2 training; saved evidence alongside run outputs.
+- First real group validation confirmed16 distinct seeds and genuine output
+  variation with consistent token/tool accounting. Screening remains in progress;
+  all12 engines healthy and all24 GPUs active. No training restart occurred.
+
+### 2026-10-29 — Screening completed and selected dataset verified
+
+- All6601 prompts ×16 =105616 rollouts completed; all12 shards finished and
+  collector/selector exited successfully. No training/optimizer was started.
+- Mixed1..15/16:561 (all retained). All16/16:4783 (478 retained, seeded10%
+  rounded down). All0/16:1257 (excluded). Selected train parquet has1039 rows.
+- Pass@16:5344/6601=80.9574%; individual sample correctness81413/105616=77.0840%.
+  Native training reward/60s metric; not the separate official30s full-dev EX.
+  Format104238, executable104017;153508 tool calls,1714 errors,six8K caps.
+- Independently reproduced seed20261029 selection, checked all category counts,
+  selected/input hashes, exact source-row equality/order and all12 completed
+  shard counts. Saved completion_validation.json and REPORT.md in the run dir.
+- Selected parquet plus compact selection/provenance/launch overrides staged to
+  both worker nodes for future use. All24 GPUs verified0MiB/0% and idle.
+  Online DAPO filtering and step0/every5-step greedy evaluation remain configured.
+
+### 2026-10-29 — Authorized screened1039/8K two-node training launch
+
+- User authorized training1039 prompts/n16/two nodes/W&B/detached tmux; chose
+  8192 cumulative output and actor-memory validation, then requested retaining
+  every checkpoint. No further permission was required to launch after checks.
+- Prepared run-specific8K train1039/validation640/full1534 parquets, changing
+  only the system budget number. Input membership/gold/user/tool data unchanged;
+  source/output hashes in outputs/screened_dapo_8k/data/manifest.json.
+- Added separate8K config, shared DAPO config body (Hydra primary search-path
+  restriction), and owned capacity->integration->full-run supervisor pipeline.
+  No retired legacy readiness flags were promoted. Ten targeted config/model
+  retention tests pass. Keep0 now means retain all completed model exports.
+- Actual16-rank CP2/DP8 capacity:10897 prompt+8192 response=19089 tokens,
+  padded19200, two real Adam updates, finite norms2.69866/4.42799, max allocated
+ 71.82/reserved110.29GiB. Initial computation passed but worker report writing
+  failed on missing parent directory; preserved that failed attempt, fixed
+  directory creation and reran cleanly with [0,0] exit statuses/all16 reports.
+  Fixed setsid --wait in the remote launcher and verified nonzero exit7 propagation.
+- Started owned Ray head/node1 worker (16 GPUs only); node2 excluded. Integration
+  initially hit inherited softNOFILE1024 on Ray daemons. Raised all affected job
+  processes to at least65536 and persisted narrow per-job service limits.
+  Generation recovered without changing the model or training recipe.
+- Full two-node native integration passed: one real optimizer update,16 accepted
+  trajectories,32 actual tools, grad norm19.06982, exit0. Shutdown EngineCore
+  errors were emitted after successful work during actor cleanup; full run
+  started in a fresh job from original base weights, not updated smoke weights.
+- Full run is active, initially performing freshT0/n1/640 step0 evaluation.
+  Batch32 accepted prompts×16=512 trajectories; micro1/accum64/DP8/CP2,
+  async rollout4×TP4, trainT1.2/top-p.95, constantAdamW1e-6/no warmup/decay,
+  clipgrad1.0, DAPO clipping.2/.28, result filtering,100 target updates.
+- Every5 updates save model-only and evaluateT0. All checkpoints retained on
+  localNVMe (20 exports≈1.25TB; source copies also retained), since root had
+  only484GiB free. Ephemeral storage implication was explained to the user.
+- systemd:nl2sql-screened-training/head/worker; tmux:nl2sql-train-1039 with
+  status,training,metrics,gpus windows. W&B API verified state=running, rows1039
+  andresponse8192. URL:https://forge.coreweave.com/wandb/kpratik41/nl2sql-gemma4-verl/runs/75et1rl9
+- Current evidence/artifacts:outputs/h200_checks/screened_8k_launch/ and
+  outputs/h200_training/screened1039-8k/. Custom status monitor accurately
+  separates initialization/step0 from completed optimizer updates.
+
+### 2026-10-29 — Source snapshot and DAPO rollout accounting
+
+- Prepared the native-tool, data preparation, full-dev evaluation, pass@16
+  selection, H200 environment, 8K DAPO launch, checkpoint and monitoring source
+  changes for Git. Local environments, handoff manifests and temporary logs
+  remain excluded; runtime outputs, downloaded data and model weights remain
+  local. No change to the ongoing training recipe or process.
+- Step0 held-out native SQL-result accuracy was464/640=72.50%. First three
+  updates completed with mean rewards2.61234/2.62191/2.58674 and accepted-batch
+  result accuracy57.4219%/50.7813%/53.1250%. Step5 evaluation is pending.
+- Verified pinned upstream replay-buffer counters count prompt groups, not
+  individual trajectories. Updates1/2/3 generated132/165/152 groups, including
+  homogeneous72/88/83, surplus mixed28/45/37 and accepted32 each. With16
+  trajectories/group this is2112/2640/2432 generated,512 accepted each.
+  Mixed surplus is drained then discarded, not reused across updates.
+- CPU-only test invocation documents the pinned upstream config path. Legacy
+  AutoModel tests explicitly skip if the optional NeMo backend is absent,
+  instead of failing imports in the active FSDP-only environment.
+- Preserved explicit return_dict=False tokenization and its regression test in
+  the legacy converter: Transformers mappings count fields rather than tokens.
+- Validation: full CPU suite51 passed/3 optional-NeMo skips; after restoring the
+  token-count regression test, all8 task tests passed. Shell syntax and Git
+  whitespace checks passed; source scan found no credential patterns.

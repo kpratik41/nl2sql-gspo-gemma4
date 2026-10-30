@@ -1,0 +1,35 @@
+# Native FSDP2/vLLM stack; NeMo AutoModel is not used by this recipe.
+torch==2.10.0+cu130
+torchao==0.16.0+cu130
+transformers==5.18.0
+nvidia-cutlass-dsl==4.6.2
+quack-kernels==0.6.4
+# Match the torch CUDA 13 ABI; the default PyPI wheel links CUDA 12.
+vllm @ https://wheels.vllm.ai/b1388b1fbf5aaef47937fabe98931211684666a6/vllm-0.19.1%2Bcu130-cp38-abi3-manylinux_2_35_x86_64.whl
+ray[default]==2.54.1
+tensordict==0.10.0
+TransferQueue==0.1.11
+hydra-core>=1.3,<1.4
+pyarrow>=19
+datasets
+dill
+torchdata
+pybind11
+pylatexenc
+accelerate==1.15.0
+peft
+numpy>=2
+pandas
+codetiming
+cloudpickle
+orjson
+msgspec
+pyzmq
+cachetools
+rank-bm25==0.2.2
+wandb
+tensorboard
+qwen-vl-utils
+mathruler
+pytest
+pytest-asyncio

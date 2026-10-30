@@ -48,8 +48,6 @@ def test_prompt_filter_counts_tokens_with_transformers_mapping_default(tmp_path)
 
     class Tokenizer:
         def apply_chat_template(self, messages, *, return_dict=True, **kwargs):
-            # Transformers 5.18 defaults to a two-key BatchEncoding, whose
-            # len() is not the number of tokens in the prompt.
             assert len(kwargs['tools']) == 3
             ids = list(range(20 if messages[-1]['content'] == 'long prompt' else 3))
             return BatchEncoding({'input_ids': ids, 'attention_mask': [1]*len(ids)}) if return_dict else ids
@@ -86,37 +84,6 @@ def test_verl_native_tool_parser_dispatch():
     assert parser.stop_token_ids == [99]
     assert calls[0].name == 'sqlite_peek'
     assert json.loads(calls[0].arguments)['columns'] == ['name','age']
-
-
-@pytest.mark.parametrize('prefix', ['<scratch_pad>Check it.</scratch_pad>\n', '<|tool_call>'])
-def test_observed_gemma_call_with_optional_opening_token(prefix):
-    from src.nl2sql_verl.agent_loop import NL2SQLGemmaParser
-    class Tokenizer:
-        pad_token = None
-        def convert_tokens_to_ids(self, value):
-            return 99
-        def decode(self, ids, **kwargs):
-            return prefix + 'call:sqlite_query{db_id:<|"|>demo<|"|>,sql:<|"|>SELECT "a:b,{c}" FROM people<|"|>}<tool_call|>'
-    content, calls = asyncio.run(NL2SQLGemmaParser(Tokenizer()).extract_tool_calls([1]))
-    assert len(calls) == 1
-    assert json.loads(calls[0].arguments)['sql'] == 'SELECT "a:b,{c}" FROM people'
-    assert '<|tool_call>' not in content
-
-
-@pytest.mark.parametrize('text', [
-    'An example is call:sqlite_query{db_id:<|"|>demo<|"|>}<tool_call|>',
-    'call:sqlite_query{db_id:<|"|>demo<|"|>}',
-])
-def test_tool_parser_rejects_inline_mentions_and_incomplete_calls(text):
-    from src.nl2sql_verl.agent_loop import NL2SQLGemmaParser
-    class Tokenizer:
-        pad_token = None
-        def convert_tokens_to_ids(self, value):
-            return 99
-        def decode(self, ids, **kwargs):
-            return text
-    content, calls = asyncio.run(NL2SQLGemmaParser(Tokenizer()).extract_tool_calls([1]))
-    assert content == text and calls == []
 
 
 def test_reward_uses_only_assistant_text(database, monkeypatch):

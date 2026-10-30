@@ -9,7 +9,6 @@ from pathlib import Path
 import statistics
 import time
 
-from . import engine  # noqa: F401; register recipe engine in controller/workers
 from .checkpoint_retention import atomic_write, complete_and_prune, repair_resume_pointer
 
 
@@ -42,7 +41,12 @@ def register():
 
     def save(self):
         original_save(self)
-        if self.config.trainer.get('nl2sql_rolling_checkpoints', False):
+        if self.config.trainer.get('nl2sql_model_only_checkpoints', False):
+            from .model_checkpoints import publish_model_only
+            publish_model_only(self.config.trainer.default_local_dir, self.global_steps,
+                               self.config.trainer.nl2sql_model_backup_dir,
+                               int(self.config.trainer.max_actor_ckpt_to_keep))
+        elif self.config.trainer.get('nl2sql_rolling_checkpoints', False):
             complete_and_prune(self.config.trainer.default_local_dir, self.global_steps,
                                int(self.config.trainer.max_actor_ckpt_to_keep))
 
@@ -55,8 +59,10 @@ def register():
     def begin(self):
         duration = float(self.config.trainer.get('nl2sql_training_seconds', 0))
         if duration:
-            if self.trainer_mode != 'sync' or self.config.trainer.save_freq != 1 or self.config.trainer.test_freq != 1:
-                raise ValueError('Bounded run requires sync mode, save_freq=1 and test_freq=1')
+            save_freq = int(self.config.trainer.save_freq)
+            test_freq = int(self.config.trainer.test_freq)
+            if self.trainer_mode != 'sync' or save_freq < 1 or save_freq != test_freq:
+                raise ValueError('Bounded run requires sync mode and matching positive save/test frequencies')
             self._nl2sql_start = time.monotonic()
             self._nl2sql_started_epoch = time.time()
             self._nl2sql_prior_elapsed = 0.0
@@ -73,9 +79,10 @@ def register():
         if duration:
             elapsed = self._nl2sql_prior_elapsed + time.monotonic()-self._nl2sql_start
             reached = elapsed >= duration
-            if reached:
+            checkpoint_boundary = self.global_steps % int(self.config.trainer.save_freq) == 0
+            if reached and checkpoint_boundary:
                 # Current step has already checkpointed. Validation and metric
-                # logging still run (test_freq=1), then the loop condition ends.
+                # logging still run at the matching cadence, then the loop ends.
                 self.total_training_steps = self.global_steps
             root = Path(self.config.trainer.default_local_dir)
             root.mkdir(parents=True, exist_ok=True)
@@ -84,12 +91,14 @@ def register():
                 'target_seconds': duration, 'completed_update': self.global_steps,
                 'resumed_elapsed_seconds': self._nl2sql_prior_elapsed,
                 'duration_reached': reached,
+                'checkpoint_boundary': checkpoint_boundary,
             }, indent=2)+'\n')
         return result
 
     def metrics(self, batch, metrics, timing_raw, global_steps, epoch):
         original_metrics(self, batch, metrics, timing_raw, global_steps, epoch)
-        if not self.config.trainer.get('nl2sql_rolling_checkpoints', False):
+        if not (self.config.trainer.get('nl2sql_rolling_checkpoints', False)
+                or self.config.trainer.get('nl2sql_model_only_checkpoints', False)):
             return
         from verl.trainer.ppo.v1.trainer_base import tq
         extra = tq.kv_batch_get(keys=batch.keys, partition_id=batch.partition_id,

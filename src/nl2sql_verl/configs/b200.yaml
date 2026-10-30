@@ -12,7 +12,7 @@ data:
 
 actor_rollout_ref:
   model:
-    external_lib: src.nl2sql_verl.bounded_runtime
+    external_lib: src.nl2sql_verl.automodel_runtime
   actor:
     engine:
       tp_size: 4

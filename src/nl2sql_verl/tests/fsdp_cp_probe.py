@@ -78,11 +78,17 @@ def run_comparison(a,model,engine,rank,offloaded):
                     lp=native_lp[response_mask]
             else:
                 extra={}
+                if a.mode=='hf' and a.response_logits_only:
+                    # The objective uses only these next-token positions.
+                    # Projecting the unused prompt positions wastes several
+                    # GiB of logits without contributing to loss or gradients.
+                    extra['logits_to_keep']=mask[0].nonzero(as_tuple=True)[0]
                 if a.backend=='flex_attention':
                     from src.nl2sql_verl.fsdp_attention import OPTIONS
                     extra['kernel_options']=OPTIONS
                 logits=model(input_ids=ids,position_ids=pos,use_cache=False,**extra).logits
-                lp=-F.cross_entropy(logits[:,:-1][mask].float(),ids[:,1:][mask],reduction='none')
+                chosen=logits[0] if a.mode=='hf' and a.response_logits_only else logits[:,:-1][mask]
+                lp=-F.cross_entropy(chosen.float(),ids[:,1:][mask],reduction='none')
             loss=-lp.sum()/count
             loss.backward()
         loss_sum+=float(loss.detach());lps.append(lp.detach().cpu());del logits,lp,loss
@@ -93,7 +99,7 @@ def run_comparison(a,model,engine,rank,offloaded):
             if rank==0:gradients[name.replace('._checkpoint_wrapped_module','').replace('._fsdp_wrapped_module','')]=grad.detach().float().cpu()
     if rank==0:
         assert gradients, 'No gradients captured'
-        result={'model':a.model,'row_indices':a.row_indices,'cp':a.sp if a.mode=='native' else 1,'dp':dist.get_world_size()//a.sp if a.mode=='native' else 1,'linear_arithmetic':'ieee' if a.fp32_ieee else ('tf32' if a.fp32_output else 'bf16'),'fp32_output':a.fp32_output,'fp32_residual':a.fp32_residual,'microbatch':a.micro,'bucket':a.bucket,'attention_fp32':os.environ.get('NL2SQL_ATTENTION_FP32')=='1','attention_arithmetic':os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3') if os.environ.get('NL2SQL_ATTENTION_FP32')=='1' else 'bf16','static_shapes':not torch._dynamo.config.automatic_dynamic_shapes,'canonical_layout':os.environ.get('NL2SQL_FLEX_CANONICAL_LAYOUT')=='1','plain_loss':a.plain_loss,'mode':a.mode,'backend':a.backend,'loss':loss_sum,'seconds':time.monotonic()-start,'peak_allocated_gib':torch.cuda.max_memory_allocated()/2**30,'lengths':[len(ids) for ids,mask in rows],'selected_gradients':len(gradients)}
+        result={'gather_global_key_projection':a.gather_global_key_projection,'model':a.model,'row_indices':a.row_indices,'cp':a.sp if a.mode=='native' else 1,'dp':dist.get_world_size()//a.sp if a.mode=='native' else 1,'linear_arithmetic':'ieee' if a.fp32_ieee else ('tf32' if a.fp32_output else 'bf16'),'fp32_output':a.fp32_output,'fp32_residual':a.fp32_residual,'microbatch':a.micro,'bucket':a.bucket,'attention_fp32':os.environ.get('NL2SQL_ATTENTION_FP32')=='1','attention_arithmetic':os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3') if os.environ.get('NL2SQL_ATTENTION_FP32')=='1' else 'bf16','static_shapes':not torch._dynamo.config.automatic_dynamic_shapes,'canonical_layout':os.environ.get('NL2SQL_FLEX_CANONICAL_LAYOUT')=='1','plain_loss':a.plain_loss,'mode':a.mode,'backend':a.backend,'loss':loss_sum,'seconds':time.monotonic()-start,'peak_allocated_gib':torch.cuda.max_memory_allocated()/2**30,'lengths':[len(ids) for ids,mask in rows],'selected_gradients':len(gradients)}
         saved={'gradients':gradients,'logprobs':torch.cat(lps),'result':result}
         Path(a.output).parent.mkdir(parents=True,exist_ok=True)
         if a.reference:
@@ -117,6 +123,9 @@ def main():
     p.add_argument('--fp32-ieee',action='store_true',help='IEEE FP32 linear arithmetic as well as FP32 outputs')
     p.add_argument('--row-indices',type=int,nargs='+')
     p.add_argument('--cpu-saved-tensors',action='store_true')
+    p.add_argument('--response-logits-only',action='store_true',help='HF reference: project only positions used by the loss')
+    p.add_argument('--no-gradient-checkpointing',action='store_true',help='Diagnostic: isolate activation recomputation effects')
+    p.add_argument('--gather-global-key-projection',action='store_true')
     p.add_argument('--additional-comparisons',help='JSON list of fixture/reference/output overrides; reuse the initialized native model')
     p.add_argument('--additional-exercises',help='JSON list of memory/update/restore overrides after the primary exercise')
     p.add_argument('--exercise-output')
@@ -145,7 +154,7 @@ def main():
             from src.nl2sql_verl import fsdp_engine
         custom=a.backend=='nl2sql_flex_ulysses'
         cls=fsdp_engine.GemmaFSDPEngine if custom else FSDPEngineWithLMHead
-        mc=HFModelConfig(path=a.model,load_tokenizer=False,use_remove_padding=custom,override_config={'attn_implementation':a.backend,'nl2sql_precision':'ieee' if a.fp32_ieee else ('tf32' if a.fp32_output else 'amp'),**({'nl2sql_attention_precision':os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3'),**({'nl2sql_static_shapes':True} if os.environ.get('NL2SQL_FLEX_STATIC')=='1' else {})} if os.environ.get('NL2SQL_ATTENTION_FP32')=='1' else {})})
+        mc=HFModelConfig(path=a.model,load_tokenizer=False,use_remove_padding=custom,enable_gradient_checkpointing=not a.no_gradient_checkpointing,override_config={'attn_implementation':a.backend,'nl2sql_gather_global_key_projection':a.gather_global_key_projection,'nl2sql_precision':'ieee' if a.fp32_ieee else ('tf32' if a.fp32_output else 'amp'),**({'nl2sql_attention_precision':os.environ.get('NL2SQL_FLEX_FP32_PRECISION','tf32x3'),**({'nl2sql_static_shapes':True} if os.environ.get('NL2SQL_FLEX_STATIC')=='1' else {})} if os.environ.get('NL2SQL_ATTENTION_FP32')=='1' else {})})
         precision={'param_dtype':'fp32' if a.fp32_residual else 'bf16','reduce_dtype':'fp32','buffer_dtype':'fp32'}
         engine=cls(mc,FSDPEngineConfig(strategy='fsdp2',mixed_precision=precision,use_torch_compile=False,ulysses_sequence_parallel_size=a.sp,pad_to_length=a.bucket>1,pad_to_length_bucket=a.bucket,use_no_sync_for_gradient_accumulation=False),FSDPOptimizerConfig(lr=1e-6,weight_decay=0.,total_training_steps=100),CheckpointConfig())
         engine.initialize();model=engine.module
@@ -204,7 +213,9 @@ def main():
         for item in json.loads(Path(a.additional_comparisons).read_text()):
             assert set(item)<=set(('lengths','row_indices','reference','output','micro'))
             extra=argparse.Namespace(**(vars(a)|item))
-            assert extra.reference and extra.output!=a.output
+            assert extra.output!=a.output
+            # A null reference generates a control artifact; comparisons with
+            # a reference retain the unchanged numerical gates below.
             if a.mode=='native':engine.optimizer_zero_grad()
             else:model.zero_grad(set_to_none=True)
             offloaded.clear();torch.cuda.empty_cache()

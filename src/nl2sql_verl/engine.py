@@ -22,24 +22,13 @@ from verl.workers.engine.automodel.transformer_impl import AutomodelEngineWithLM
 from verl.workers.engine.utils import detach_tree
 
 from .parallel_logprobs import vocab_logprobs
-from .batching import pad_sequences, unpad_values, batch_temperature
 from . import advantages  # noqa: F401; register on controller and worker imports
-from . import vllm_compat
-
-vllm_compat.register()
 
 
 @dataclass
 class Gemma4CPEngineConfig(AutomodelEngineConfig):
     cpu_master_weights: bool = True
-    defer_fsdp_grad_sync: bool = False
     logprob_chunk_size: int = 128
-    compile_recompile_limit: int = 128
-    compile_accumulated_recompile_limit: int = 1024
-    sequence_bucket_size: int = 1
-    initial_model_checkpoint: str | None = None
-    fp32_matmul_precision: str = 'highest'
-    tp_reduce_dtype: str | None = None
 
 
 @EngineRegistry.register(model_type='language_model', backend='automodel', device='cuda', vendor='nvidia')
@@ -49,7 +38,7 @@ class Gemma4CPEngine(AutomodelEngineWithLMHead):
         BaseEngine.__init__(self)
         from nemo_automodel.components.distributed.config import DistributedSetup, FSDP2Config
         from nemo_automodel.components.distributed.mesh import ParallelismSizes
-        from torch.distributed.fsdp import CPUOffloadPolicy, MixedPrecisionPolicy, OffloadPolicy
+        from torch.distributed.fsdp import CPUOffloadPolicy, MixedPrecisionPolicy
         self.model_config, self.engine_config = model_config, engine_config
         self.optimizer_config, self.checkpoint_config = optimizer_config, checkpoint_config
         self.rank, self.mode = dist.get_rank(), None
@@ -57,56 +46,37 @@ class Gemma4CPEngine(AutomodelEngineWithLMHead):
             raise ValueError('This recipe supports FSDP2 with TP/CP only')
         if engine_config.sequence_parallel:
             raise ValueError('TP sequence parallelism is separate from the Gemma ring CP path')
-        compute_types = {'bf16': torch.bfloat16, 'bfloat16': torch.bfloat16,
-                         'fp32': torch.float32, 'float32': torch.float32}
-        if engine_config.model_dtype not in compute_types:
-            raise ValueError('Gemma CP compute supports bf16 or fp32')
-        self.compute_dtype = compute_types[engine_config.model_dtype]
-        offload = CPUOffloadPolicy(pin_memory=True) if engine_config.cpu_master_weights else OffloadPolicy()
+        if not engine_config.cpu_master_weights:
+            raise ValueError('This four-GPU recipe requires CPU FP32 master weights/optimizer and BF16 compute')
         policy = FSDP2Config(sequence_parallel=False, activation_checkpointing=engine_config.activation_checkpointing,
-            defer_fsdp_grad_sync=engine_config.defer_fsdp_grad_sync, reshard_after_forward=True,
-            mp_policy=MixedPrecisionPolicy(param_dtype=self.compute_dtype, reduce_dtype=torch.float32,
-                output_dtype=self.compute_dtype), offload_policy=offload)
+            defer_fsdp_grad_sync=False, reshard_after_forward=True,
+            mp_policy=MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.float32,
+                output_dtype=torch.bfloat16), offload_policy=CPUOffloadPolicy(pin_memory=True))
         self.setup = DistributedSetup.build(strategy=policy,
             parallelism_sizes=ParallelismSizes(tp_size=engine_config.tp_size, cp_size=engine_config.cp_size,
                                                dp_replicate_size=1),
             activation_checkpointing=engine_config.activation_checkpointing, world_size=dist.get_world_size())
         self.device_mesh, self.moe_mesh = self.setup.mesh_context.device_mesh, None
         self.distributed_config = policy
-        self._is_offload_param = self._is_offload_optimizer = engine_config.cpu_master_weights
-        torch.set_float32_matmul_precision(engine_config.fp32_matmul_precision)
-        # BF16 needs the Lt path for the tested reduction behavior. For full
-        # FP32 use standard cuBLAS; forcing the experimental Lt backend also
-        # redirects Gemma's tiny RoPE products in threaded rollout workers.
-        torch.backends.cuda.preferred_blas_library(
-            'cublas' if self.compute_dtype == torch.float32 else 'cublaslt')
+        self._is_offload_param = self._is_offload_optimizer = True
+        torch.set_float32_matmul_precision('highest')
+        torch.backends.cuda.preferred_blas_library('cublaslt')
         torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = (False, False)
-        torch._dynamo.config.recompile_limit = engine_config.compile_recompile_limit
-        torch._dynamo.config.accumulated_recompile_limit = engine_config.compile_accumulated_recompile_limit
+        torch._dynamo.config.recompile_limit = 128
+        torch._dynamo.config.accumulated_recompile_limit = 1024
         torch._dynamo.config.fail_on_recompile_limit_hit = True
 
     def initialize(self):
-        if self.engine_config.tp_reduce_dtype:
-            from .tp_precision import enable_tp_reductions
-            reduction_types = {'fp32': torch.float32, 'fp64': torch.float64}
-            if self.engine_config.tp_reduce_dtype not in reduction_types:
-                raise ValueError('tp_reduce_dtype must be null, fp32, or fp64')
-            enable_tp_reductions(reduction_types[self.engine_config.tp_reduce_dtype])
         from nemo_automodel import NeMoAutoModelForImageTextToText
         from nemo_automodel.components.models.common import BackendConfig
         self.module = NeMoAutoModelForImageTextToText.from_pretrained(self.model_config.path,
             dtype=torch.float32, distributed_setup=self.setup,
             attn_implementation='sdpa', use_liger_kernel=False, use_sdpa_patching=False,
             backend=BackendConfig(linear='torch', attn='sdpa', rms_norm='torch', experts='torch',
-                                  dispatcher='torch', enable_hf_state_dict_adapter=False,
-                                  enable_fsdp_optimizations=self.engine_config.defer_fsdp_grad_sync),
+                                  dispatcher='torch', enable_hf_state_dict_adapter=False),
             text_config={'use_cache': False, 'cp_full_attn_backend': 'flex', 'cp_sliding_attn_backend': 'flex'})
         if not hasattr(self.module, '_cp_shard_batch_aux_only'):
             raise TypeError('Expected the custom AutoModel Gemma4 model-owned CP implementation')
-        if not self.engine_config.cpu_master_weights:
-            # The checkpoint loader leaves sharded masters on CPU. Moving after
-            # wrapping moves only local shards and updates FSDP's placement.
-            self.module.to(get_device_id())
         # Text-only recipe: freeze unused vision/audio towers and their adapters.
         for name, p in self.module.named_parameters():
             if any(part in name for part in ('vision_tower', 'multi_modal_projector', 'audio_tower', 'embed_audio')):
@@ -114,8 +84,7 @@ class Gemma4CPEngine(AutomodelEngineWithLMHead):
         from benchmarks.cp_flex_options import configure_flex_tiles
         for module in self.module.modules():
             if hasattr(module, '_cp_manual_metadata_keys'):
-                configure_flex_tiles(module, backward_block=16,
-                    attention_precision='fp32' if self.compute_dtype == torch.float32 else 'bf16')
+                configure_flex_tiles(module, backward_block=16, attention_precision='bf16')
         flex = importlib.import_module('torch.nn.attention.flex_attention')
         original = flex.create_block_mask
         compiled = torch.compile(original, dynamic=False)
@@ -129,10 +98,6 @@ class Gemma4CPEngine(AutomodelEngineWithLMHead):
             weight_decay=self.optimizer_config.weight_decay, foreach=False)
         self.lr_scheduler = self._build_lr_scheduler(self.optimizer) if self.optimizer is not None else None
         self._build_checkpointer()
-        if self.engine_config.initial_model_checkpoint:
-            # Model-only initialization for a new data/parallelism recipe. Full
-            # same-recipe recovery remains load_checkpoint(), including optimizer.
-            self.checkpointer.load_model(self.module, self.engine_config.initial_model_checkpoint)
 
     def get_data_parallel_rank(self):
         from nemo_automodel.components.distributed.mesh_utils import get_flat_mesh
@@ -150,9 +115,8 @@ class Gemma4CPEngine(AutomodelEngineWithLMHead):
         return self.device_mesh['tp'].get_local_rank() == 0 and self.device_mesh['cp'].get_local_rank() == 0
 
     def to(self, device, model=True, optimizer=True, grad=True):
-        # FSDP owns sharded parameter placement. CPUOffloadPolicy stages CPU
-        # masters; the GPU-resident mode intentionally keeps state on CUDA even
-        # while colocated rollout workers are awake.
+        # FSDP CPUOffloadPolicy owns parameter movement. Moving the complete model
+        # or optimizer to CUDA here defeats it and exhausts the four-card budget.
         if device not in {'cpu', 'cuda'}:
             raise ValueError(device)
         if device == 'cpu' and hasattr(self, 'module'):
@@ -212,13 +176,22 @@ class Gemma4CPEngine(AutomodelEngineWithLMHead):
         from nemo_automodel.components.distributed.context_parallel import ContextParallelSharder
         from nemo_automodel.components.distributed.context_parallel.sharder import contiguous_local_indices
         micro_batch = micro_batch.to(get_device_id())
-        if self.engine_config.cp_size > 1 and micro_batch.batch_size[0] != 1:
-            raise ValueError('Multiple independent sequences are supported only with CP1')
+        if micro_batch.batch_size[0] != 1:
+            raise ValueError('Use micro_batch_size_per_gpu=1; packed/multi-example CP is not validated here')
         if tu.get_non_tensor_data(micro_batch, 'use_fused_kernels', False):
             raise ValueError('The Gemma CP adapter owns the vocabulary-sharded logprob calculation')
+        ids = micro_batch['input_ids'][0].reshape(1, -1)
+        positions = micro_batch['position_ids'][0].reshape(1, -1)
+        length = ids.shape[1]
+        unit = 2*self.engine_config.cp_size
+        padded = (length+unit-1)//unit*unit
         pad_id = self.model_config.hf_config.text_config.pad_token_id or 0
-        batch, lengths = pad_sequences(micro_batch['input_ids'], micro_batch['position_ids'],
-            pad_id, self.engine_config.cp_size, self.engine_config.sequence_bucket_size)
+        ids = torch.nn.functional.pad(ids, (0, padded-length), value=pad_id)
+        positions = torch.nn.functional.pad(positions, (0, padded-length))
+        padding_mask = torch.arange(padded, device=ids.device)[None] >= length
+        # Global shift BEFORE sharding is essential at the CP partition boundary.
+        targets = ids.roll(-1, dims=1)
+        batch = {'input_ids': ids, 'labels': targets, 'position_ids': positions, 'padding_mask': padding_mask}
         if self.engine_config.cp_size == 1:
             sharder = ContextParallelSharder(shard_batch=self.module._cp_shard_batch_aux_only,
                 local_token_global_indices=contiguous_local_indices, device_mesh=self.device_mesh)
@@ -228,24 +201,27 @@ class Gemma4CPEngine(AutomodelEngineWithLMHead):
         local_targets = batch.pop('labels')
         batch['attention_mask'] = {'full_attention': None, 'sliding_attention': None}
         calculate_entropy = tu.get_non_tensor_data(micro_batch, 'calculate_entropy', False)
-        with context(), torch.autocast('cuda', dtype=torch.bfloat16,
-                                      enabled=self.compute_dtype == torch.bfloat16):
+        with context(), torch.autocast('cuda', dtype=torch.bfloat16):
             logits = self.module(**batch, use_cache=False, logits_to_keep=0).logits
             if not isinstance(logits, DTensor):
                 raise TypeError('Expected TP vocabulary-sharded DTensor logits')
             local = logits.to_local()
-            temperature = batch_temperature(micro_batch['temperature'], len(lengths))
+            temperature = micro_batch['temperature']
+            if isinstance(temperature, torch.Tensor):
+                temperature = temperature.reshape(-1)[0]
             lp, entropy = vocab_logprobs(local, local_targets, temperature,
                 group=self.device_mesh['tp'].get_group(),
                 vocab_start=self.device_mesh['tp'].get_local_rank()*local.shape[-1],
                 chunk_size=self.engine_config.logprob_chunk_size, entropy=calculate_entropy)
             # Autograd's CP gather sums gradients across replicated losses. FSDP's
             # DP×CP average cancels the CP multiplicity, retaining the global loss.
-            full_lp = sharder.gather_token_tensor(lp)
-            model_output = {'log_probs': unpad_values(full_lp, lengths, micro_batch['input_ids'].offsets())}
+            full_lp = sharder.gather_token_tensor(lp)[:, :length]
+            model_output = {'log_probs': torch.nested.nested_tensor_from_jagged(
+                full_lp.reshape(-1), micro_batch['input_ids'].offsets())}
             if calculate_entropy:
-                full_entropy = sharder.gather_token_tensor(entropy)
-                model_output['entropy'] = unpad_values(full_entropy, lengths, micro_batch['input_ids'].offsets())
+                full_entropy = sharder.gather_token_tensor(entropy)[:, :length]
+                model_output['entropy'] = torch.nested.nested_tensor_from_jagged(
+                    full_entropy.reshape(-1), micro_batch['input_ids'].offsets())
             if loss_function is not None:
                 loss, metrics = loss_function(model_output=model_output, data=micro_batch,
                                                dp_group=self.get_data_parallel_group())

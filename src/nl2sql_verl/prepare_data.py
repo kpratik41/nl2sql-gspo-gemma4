@@ -57,7 +57,7 @@ def normalize_record(row, index=0):
             'extra_info': extra}
 
 
-def prepare(source, destination, tokenizer=None, max_prompt_length=None, reject_overlength=False):
+def prepare(source, destination, tokenizer=None, max_prompt_length=None):
     import pyarrow as pa
     import pyarrow.parquet as pq
     accepted, dropped = [], 0
@@ -68,8 +68,6 @@ def prepare(source, destination, tokenizer=None, max_prompt_length=None, reject_
                 ids = tokenizer.apply_chat_template(result['prompt'], tools=TOOLS,
                     tokenize=True, add_generation_prompt=True, return_dict=False)
                 if len(ids) > max_prompt_length:
-                    if reject_overlength:
-                        raise ValueError(f'row {len(accepted)} has {len(ids)} prompt tokens; increase context capacity instead of dropping it')
                     dropped += 1
                     continue
             accepted.append(result)
@@ -87,13 +85,12 @@ def main():
     parser.add_argument('--output', required=True)
     parser.add_argument('--model')
     parser.add_argument('--max-prompt-length', type=int, default=2048)
-    parser.add_argument('--reject-overlength', action='store_true', help='Fail instead of discarding any overlength row')
     args = parser.parse_args()
     tokenizer = None
     if args.model:
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(args.model)
-    print(json.dumps(prepare(args.input, args.output, tokenizer, args.max_prompt_length, args.reject_overlength)))
+    print(json.dumps(prepare(args.input, args.output, tokenizer, args.max_prompt_length)))
 
 
 if __name__ == '__main__':

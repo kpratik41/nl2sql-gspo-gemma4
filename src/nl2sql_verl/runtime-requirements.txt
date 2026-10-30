@@ -1,12 +1,11 @@
 # Experimental source integration; see README for verl's upstream version cap.
---extra-index-url https://wheels.vllm.ai/0.19.1/cu130
 torch==2.10.0+cu130
 torchao==0.16.0+cu130
 transformers==5.18.0
 nvidia-cutlass-dsl==4.6.2
 quack-kernels==0.6.4
 nemo-automodel @ git+https://github.com/NVIDIA-NeMo/Automodel.git@65866fbce209938cd153f2bc26f01fa0d34cc61e
-vllm==0.19.1+cu130
+vllm @ https://wheels.vllm.ai/b1388b1fbf5aaef47937fabe98931211684666a6/vllm-0.19.1%2Bcu130-cp38-abi3-manylinux_2_35_x86_64.whl
 ray[default]==2.54.1
 tensordict==0.10.0
 TransferQueue==0.1.11

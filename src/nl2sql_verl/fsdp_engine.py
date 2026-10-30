@@ -11,6 +11,13 @@ vllm_compat.register()
 
 @EngineRegistry.register(model_type='language_model',backend='fsdp2',device='cuda',vendor='nvidia')
 class GemmaFSDPEngine(FSDPEngineWithLMHead):
+    def initialize(self):
+        super().initialize()
+        if (self.checkpoint_manager.should_save_hf_model
+                and not self.checkpoint_manager.should_save_model):
+            # Keep IEEE FP32 training intact while storing compact BF16 weights.
+            self.checkpoint_manager.hf_export_dtype = torch.bfloat16
+
     def _build_fsdp_module(self, module):
         module=super()._build_fsdp_module(module)
         # All policies retain FP32 embeddings/residuals with FP32 parameters.
@@ -48,6 +55,11 @@ class GemmaFSDPEngine(FSDPEngineWithLMHead):
         if model.config.model_type!='gemma4':raise ValueError('Expected HF Gemma4')
         if model.config.text_config._attn_implementation!=BACKEND:raise ValueError('Select the recipe Flex attention backend')
         if model.config.text_config.num_kv_shared_layers:raise ValueError('Shared-KV variants are unvalidated')
+        if self.model_config.override_config.get('nl2sql_gather_global_key_projection', False):
+            if self.nl2sql_precision != 'ieee':
+                raise ValueError('Full-sequence global-key projection is validated for IEEE FP32 only')
+            from .fsdp_projection import install_global_key_projection
+            install_global_key_projection(model)
         for name,param in model.named_parameters():
             if any(x in name for x in ('vision_tower','embed_vision','multi_modal_projector','audio_tower','embed_audio')):
                 param.requires_grad_(False)

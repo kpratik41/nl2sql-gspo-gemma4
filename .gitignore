@@ -1,7 +1,9 @@
 # Local Python environments and bytecode
 .venv/
 .venv-bench/
+.venv-data/
 .venv-verl*/
+.venv-verl
 __pycache__/
 *.py[cod]
 
@@ -22,3 +24,6 @@ __pycache__/
 
 # Local data/source handoff archive
 /nl2sql_workspace_bundle_2026-10-26.zip
+/ARCHIVE_MANIFEST.json
+/ARCHIVE_README.txt
+/temp_cpu_2pct.log

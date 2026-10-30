@@ -17,7 +17,7 @@ data:
 
 actor_rollout_ref:
   model:
-    external_lib: src.nl2sql_verl.bounded_runtime
+    external_lib: src.nl2sql_verl.automodel_runtime
   actor:
     ppo_mini_batch_size: 32
     ppo_micro_batch_size_per_gpu: 2

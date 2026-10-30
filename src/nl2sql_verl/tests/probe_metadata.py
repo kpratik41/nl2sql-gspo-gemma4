@@ -11,7 +11,7 @@ def record_probe(args):
     if int(os.environ.get('RANK','0')) != 0:
         return
     root=Path(__file__).resolve().parents[3]
-    files=['src/nl2sql_verl/fsdp_attention.py','src/nl2sql_verl/fsdp_engine.py',
+    files=['src/nl2sql_verl/fsdp_attention.py','src/nl2sql_verl/fsdp_engine.py','src/nl2sql_verl/fsdp_projection.py',
            'src/nl2sql_verl/tests/fsdp_cp_probe.py','src/nl2sql_verl/tests/fsdp_memory_probe.py',
            'src/nl2sql_verl/worker_python.sh']
     keys=['CUDA_VISIBLE_DEVICES','WORLD_SIZE','NL2SQL_ATTENTION_FP32',

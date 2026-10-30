@@ -66,3 +66,23 @@ def test_resume_duration_excludes_downtime(tmp_path, monkeypatch):
     saved = json.loads((tmp_path/'training_clock.json').read_text())
     assert saved['elapsed_seconds'] == 7200
     assert saved['duration_reached']
+
+
+def test_five_step_cadence_stops_only_after_saved_update(tmp_path, monkeypatch):
+    from src.nl2sql_verl import bounded_runtime as runtime
+    from verl.trainer.ppo.v1.trainer_base import PPOTrainer
+    from verl.trainer.ppo.v1.trainer_sync import PPOTrainerSync
+    clock = [100.]
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: clock[0])
+    trainer = SimpleNamespace(
+        config=OmegaConf.create({'trainer': {'nl2sql_training_seconds': 7200,
+            'save_freq': 5, 'test_freq': 5, 'default_local_dir': str(tmp_path)}}),
+        trainer_mode='sync', total_training_steps=100, global_steps=4, timing_raw={},
+        checkpoint_manager=SimpleNamespace(update_weights=lambda step: None))
+    PPOTrainer.on_train_begin(trainer)
+    clock[0] = 7400.
+    PPOTrainerSync.on_step_end(trainer)
+    assert trainer.total_training_steps == 100
+    trainer.global_steps = 5
+    PPOTrainerSync.on_step_end(trainer)
+    assert trainer.total_training_steps == 5

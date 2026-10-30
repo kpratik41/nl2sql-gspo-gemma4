@@ -1,0 +1,74 @@
+defaults:
+  - base
+  - override /actor@actor_rollout_ref.actor: nl2sql_fsdp_actor
+  - _self_
+
+data:
+  train_files: outputs/cp1_recipe/data/train.parquet
+  val_files: outputs/cp1_recipe/data/validation.parquet
+  train_batch_size: 32
+  # Native V1 DAPO requires single-prompt refill dispatches.
+  gen_batch_size: 1
+  # Full enriched dev reaches 29,695 tokens with the tool-aware chat template.
+  max_prompt_length: 30720
+  max_response_length: 2048
+  filter_overlong_prompts: false
+  expected_train_rows: 6601
+  expected_val_rows: 640
+
+actor_rollout_ref:
+  actor:
+    ppo_max_token_len_per_gpu: 32768
+  model:
+    external_lib: src.nl2sql_verl.fsdp_runtime
+    use_remove_padding: true
+    enable_gradient_checkpointing: true
+    override_config:
+      attn_implementation: nl2sql_flex_ulysses
+      nl2sql_precision: ieee
+      nl2sql_attention_precision: ieee
+      nl2sql_static_shapes: true
+  rollout:
+    tensor_model_parallel_size: 4
+    n: 16
+    max_model_len: 32768
+    max_num_batched_tokens: 32768
+    max_num_seqs: 32
+    gpu_memory_utilization: 0.35
+    log_prob_micro_batch_size_per_gpu: 1
+    log_prob_max_token_len_per_gpu: 32768
+    agent:
+      num_workers: 16
+    val_kwargs:
+      do_sample: false
+      n: 1
+
+algorithm:
+  filter_groups:
+    enable: true
+    metric: result
+    max_num_gen_batches: 0
+    max_inflight_gen_batches: 2
+
+trainer:
+  n_gpus_per_node: 8
+  total_epochs: 100
+  total_training_steps: 100
+  experiment_name: bird-grpo-fsdp2-ulysses2-dp4
+  default_local_dir: /opt/dlami/nvme/nl2sql/fsdp-cp2-grpo
+  logger: [console, file]
+  val_before_train: true
+  save_freq: 5
+  test_freq: 10
+  max_actor_ckpt_to_keep: 2
+  nl2sql_rolling_checkpoints: true
+  nl2sql_training_seconds: 0
+
+ray_kwargs:
+  ray_init:
+    runtime_env:
+      env_vars:
+        VERL_FILE_LOGGER_PATH: ${oc.env:VERL_FILE_LOGGER_PATH,outputs/fsdp_cp_training/metrics.jsonl}
+        TORCHINDUCTOR_COMPILE_THREADS: "2"
+        NL2SQL_LENGTH_MAX: "2048"
+        NL2SQL_LENGTH_BUFFER: "512"

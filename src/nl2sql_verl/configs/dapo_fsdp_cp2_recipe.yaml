@@ -1,0 +1,112 @@
+defaults:
+  - fsdp_cp2_base
+  - _self_
+
+# Future launches: keep every saved prompt and allow 4K response sequences.
+# Training remains stopped; the separate screening pass tests an 8K budget.
+data:
+  train_files: outputs/gemma4_native_v1/data/train.parquet
+  val_files: outputs/gemma4_native_v1/data/validation.parquet
+  max_response_length: 4096
+
+# Two 8-GPU nodes. Actor TP1 x CP2 x DP8; FSDP2 shards state over 16 ranks.
+# Keep adjacent CP pairs within a node. Rollout uses four node-local TP4 replicas.
+# This is an H200 candidate, not the old eight-B200 validation topology.
+actor_rollout_ref:
+  model:
+    external_lib: src.nl2sql_verl.native_runtime
+    override_config:
+      # Preserve this narrow projection's full-token FP32 GEMM reduction on H200.
+      nl2sql_gather_global_key_projection: true
+  actor:
+    ppo_max_token_len_per_gpu: 34816
+    # verl's vanilla clipped surrogate implements DAPO via these settings;
+    # there is no separate policy_loss.loss_mode named "dapo".
+    policy_loss:
+      loss_mode: vanilla
+    clip_ratio_low: 0.2
+    clip_ratio_high: 0.28
+    clip_ratio_c: 10.0
+    loss_agg_mode: token-mean
+    ppo_mini_batch_size: 32
+    ppo_micro_batch_size_per_gpu: 1
+    ppo_epochs: 1
+    entropy_coeff: 0.0
+    use_kl_loss: false
+    checkpoint:
+      # Stream a portable BF16 HF export; no optimizer or RNG shards.
+      save_contents: [hf_model]
+      load_contents: []
+  rollout:
+    tensor_model_parallel_size: 4
+    n: 16
+    max_model_len: 34816
+    max_num_batched_tokens: 34816
+    log_prob_max_token_len_per_gpu: 34816
+    # Conservative H200 concurrency; validate the larger context before launch.
+    max_num_seqs: 16
+    # One shared greedy profile for step 0 AND every periodic evaluation.
+    # In this pinned verl, do_sample=false alone does not override temperature.
+    val_kwargs:
+      do_sample: false
+      temperature: 0.0
+      top_p: 1.0
+      top_k: -1
+      n: 1
+    agent:
+      num_workers: 32
+      default_agent_loop: nl2sql_native_tool_agent
+      agent_loop_config_path: src/nl2sql_verl/configs/agent_native.yaml
+    multi_turn:
+      tool_config_path: src/nl2sql_verl/configs/tools_native.yaml
+
+reward:
+  custom_reward_function:
+    path: src/nl2sql_verl/reward_entry_native.py
+    name: compute_score
+
+algorithm:
+  # DAPO group normalization; replaces the earlier task's batch-wide reward std.
+  adv_estimator: grpo
+  norm_adv_by_std_in_grpo: true
+  use_kl_in_reward: false
+  filter_groups:
+    enable: true
+    metric: result
+    # Pinned V1 uses single-prompt refills and a 64-prompt in-flight cap.
+    # max_num_gen_batches does not impose a total retry bound in this version.
+    max_num_gen_batches: 0
+    max_inflight_gen_batches: 2
+
+trainer:
+  nnodes: 2
+  n_gpus_per_node: 8
+  # Keep metrics, W&B authentication, and EBS model publication on node 0.
+  nl2sql_controller_node_ip: 172.31.11.186
+  experiment_name: bird-dapo-fsdp2-cp2-dp8-h200
+  default_local_dir: /opt/dlami/nvme/nl2sql/checkpoints/dapo-fsdp-cp2-16gpu
+  save_freq: 5
+  test_freq: 5
+  val_before_train: true
+  logger: [console, file, wandb]
+  max_actor_ckpt_to_keep: 2
+  nl2sql_rolling_checkpoints: false
+  nl2sql_model_only_checkpoints: true
+  nl2sql_model_backup_dir: /home/ubuntu/nl2sql-checkpoints/dapo-fsdp-cp2-16gpu
+  # Starting from a model-only export requires explicit model initialization.
+  resume_mode: disable
+
+ray_kwargs:
+  ray_init:
+    # Connect to an already started two-node cluster instead of creating a
+    # single-node runtime. Other cluster GPUs should not join this Ray cluster.
+    address: auto
+    runtime_env:
+      env_vars:
+        NL2SQL_LENGTH_MAX: "4096"
+        NL2SQL_LENGTH_BUFFER: "512"
+        NCCL_SOCKET_IFNAME: enp71s0
+        GLOO_SOCKET_IFNAME: enp71s0
+        HF_HUB_OFFLINE: "1"
+        TORCHINDUCTOR_CACHE_DIR: /opt/dlami/nvme/nl2sql/caches/inductor
+        TRITON_CACHE_DIR: /opt/dlami/nvme/nl2sql/caches/triton
